@@ -1,47 +1,31 @@
-# Mathias’s dotfiles
+# Overbryd’s dotfiles
 
 ## Installation
 
-### Using Git and the bootstrap script
+### Install tools and dotfiles
 
 ```bash
-git clone https://github.com/mathiasbynens/dotfiles.git && cd dotfiles && ./bootstrap.sh
+curl "tools-and-dotfiles.sh" | sh
 ```
 
-To update, `cd` into your local `dotfiles` repository and then:
+### Install dotfiles only
 
 ```bash
-./bootstrap.sh
+curl "dotfiles.sh" | sh
 ```
 
-Alternatively, to update while avoiding the confirmation prompt:
-
-```bash
-./bootstrap.sh -f
-```
-
-### Git-free install
-
-To install these dotfiles without Git:
-
-```bash
-cd; curl -#L https://github.com/mathiasbynens/dotfiles/tarball/master | tar -xzv --strip-components 1 --exclude={README.md,bootstrap.sh}
-```
-
-To update later on, just run that command again.
-
-### Sensible OS X defaults
+### Setup sensible OS X defaults
 
 When setting up a new Mac, you may want to set some sensible OS X defaults:
 
 ```bash
-./.osx
+~/.osx
 ```
 
 ## Feedback
 
 Suggestions/improvements
-[welcome](https://github.com/mathiasbynens/dotfiles/issues)!
+[welcome](https://github.com/Overbryd/dotfiles/issues)!
 
 ## Thanks to…
 
