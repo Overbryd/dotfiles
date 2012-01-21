@@ -10,12 +10,21 @@ DARKGREY=$(tput setaf 236)
 BOLD=$(tput bold)
 RESET=$(tput sgr0)
 
-function parse_git_dirty() {
-	[[ $(git status 2> /dev/null | tail -n1) != "nothing to commit (working directory clean)" ]] && echo "*"
+function star-git-dirty() {
+	[[ $(git status --porcelain 2> /dev/null | wc -l) -gt 0 ]] && echo "*"
 }
 
-function parse_git_branch() {
-	git branch --no-color 2> /dev/null | sed -e '/^[^*]/d' -e "s/* \(.*\)/\1$(parse_git_dirty)/"
+function current-git-branch() {
+	git branch --no-color 2> /dev/null | sed -e '/^[^*]/d' -e "s/* \(.*\)/\1/"
+}
+
+function git-stash-count() {
+	git stash list 2> /dev/null | wc -l | tr -d ' '
+}
+
+function git-prompt() {
+	# pull together results, remove empty ones or a stash count of zero and join everything by a colon
+	echo "($(current-git-branch):$(star-git-dirty):$(git-stash-count))" # | sed -e "s/:://g" -e "s/^://" -e "s/0://g"
 }
 
 function ruby-prompt() {
@@ -32,4 +41,4 @@ function ruby-prompt() {
 	echo "$version_string$active_gemset"
 }
 
-PS1="\[$RED\]\$(ruby-prompt)\n\[$DARKGREY\]\w \[$BLACK\]\$ \[$RESET\]"
+PS1="\[$DARKGREY\]\w\[$ORANGE\]$(git-prompt) \[$RED\]\$(ruby-prompt)\[$RED\]★ \[$RESET\]"
