@@ -15,25 +15,25 @@ function star-git-dirty() {
 }
 
 function current-git-branch() {
-	git branch --no-color 2> /dev/null | sed -e '/^[^*]/d' -e "s/* \(.*\)/\1/"
+	git branch --no-color 2> /dev/null | sed -e '/^[^*]/d' -e 's/* //'
 }
 
 function git-stash-count() {
-	git stash list 2> /dev/null | wc -l | tr -d ' '
+	git stash list 2> /dev/null | wc -l | tr -d " "
 }
 
+# Outputs branch name, optionally dirty flag and/or number of stashes
 function git-prompt() {
-	# pull together results, remove empty ones or a stash count of zero and join everything by a colon
-	echo "($(current-git-branch):$(star-git-dirty):$(git-stash-count))" # | sed -e "s/:://g" -e "s/^://" -e "s/0://g"
+	echo "[$(current-git-branch):$(star-git-dirty):$(git-stash-count)]" | sed -e 's/^\://;s/::/:/;s/\:0//'
 }
 
 function ruby-prompt() {
 	version_string=$(rbenv version-name 2> /dev/null)
-	if [ $version_string = "system" ]; then
+	if [ "$version_string" = "system" ]; then
 		version_string=""
 	fi
 	active_gemset=$(rbenv gemset active 2> /dev/null)
-	if [ ! $? = 0 ]; then
+	if [ $? != 0 ]; then
 		active_gemset=""
 	else
 		active_gemset="($active_gemset)"
@@ -41,4 +41,4 @@ function ruby-prompt() {
 	echo "$version_string$active_gemset"
 }
 
-PS1="\[$DARKGREY\]\w\[$ORANGE\]$(git-prompt) \[$RED\]\$(ruby-prompt)\[$RED\]★ \[$RESET\]"
+PS1="\[$DARKGREY\]\w\[$ORANGE\]\$(git-prompt) \[$RED\]\$(ruby-prompt)\[$RED\]★ \[$RESET\]"
