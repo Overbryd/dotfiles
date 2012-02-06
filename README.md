@@ -2,24 +2,30 @@
 
 ## Installation
 
-### Install tools and dotfiles
-
 ```bash
-curl "tools-and-dotfiles.sh" | sh
+curl "https://raw.github.com/Overbryd/dotfiles/master/dotfiles.sh" | bash
 ```
 
-### Install dotfiles only
+## Updating
 
 ```bash
-curl "dotfiles.sh" | sh
+~/.dotfiles/dotfiles.sh
 ```
 
-### Setup sensible OS X defaults
+## Provisioning
 
-When setting up a new Mac, you may want to set some sensible OS X defaults:
+Installs OSX GCC (u don't need XCode), homebrew and some ruby tools. (rbenv ruby-build rbenv-gemset)
 
 ```bash
-~/.osx
+~/.dotfiles/provision.sh
+```
+## Maintain and setup OSX defaults
+
+While working with your Mac you start customizing all the stuff. If you setup a new machine you can reproduce the setup using `defaults.sh`.
+Any customization that you do via `defaults` should be appended to `defaults.sh`.
+
+```bash
+~/.dotfiles/defaults.sh
 ```
 
 ## Feedback
