@@ -36,3 +36,7 @@
 [user]
 	name = Lukas Rieder
 	email = l.rieder@gmail.com
+[alias]
+	st = status
+	co = checkout
+	history = "log -p"

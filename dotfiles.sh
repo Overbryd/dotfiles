@@ -1,32 +1,28 @@
 #!/bin/bash
 
 function update() {
-	cd ~/.dotfiles && \
-		echo "update"
-	# git pull
+  cd ~/.dotfiles && git pull
 }
 
 function download() {
-	cd ~ && \
-		echo "download"
-	# git clone git://github.com/Overbryd/dotfiles.git .dotfiles
+  cd ~ && git clone git://github.com/Overbryd/dotfiles.git .dotfiles
 }
 
 function symlink() {
-	for file in $(find ~/.dotfiles -name ".*" -type f); do
-		basename=$(basename $file)
-		if [ -e ~/$basename ]; then
-			echo "Skipping symlink to ~/$basename"
-		else
-			cd ~ && ln -s .dotfiles/$basename ~/$basename
-		fi
-	done
+  for file in $(find ~/.dotfiles -name ".*" -type f); do
+    basename=$(basename $file)
+    if [ -e ~/$basename ]; then
+      echo "Skipping symlink to ~/$basename"
+    else
+      cd ~ && ln -s .dotfiles/$basename ~/$basename
+    fi
+  done
 }
 
 if [ -d ~/.dotfiles ]; then
-	update
+  update
 else
-	download
+  download
 fi
 
 symlink

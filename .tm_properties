@@ -1,0 +1,34 @@
+fontName = "Everson Mono"
+fontSize = 14
+
+# General Settings
+softWrap = false
+softTabs = true
+tabSize = 2
+wrapColumn = "Use Window Frame"
+showInvisibles = true
+
+myExtraIncludes = ".tm_properties,.gitignore"
+fileBrowserGlob = "{*,$myExtraIncludes}"
+include = "{$include,$myExtraIncludes}"
+
+myExtraExcludes = "log,vendor,tmp,.DS_Store"
+excludeInFileChooser = "{$excludeInFileChooser,$myExtraExcludes}"
+excludeInFolderSearch = "{$excludeInFolderSearch,$myExtraExcludes}"
+
+# Hide from project manager pane
+# excludeInBrowser = "${excludeInBrowser,log,vendor,tmp}"
+
+# File type specific configuration
+
+# Unknown file types
+[ attr.untitled ]
+fileType = "text"
+
+[ *.{txt,md,mdown,markdown} ]
+fileType = "text.markdown"
+spellChecking = true
+tabSize = 4
+
+[ *.{yaml,yml} ]
+fileType = "source.yaml"
