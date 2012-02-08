@@ -40,3 +40,4 @@
 	st = status
 	co = checkout
 	history = "log -p"
+	shallow-clone = "clone --depth=1"
