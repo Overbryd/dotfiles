@@ -5,7 +5,8 @@ fontSize = 14
 softWrap = false
 softTabs = true
 tabSize = 2
-wrapColumn = "Use Window Frame"
+wrapColumn = 80
+showWrapColumn = true
 showInvisibles = true
 
 myExtraIncludes = ".tm_properties,.gitignore"
