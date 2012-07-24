@@ -15,7 +15,8 @@ function star-git-dirty() {
 }
 
 function current-git-branch() {
-  git branch --no-color 2> /dev/null | sed -e '/^[^*]/d;s/* //'
+  local b=$(git symbolic-ref HEAD 2> /dev/null)
+  echo -n "${b#refs/heads/}"
 }
 
 function git-stash-count() {
