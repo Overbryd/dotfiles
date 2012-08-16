@@ -53,5 +53,16 @@ function unidecode() {
 
 # Mirror a complete website
 function mirror-website() {
-  wget -m -k -K -E $@
+  local url=$@
+  local domain=`expr "$url" : '^http[s]*://\([^/?]*\)'`
+  wget \
+    --recursive \
+    --no-clobber \
+    --page-requisites \
+    --html-extension \
+    --convert-links \
+    --restrict-file-names=windows \
+    --domains $domain \
+    --no-parent \
+    $url
 }
