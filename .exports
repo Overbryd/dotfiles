@@ -5,8 +5,15 @@ export LANG="en_US"
 # Set TextMate as default editor
 export EDITOR="/usr/local/bin/mate -w"
 
-# Add ~/.bin, ~/.rbenv/shims/ to the PATH
-export PATH="~/.bin:~/.rbenv/shims:$PATH"
+# Add stuff to $PATH
+for path in \
+  ~/.bin \
+  /usr/local/bin \
+  /usr/local/sbin
+do
+  export PATH="$path:$PATH"
+done
+unset path
 
 # Don’t clear the screen after quitting a manual page
 export MANPAGER="less -X"
