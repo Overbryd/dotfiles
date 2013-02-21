@@ -33,4 +33,4 @@ function ruby-prompt() {
   echo "$(rbenv version-name 2> /dev/null)@$(rbenv gemset active 2> /dev/null) " | sed -e 's/system//;s/[@ ]*$/ /;s/^ *$//'
 }
 
-PS1="\[$DARKGREY\]\w\[$ORANGE\]\$(git-prompt) \[$RED\]\$(ruby-prompt)\[$RED\]★ \[$RESET\]"
+PS1="\[$DARKGREY\]\w\[$ORANGE\]\$(git-prompt) \[$RED\]\$(ruby-prompt)\[$RED\]\n★ \[$RESET\]"
