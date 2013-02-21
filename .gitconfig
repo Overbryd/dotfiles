@@ -43,3 +43,5 @@
 	shallow-clone = "clone --depth=1"
 	tree = "log --graph --oneline --all"
 	pick = "cherry-pick"
+[push]
+	default = upstream
