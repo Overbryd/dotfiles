@@ -1,6 +1,7 @@
 [apply]
 	whitespace = fix
 [core]
+	autocrlf = input
 	excludesfile = ~/.gitignore
 	attributesfile = ~/.gitattributes
 	whitespace = fix,space-before-tab,tab-in-indent,trailing-space
@@ -43,5 +44,6 @@
 	shallow-clone = "clone --depth=1"
 	tree = "log --graph --oneline --all"
 	pick = "cherry-pick"
+  contributors = "shortlog -n -s --no-merges"
 [push]
 	default = upstream

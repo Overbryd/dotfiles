@@ -1,18 +1,18 @@
-fontName = "Everson Mono"
+fontName = "Source Code Pro"
 fontSize = 14
 
 # General Settings
 softWrap = false
 softTabs = true
 tabSize = 2
-wrapColumn = 80
-showWrapColumn = true
+# wrapColumn = 80
+# showWrapColumn = true
 showInvisibles = true
+followSymbolicLinks = true
 
 myExtraIncludes = ".tm_properties,.gitignore"
 fileBrowserGlob = "{*,$myExtraIncludes}"
 include = "{$include,$myExtraIncludes}"
-
 myExtraExcludes = "log,vendor,tmp,.DS_Store"
 excludeInFileChooser = "{$excludeInFileChooser,$myExtraExcludes}"
 excludeInFolderSearch = "{$excludeInFolderSearch,$myExtraExcludes}"
@@ -33,3 +33,6 @@ tabSize = 4
 
 [ *.{yaml,yml} ]
 fileType = "source.yaml"
+
+[ source.ruby, source.html, *.rb ]
+softWrap = false
