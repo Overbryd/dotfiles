@@ -8,6 +8,7 @@ tabSize = 2
 # wrapColumn = 80
 # showWrapColumn = true
 showInvisibles = true
+invisiblesMap = "~ ~;~\n"
 followSymbolicLinks = true
 
 myExtraIncludes = ".tm_properties,.gitignore"
