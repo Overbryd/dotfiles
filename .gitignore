@@ -9,3 +9,8 @@ Thumbs.db
 # Files that might appear on external disks
 .Spotlight-V100
 .Trashes
+
+# vim plugins handled by vundle
+.vim/bundle
+!.vim/bundle/vundle
+
