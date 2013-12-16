@@ -17,9 +17,15 @@ let g:CommandTAcceptSelectionMap = '<C-CR>'
 " auto close parantheses, etc...
 Bundle 'vim-scripts/AutoClose'
 
-" Text objects
+" Ruby
+Bundle 'vim-ruby/vim-ruby'
+
+" Ruby text objects
 Bundle 'kana/vim-textobj-user'
 Bundle 'nelstrom/vim-textobj-rubyblock'
+
+" Ag file searching
+Bundle 'rking/ag.vim'
 
 filetype plugin indent on
 set number
@@ -31,6 +37,9 @@ set shiftwidth=2
 set softtabstop=2
 set expandtab
 syntax on
+
+" enable matchit
+runtime macros/matchit.vim
 
 " show hard tabs and trailing spaces
 set list listchars=tab:»·,trail:·
@@ -45,6 +54,9 @@ set nofoldenable
 " directories for swp files
 set backupdir=~/.vimbackup
 set directory=~/.vimbackup
+
+" show where the cursor is
+set cursorline
 
 " remove search highlight when hitting return again
 nnoremap <CR> :noh<CR><CR>
