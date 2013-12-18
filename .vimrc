@@ -24,6 +24,9 @@ Bundle 'vim-ruby/vim-ruby'
 Bundle 'kana/vim-textobj-user'
 Bundle 'nelstrom/vim-textobj-rubyblock'
 
+" Easy quoting with the surround plugin
+Bundle 'tpope/vim-surround'
+
 " Ag file searching
 Bundle 'rking/ag.vim'
 
