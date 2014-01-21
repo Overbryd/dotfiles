@@ -1,7 +1,7 @@
 eval "$(rbenv init -)"
 alias l="ls -Glah"
 alias g="git"
-export EDITOR="mate -w"
+export EDITOR="mvim -f"
 export PATH="$HOME/bin:$PATH"
 
 # Fancy prompt

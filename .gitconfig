@@ -38,7 +38,7 @@
 	name = Lukas Rieder
 	email = l.rieder@gmail.com
 [alias]
-	st = status
+	s = status
 	co = checkout
 	history = "log -p"
 	shallow-clone = "clone --depth=1"
