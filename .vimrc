@@ -1,3 +1,4 @@
+autocmd!
 set nocompatible
 filetype off
 set rtp+=~/.vim/bundle/vundle/
@@ -19,6 +20,9 @@ let g:CommandTAcceptSelectionMap = '<C-CR>'
 
 " Ruby
 Bundle 'vim-ruby/vim-ruby'
+
+" Javascript
+Bundle 'pangloss/vim-javascript'
 
 " Ruby text objects
 Bundle 'kana/vim-textobj-user'
@@ -114,4 +118,7 @@ endfunction
 
 " Removes trailing whitespace on save
 autocmd BufWritePre .vimrc,Gemfile,Rakefile,*.{js,rb,ru,html,erl,erb} :call Preserve("%s/\\s\\+$//e")
+
+" Reset CommandT cache when regaining focus
+autocmd FocusGained * :CommandTFlush
 
