@@ -15,8 +15,8 @@ let g:CommandTMaxHeight=10
 let g:CommandTAcceptSelectionTabMap = '<CR>'
 let g:CommandTAcceptSelectionMap = '<C-CR>'
 
-" auto close parantheses, etc...
-""Bundle 'vim-scripts/AutoClose'
+" repeat hooks for other plugins
+Bundle 'tpope/vim-repeat'
 
 " Ruby
 Bundle 'vim-ruby/vim-ruby'
@@ -32,15 +32,18 @@ Bundle 'nelstrom/vim-textobj-rubyblock'
 Bundle 'tpope/vim-surround'
 
 " Ag file searching
-Bundle 'rking/ag.vim'
-map <D-F> :Ag --literal ""<Left>
+Bundle 'epmatsw/ag.vim'
+" search in all files including gitignore
+" search case sensitive if there is an uppercase letter
+" search literally by default
+let g:agprg="ag --column --unrestricted --smart-case --literal"
+" map Cmd-Shift-F to project search
+map <D-F> :Ag!<Space>
+" map Cmd-Shift-* to project search for word under cursor
+nnoremap <D-*> <*>:Ag!<Space><C-R><C-W><CR>
 
 " textmate like <Tab> expansion snippets
 Bundle 'msanders/snipmate.vim'
-
-" complete as you type
-""Bundle 'Valloric/YouCompleteMe'
-""let g:ycm_key_list_select_completion = ['<Enter>', '<Down>']
 
 colorscheme Tomorrow-Night
 

@@ -42,8 +42,9 @@
 	co = checkout
 	history = "log -p"
 	shallow-clone = "clone --depth=1"
-	tree = "log --graph --oneline --all"
+  tree = "log --graph --oneline --all --decorate=full"
 	pick = "cherry-pick"
   contributors = "shortlog -n -s --no-merges"
+  amend = "commit -a --amend"
 [push]
 	default = upstream

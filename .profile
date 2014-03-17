@@ -11,7 +11,7 @@ function git-prompt {
     local branch=${symbolic_ref_head#refs/heads/}
     local stash_count=$(git stash list --oneline 2> /dev/null | sed -n "$=")
     local dirty_star=$(git status --porcelain . | sed -e "$ ! d" -e "s/.*/*/")
-    echo " $branch$stash_count$dirty_star"
+    echo "$branch$stash_count$dirty_star"
   else
     echo ""
   fi
@@ -31,7 +31,7 @@ export yellow=$(tput setaf 3)
 export bold=$(tput bold)
 export reset=$(tput sgr0)
 export PROMPT_DIRTRIM=1
-export PS1="\w\[$yellow\]\$(git-prompt)\[$red\]\$(rbenv-prompt)\[$bold$green\]$ \[$reset\]"
+export PS1="\[$yellow\]\$(git-prompt)\[$red\]\$(rbenv-prompt)\n\[$reset\]\w: "
 
 # Case-insensitive globbing (used in pathname expansion)
 shopt -s nocaseglob
@@ -39,7 +39,7 @@ shopt -s nocaseglob
 # Long history without duplicates, flush after every command
 export HISTCONTROL=ignoreboth
 export HISTSIZE=20000
-export PROMPT_COMMAND="history -a"
+export PROMPT_COMMAND="history -a; $PROMPT_COMMAND" # preserve other PROMPT_COMMAND stuff!
 shopt -s histappend
 
 # Start an HTTP server from a directory, optionally specifying the port
@@ -67,6 +67,10 @@ function mirror-website() {
     $url
 }
 
+# bash-completion installed via homebrew
+if [ -f $(brew --prefix)/share/bash-completion/bash_completion ]; then
+  source $(brew --prefix)/share/bash-completion/bash_completion
+fi
 
-### Added by the Heroku Toolbelt
+# Heroku Toolbelt
 export PATH="/usr/local/heroku/bin:$PATH"
