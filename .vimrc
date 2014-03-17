@@ -15,8 +15,8 @@ let g:CommandTMaxHeight=10
 let g:CommandTAcceptSelectionTabMap = '<CR>'
 let g:CommandTAcceptSelectionMap = '<C-CR>'
 
-" auto close parantheses, etc...
-""Bundle 'vim-scripts/AutoClose'
+" repeat hooks for other plugins
+Bundle 'tpope/vim-repeat'
 
 " Ruby
 Bundle 'vim-ruby/vim-ruby'

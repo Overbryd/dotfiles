@@ -67,6 +67,10 @@ function mirror-website() {
     $url
 }
 
+# bash-completion installed via homebrew
+if [ -f $(brew --prefix)/share/bash-completion/bash_completion ]; then
+  source $(brew --prefix)/share/bash-completion/bash_completion
+fi
 
-### Added by the Heroku Toolbelt
+# Heroku Toolbelt
 export PATH="/usr/local/heroku/bin:$PATH"
