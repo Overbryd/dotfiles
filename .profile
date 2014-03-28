@@ -3,6 +3,8 @@ alias l="ls -Glah"
 alias g="git"
 export EDITOR="mvim -f"
 export PATH="$HOME/bin:$PATH"
+export LC_ALL=en_US.UTF-8
+export LANG=en_US.UTF-8
 
 # Fancy prompt
 function git-prompt {
