@@ -109,6 +109,9 @@ noremap <D-w> <C-w>q
 " remove search highlight when hitting return again
 nnoremap <CR> :nohlsearch<CR>
 
+" force the save of write protected files with sudo
+cmap w!! w! !sudo tee > /dev/null %
+
 " Preserves the cursor and search history around executing a command
 function! Preserve(command)
   let _s=@/
