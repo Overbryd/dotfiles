@@ -41,7 +41,12 @@ shopt -s nocaseglob
 # Long history without duplicates, flush after every command
 export HISTCONTROL=ignoreboth
 export HISTSIZE=20000
-export PROMPT_COMMAND="history -a; $PROMPT_COMMAND" # preserve other PROMPT_COMMAND stuff!
+
+# Name the current tab after the current directory
+function name-tab {
+  printf "\e]1;%s\a" "${PWD##*/}"
+}
+export PROMPT_COMMAND="history -a; name-tab; $PROMPT_COMMAND" # preserve other PROMPT_COMMAND stuff!
 shopt -s histappend
 
 # Start an HTTP server from a directory, optionally specifying the port
