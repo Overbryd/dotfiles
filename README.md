@@ -7,7 +7,10 @@
     ├── .profile        # simple bash setup
     ├── .slate          # configuration for Slate, a Mac OSX window manager
     ├── .tm_properties  # configuration for TextMate, a great Code editor
-    └── defaults.sh     # a collection of interesting Mac OSX defaults
+    ├── .vimrc          # a great .vimrc with comments
+    ├── decrypt.sh      # decrypt sensitive files and put them in place
+    ├── defaults.sh     # a collection of interesting Mac OSX defaults
+    └── encrypt.sh      # simple wrapper to encrypt sensitive files for storage
 
 ## Maintain and setup OSX defaults
 
