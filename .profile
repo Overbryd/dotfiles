@@ -75,8 +75,8 @@ function mirror-website() {
 }
 
 # bash-completion installed via homebrew
-if [ -f $(brew --prefix)/share/bash-completion/bash_completion ]; then
-  source $(brew --prefix)/share/bash-completion/bash_completion
+if [ -f "$(brew --prefix)/share/bash-completion/bash_completion" ]; then
+  . $(brew --prefix)/share/bash-completion/bash_completion
 fi
 
 # Heroku Toolbelt
