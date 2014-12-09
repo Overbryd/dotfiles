@@ -14,3 +14,5 @@ Thumbs.db
 .vim/bundle
 !.vim/bundle/vundle
 
+.ssh/config
+.ssh/wooga_heroku_id_rsa

@@ -45,6 +45,22 @@ nnoremap <D-*> <*>:Ag!<Space><C-R><C-W><CR>
 " textmate like <Tab> expansion snippets
 Bundle 'msanders/snipmate.vim'
 
+" select expanding regions with one key
+Bundle 'terryma/vim-expand-region'
+call expand_region#custom_text_objects('ruby', {
+      \ 'i(' :0,
+      \ 'a(' :0,
+      \ 'i{' :0,
+      \ 'a{' :0,
+      \ 'im' :0,
+      \ 'am' :0,
+      \ })
+vmap v <Plug>(expand_region_expand)
+vmap <C-v> <Plug>(expand_region_shrink)
+
+" comment stuff in/out with gc<motion>
+Bundle 'tpope/vim-commentary'
+
 colorscheme Tomorrow-Night
 
 filetype plugin indent on
@@ -102,6 +118,18 @@ set scrolloff=10
 
 " turn off that visual and audible bell
 set vb t_vb=
+
+" limit syntax coloring to a certain length. speeds up things when working with long lines
+set synmaxcol=160
+
+" we have a good terminal connection, send more characters for redrawing
+set ttyfast
+
+" disable arrow keys, for Nadia ;)
+noremap <Up> <NOP>
+noremap <Down> <NOP>
+noremap <Left> <NOP>
+noremap <Right> <NOP>
 
 " remap close buffer to the OSX default for close window
 noremap <D-w> <C-w>q
