@@ -119,6 +119,12 @@ set scrolloff=10
 " turn off that visual and audible bell
 set vb t_vb=
 
+" limit syntax coloring to a certain length. speeds up things when working with long lines
+set synmaxcol=160
+
+" we have a good terminal connection, send more characters for redrawing
+set ttyfast
+
 " disable arrow keys, for Nadia ;)
 noremap <Up> <NOP>
 noremap <Down> <NOP>
