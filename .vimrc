@@ -75,6 +75,7 @@ set tabstop=2
 set shiftwidth=2
 set softtabstop=2
 set expandtab
+set relativenumber
 syntax on
 
 " enable matchit
@@ -139,6 +140,12 @@ noremap <D-w> <C-w>q
 
 " remove search highlight when hitting return again
 nnoremap <CR> :nohlsearch<CR>
+
+" yank till end of line
+nnoremap Y y$
+
+" command line shortcuts
+cnoremap <C-a> <Home>
 
 " force the save of write protected files with sudo
 cmap w!! w! !sudo tee > /dev/null %
