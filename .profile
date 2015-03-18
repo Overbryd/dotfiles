@@ -7,6 +7,18 @@ export PATH="$HOME/bin:$PATH"
 export LC_ALL=en_US.UTF-8
 export LANG=en_US.UTF-8
 
+# if we are in a tmate session, alias tmux as tmate
+if [[ $TMUX =~ tmate ]]; then alias tmux=tmate; fi
+function tmate-info {
+  echo "rw: $(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}' 2>/dev/null)"
+  echo "ro: $(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh_ro}' 2>/dev/null)"
+}
+function tmate-start {
+  tmate -S /tmp/tmate.sock new-session -d
+  tmate -S /tmp/tmate.sock wait tmate-ready
+  eval "$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')"
+}
+
 # Fancy prompt
 function git-prompt {
   if (git status >/dev/null 2>&1); then
