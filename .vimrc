@@ -28,6 +28,9 @@ Bundle 'pangloss/vim-javascript'
 Bundle 'kana/vim-textobj-user'
 Bundle 'nelstrom/vim-textobj-rubyblock'
 
+" Elixir
+Bundle 'elixir-lang/vim-elixir'
+
 " Easy quoting with the surround plugin
 Bundle 'tpope/vim-surround'
 
