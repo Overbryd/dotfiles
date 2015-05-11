@@ -1,71 +1,57 @@
-autocmd!
 set nocompatible
 filetype off
-set rtp+=~/.vim/bundle/vundle/
-call vundle#rc()
+set rtp+=~/.vim/bundle/Vundle.vim
+call vundle#begin()
 
 " Manage these plugins
-Bundle 'gmarik/vundle'
+Plugin 'gmarik/Vundle.vim'
 
 " fuzzy search files
-Bundle 'wincent/Command-T'
+Plugin 'wincent/command-t'
 let g:CommandTMatchWindowReverse=1
 let g:CommandTMinHeight=10
 let g:CommandTMaxHeight=10
 let g:CommandTAcceptSelectionTabMap = '<CR>'
 let g:CommandTAcceptSelectionMap = '<C-CR>'
+let g:CommandTCancelMap = ['<ESC>', '<C-c>']
 
 " repeat hooks for other plugins
-Bundle 'tpope/vim-repeat'
+Plugin 'tpope/vim-repeat'
 
 " Ruby
-Bundle 'vim-ruby/vim-ruby'
+Plugin 'vim-ruby/vim-ruby'
 
 " Javascript
-Bundle 'pangloss/vim-javascript'
+Plugin 'pangloss/vim-javascript'
 
 " Ruby text objects
-Bundle 'kana/vim-textobj-user'
-Bundle 'nelstrom/vim-textobj-rubyblock'
+Plugin 'kana/vim-textobj-user'
+Plugin 'nelstrom/vim-textobj-rubyblock'
 
 " Elixir
-Bundle 'elixir-lang/vim-elixir'
+Plugin 'elixir-lang/vim-elixir'
 
 " Easy quoting with the surround plugin
-Bundle 'tpope/vim-surround'
+Plugin 'tpope/vim-surround'
 
 " Ag file searching
-Bundle 'epmatsw/ag.vim'
+Plugin 'rking/ag.vim'
 " search in all files including gitignore
 " search case sensitive if there is an uppercase letter
 " search literally by default
 let g:agprg="ag --column --unrestricted --smart-case --literal"
-" map Cmd-Shift-F to project search
-map <D-F> :Ag!<Space>
-" map Cmd-Shift-* to project search for word under cursor
-nnoremap <D-*> <*>:Ag!<Space><C-R><C-W><CR>
+  " map <leader> F to project search
+map <leader>F :<c-u>Ag <C-R>=shellescape(expand(@"),1)<CR>:copen<CR>
+" map <leader> ** to project search for word under cursor
+nnoremap <leader>* <*>:Ag<Space><C-R><C-W><CR>
 
 " textmate like <Tab> expansion snippets
-Bundle 'msanders/snipmate.vim'
-
-" select expanding regions with one key
-Bundle 'terryma/vim-expand-region'
-call expand_region#custom_text_objects('ruby', {
-      \ 'i(' :0,
-      \ 'a(' :0,
-      \ 'i{' :0,
-      \ 'a{' :0,
-      \ 'im' :0,
-      \ 'am' :0,
-      \ })
-vmap v <Plug>(expand_region_expand)
-vmap <C-v> <Plug>(expand_region_shrink)
+Plugin 'msanders/snipmate.vim'
 
 " comment stuff in/out with gc<motion>
-Bundle 'tpope/vim-commentary'
+Plugin 'tpope/vim-commentary'
 
-colorscheme Tomorrow-Night
-
+call vundle#end()
 filetype plugin indent on
 set number
 set ruler
@@ -77,6 +63,10 @@ set softtabstop=2
 set expandtab
 set relativenumber
 syntax on
+colorscheme Tomorrow-Night
+
+" enable clipboard integration on osx (if compiled with +clipboard)
+set clipboard=unnamed
 
 " enable matchit
 runtime macros/matchit.vim
@@ -138,8 +128,8 @@ noremap <Right> <NOP>
 " remap close buffer to the OSX default for close window
 noremap <D-w> <C-w>q
 
-" remove search highlight when hitting return again
-nnoremap <CR> :nohlsearch<CR>
+" remove search highlight when hitting escape again
+nnoremap <ESC> :nohlsearch<CR>
 
 " yank till end of line
 nnoremap Y y$
@@ -163,6 +153,7 @@ endfunction
 " Removes trailing whitespace on save
 autocmd BufWritePre .vimrc,Gemfile,Rakefile,*.{js,rb,ru,html,erl,erb} :call Preserve("%s/\\s\\+$//e")
 
-" Reset CommandT cache when regaining focus
+" Reset CommandT cache when regaining focus or writing to a file
 autocmd FocusGained * :CommandTFlush
+autocmd BufWritePost * :CommandTFlush
 

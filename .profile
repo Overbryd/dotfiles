@@ -1,8 +1,10 @@
+export RBENV_ROOT="$HOME/.rbenv"
+export PATH="$RBENV_ROOT/bin:$PATH"
 eval "$(rbenv init -)"
 alias l="ls -Glah"
 alias g="git"
 alias minecraft="java -d64 -Xms4096M -Xmx4096M -jar Minecraft.app/Contents/Resources/Java/MinecraftLauncher.jar"
-export EDITOR="mvim -f"
+export EDITOR="vim"
 export PATH="$HOME/bin:$PATH"
 export LC_ALL=en_US.UTF-8
 export LANG=en_US.UTF-8
