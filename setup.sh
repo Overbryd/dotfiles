@@ -26,6 +26,12 @@ if ! which brew; then ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Ho
 brew-install ag
 # install readline, useful in combination with ruby-build because it will link ruby installations to it
 brew-install readline
+# install homebrew-cask to install other osx related stuff
+brew install caskroom/cask/brew-cask
+# tap into homebrew-fonts
+brew tap caskroom/fonts
+# install Adobe Source Code Pro
+brew cask install font-source-code-pro
 
 # install rbenv
 if [ ! -d .rbenv ]; then git clone https://github.com/sstephenson/rbenv.git .rbenv; fi
@@ -44,7 +50,7 @@ if [ ! -d .vim/bundle/Vundle.vim ]; then git clone https://github.com/gmarik/Vun
 vim +PluginInstall +qall
 
 # install vim command-t extension
-if [ ! -f .vim/bundle/command-t/ruby/comamnd-t/.done ]; then
+if [ ! -f .vim/bundle/command-t/ruby/command-t/.done ]; then
   cd .vim/bundle/command-t/ruby/command-t
   ruby extconf.rb
   if [ make ]; then touch .done; fi

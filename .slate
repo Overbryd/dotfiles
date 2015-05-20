@@ -3,8 +3,8 @@ config nudgePercentOf screenSize
 config resizePercentOf screenSize
 
 alias full move screenOriginX;screenOriginY screenSizeX;screenSizeY
-alias thinleft move screenOriginX;screenOriginY screenSizeX/3;screenSizeY
-alias wideright move screenOriginX+screenSizeX/3;screenOriginY (screenSizeX/3)*2;screenSizeY
+alias thinleft move screenOriginX;screenOriginY screenSizeX/2.5;screenSizeY
+alias wideright move screenOriginX+screenSizeX/2.5;screenOriginY (screenSizeX/2.5)*1.5;screenSizeY
 
 layout twoapps "Terminal":REPEAT ${thinleft}
 layout twoapps "TextMate":REPEAT ${wideright}

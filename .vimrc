@@ -65,6 +65,12 @@ set relativenumber
 syntax on
 colorscheme Tomorrow-Night
 
+" disable netrw history
+let g:netrw_dirhistmax=0
+
+" make backspace work as expected
+set backspace=indent,eol,start
+
 " enable clipboard integration on osx (if compiled with +clipboard)
 set clipboard=unnamed
 
@@ -129,7 +135,7 @@ noremap <Right> <NOP>
 noremap <D-w> <C-w>q
 
 " remove search highlight when hitting escape again
-nnoremap <ESC> :nohlsearch<CR>
+nnoremap <Enter> :nohlsearch<CR>
 
 " yank till end of line
 nnoremap Y y$

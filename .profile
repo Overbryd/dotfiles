@@ -1,4 +1,5 @@
 export RBENV_ROOT="$HOME/.rbenv"
+export RBENV_BUILD_ROOT="$RBENV_ROOT/sources"
 export PATH="$RBENV_ROOT/bin:$PATH"
 eval "$(rbenv init -)"
 alias l="ls -Glah"
