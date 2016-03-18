@@ -49,11 +49,11 @@ Plugin 'jiangmiao/auto-pairs'
 
 " Ag file searching
 Plugin 'rking/ag.vim'
-" search in all files including gitignore
 " search case sensitive if there is an uppercase letter
-" search literally by default
-let g:agprg="ag --column --unrestricted --smart-case --literal"
-  " map <leader> F to project search
+let g:ag_prg="ag --vimgrep --smart-case"
+" highlight search term after searching
+let g:ag_highlight=1
+" map <leader> F to project search
 map <leader>F :<c-u>Ag <C-R>=shellescape(expand(@"),1)<CR>:copen<CR>
 " map <leader> ** to project search for word under cursor
 nnoremap <leader>* <*>:Ag<Space><C-R><C-W><CR>
