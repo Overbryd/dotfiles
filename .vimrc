@@ -67,7 +67,37 @@ Plugin 'tpope/vim-commentary'
 " collect programming metrics
 Plugin 'wakatime/vim-wakatime'
 
+" plugin that helps to end certain structures like if ... end
+Plugin 'tpope/vim-endwise'
+
+" Rename a buffer within Vim and on the disk
+Plugin 'danro/rename.vim'
+
+" Syntax and style checking
+Plugin 'scrooloose/syntastic'
+let g:syntastic_aggregate_errors = 1
+let g:syntastic_always_populate_loc_list = 1
+let g:syntastic_auto_loc_list = 1
+let g:syntastic_check_on_open = 1
+let g:syntastic_check_on_wq = 0
+set statusline+=%#warningmsg#
+set statusline+=%{SyntasticStatuslineFlag()}
+set statusline+=%*
+" JSX syntastic configuration
+let g:syntastic_javascript_checkers = ['jsxhint']
+let g:syntastic_javascript_jsxhint_exec = 'npm run lint'
+
+" Change code right in the quickfix window
+Plugin 'stefandtw/quickfix-reflector.vim'
+
+" Graph vim undo tree to make it usable
+Plugin 'vim-scripts/Gundo'
+
+" Git integration, using it for git blame in a vertical split
+Plugin 'tpope/vim-fugitive'
+
 call vundle#end()
+
 filetype plugin indent on
 set number
 set ruler
@@ -77,7 +107,7 @@ set tabstop=2
 set shiftwidth=2
 set softtabstop=2
 set expandtab
-set relativenumber
+set norelativenumber
 syntax on
 colorscheme Tomorrow-Night
 
@@ -122,12 +152,13 @@ set directory=~/.vimtmp/swap
 " save an undofile to be able to undo changes after closing files
 set undofile
 set undodir=~/.vimtmp/undo
+" use many levels of undo
 
 " I got enough memory, no need for swap files
 set noswapfile
 
-" show where the cursor is
-set cursorline
+" do not show where the cursor is (very slow with ruby syntax *sigh*)
+set nocursorline
 
 " set a scroll offset above and below the cursor
 set scrolloff=10
@@ -141,7 +172,7 @@ set synmaxcol=160
 " we have a good terminal connection, send more characters for redrawing
 set ttyfast
 
-" disable arrow keys, for Nadia ;)
+" disable arrow keys
 noremap <Up> <NOP>
 noremap <Down> <NOP>
 noremap <Left> <NOP>
@@ -173,9 +204,13 @@ function! Preserve(command)
 endfunction
 
 " Removes trailing whitespace on save
-autocmd BufWritePre .vimrc,Gemfile,Rakefile,*.{js,rb,ru,html,erl,erb} :call Preserve("%s/\\s\\+$//e")
+autocmd BufWritePre .vimrc,Gemfile,Rakefile,*.{js,jsx,rb,ru,html,erl,erb} :call Preserve("%s/\\s\\+$//e")
 
 " Reset CommandT cache when regaining focus or writing to a file
 autocmd FocusGained * :CommandTFlush
 autocmd BufWritePost * :CommandTFlush
+
+" Allow editing crontabs
+" http://stackoverflow.com/questions/15395479/why-ive-got-no-crontab-entry-on-os-x-when-using-vim
+autocmd FileType crontab setlocal nowritebackup
 
