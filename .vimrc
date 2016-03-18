@@ -27,6 +27,13 @@ Plugin 'exu/pgsql.vim'
 " Javascript
 Plugin 'pangloss/vim-javascript'
 
+" JSX
+Plugin 'mxw/vim-jsx'
+let g:jsx_ext_required = 0
+
+" Coffeescript
+Plugin 'kchmck/vim-coffee-script'
+
 " Ruby text objects
 Plugin 'kana/vim-textobj-user'
 Plugin 'nelstrom/vim-textobj-rubyblock'
