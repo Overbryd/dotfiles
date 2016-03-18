@@ -44,6 +44,9 @@ Plugin 'elixir-lang/vim-elixir'
 " Easy quoting with the surround plugin
 Plugin 'tpope/vim-surround'
 
+" Insert or delete brackets, parens, quotes in pair
+Plugin 'jiangmiao/auto-pairs'
+
 " Ag file searching
 Plugin 'rking/ag.vim'
 " search in all files including gitignore
