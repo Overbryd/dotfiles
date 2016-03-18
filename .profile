@@ -1,6 +1,6 @@
 export RBENV_ROOT="$HOME/.rbenv"
 export RBENV_BUILD_ROOT="$RBENV_ROOT/sources"
-export PATH="$RBENV_ROOT/bin:$PATH"
+export PATH="$RBENV_ROOT/bin:./node_modules/.bin:$PATH"
 eval "$(rbenv init -)"
 alias l="ls -Glah"
 alias g="git"
@@ -43,11 +43,13 @@ function rbenv-prompt {
     echo " $version@$gemset"
   fi
 }
-export red=$(tput setaf 1)
-export green=$(tput setaf 2)
-export yellow=$(tput setaf 3)
-export bold=$(tput bold)
-export reset=$(tput sgr0)
+if [[ $TERM != "" ]]; then
+  export red=$(tput setaf 1)
+  export green=$(tput setaf 2)
+  export yellow=$(tput setaf 3)
+  export bold=$(tput bold)
+  export reset=$(tput sgr0)
+fi
 export PROMPT_DIRTRIM=1
 export PS1="\[$yellow\]\$(git-prompt)\[$red\]\$(rbenv-prompt)\n\[$reset\]\w: "
 
@@ -58,12 +60,8 @@ shopt -s nocaseglob
 export HISTCONTROL=ignoreboth
 export HISTSIZE=20000
 
-# Name the current tab after the current directory
-function name-tab {
-  printf "\e]1;%s\a" "${PWD##*/}"
-}
-export PROMPT_COMMAND="history -a; name-tab; $PROMPT_COMMAND" # preserve other PROMPT_COMMAND stuff!
 shopt -s histappend
+export PROMPT_COMMAND="$PROMPT_COMMAND; history -a; history -n" # preserve other PROMPT_COMMAND stuff!
 
 # Start an HTTP server from a directory, optionally specifying the port
 function server() {
@@ -90,10 +88,26 @@ function mirror-website() {
     $url
 }
 
-# bash-completion installed via homebrew
-if [ -f "$(brew --prefix)/share/bash-completion/bash_completion" ]; then
-  . $(brew --prefix)/share/bash-completion/bash_completion
-fi
+# Put my computer to sleep in X minutes
+function sleep-in() {
+  local minutes=$1
+  if [ -z "$minutes" ]; then
+    echo "Usage: sleep-in <minutes>"
+  else
+    local datetime=`date -v+${minutes}M +"%m/%d/%y %H:%M:%S"`
+    echo "Scheduling sleep at $datetime"
+    sudo pmset schedule sleep "$datetime"
+  fi
+}
+
+# Selectively load bash completions for better performance
+function load-bash-completion {
+  local file="$(brew --prefix)/etc/bash_completion.d/$1"
+  if [ -f $file ]; then
+    . $file
+  fi
+}
+load-bash-completion "git-completion.bash"
 
 # Heroku Toolbelt
 export PATH="/usr/local/heroku/bin:$PATH"
