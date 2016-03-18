@@ -21,6 +21,9 @@ Plugin 'tpope/vim-repeat'
 " Ruby
 Plugin 'vim-ruby/vim-ruby'
 
+" pgsql
+Plugin 'exu/pgsql.vim'
+
 " Javascript
 Plugin 'pangloss/vim-javascript'
 
