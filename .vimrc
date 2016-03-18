@@ -64,6 +64,9 @@ Plugin 'msanders/snipmate.vim'
 " comment stuff in/out with gc<motion>
 Plugin 'tpope/vim-commentary'
 
+" collect programming metrics
+Plugin 'wakatime/vim-wakatime'
+
 call vundle#end()
 filetype plugin indent on
 set number
