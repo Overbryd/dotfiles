@@ -111,8 +111,16 @@ set norelativenumber
 syntax on
 colorscheme Tomorrow-Night
 
+" disable netrw banner
+let g:netrw_banner=0
 " disable netrw history
 let g:netrw_dirhistmax=0
+" netrw liststyle as tree
+let g:netrw_liststyle=3
+" open files on right
+let g:netrw_altv=1
+" open previews vertically
+let g:netrw_preview=1
 
 " make backspace work as expected
 set backspace=indent,eol,start

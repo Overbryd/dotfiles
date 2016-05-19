@@ -48,3 +48,5 @@
   amend = "commit -a --amend"
 [push]
 	default = upstream
+[status]
+	submoduleSummary = true

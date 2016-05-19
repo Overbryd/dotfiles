@@ -9,6 +9,11 @@ export EDITOR="vim"
 export PATH="$HOME/bin:$PATH"
 export LC_ALL=en_US.UTF-8
 export LANG=en_US.UTF-8
+export HOMEBREW_GITHUB_API_TOKEN=9d9f01f0d6cf2214fe951cc95f9d79872fbd5499
+
+# ansible configuration, used at Betterplace
+export ANSIBLE_REMOTE_USER=lukas.rieder
+export ANSIBLE_HOST_KEY_CHECKING=False
 
 # if we are in a tmate session, alias tmux as tmate
 if [[ $TMUX =~ tmate ]]; then alias tmux=tmate; fi
@@ -100,14 +105,21 @@ function sleep-in() {
   fi
 }
 
+# Open conflicts at once, setting the search pattern to <<<<<<< in order to cycle through them pressing 'n'
+function editconflicts() { 
+  vim +/"<<<<<<<" `git diff --name-only --diff-filter=U | xargs`
+}
+
 # Selectively load bash completions for better performance
-function load-bash-completion {
+function load-bash-completion() {
   local file="$(brew --prefix)/etc/bash_completion.d/$1"
-  if [ -f $file ]; then
-    . $file
+  if [ -f "$file" ]; then
+    . "$file"
   fi
 }
-load-bash-completion "git-completion.bash"
+. "$(brew --prefix)/etc/bash_completion"
+# load-bash-completion "git-completion.bash"
+# load-bash-completion "ssh"
 
 # Heroku Toolbelt
 export PATH="/usr/local/heroku/bin:$PATH"
