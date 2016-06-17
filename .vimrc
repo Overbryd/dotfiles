@@ -34,6 +34,9 @@ let g:jsx_ext_required = 0
 " Coffeescript
 Plugin 'kchmck/vim-coffee-script'
 
+" Slim templates
+Plugin 'slim-template/vim-slim'
+
 " Ruby text objects
 Plugin 'kana/vim-textobj-user'
 Plugin 'nelstrom/vim-textobj-rubyblock'
@@ -109,7 +112,7 @@ set softtabstop=2
 set expandtab
 set norelativenumber
 syntax on
-colorscheme Tomorrow-Night
+colorscheme paramount
 
 " disable netrw banner
 let g:netrw_banner=0
