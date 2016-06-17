@@ -12,6 +12,9 @@ export LANG=en_US.UTF-8
 export HOMEBREW_GITHUB_API_TOKEN=9d9f01f0d6cf2214fe951cc95f9d79872fbd5499
 export HOMEBREW_NO_ANALYTICS=1
 
+# working with docker now *sigh*
+eval `docker-machine env 2>/dev/null`
+
 # ansible configuration, used at Betterplace
 export ANSIBLE_REMOTE_USER=lukas.rieder
 export ANSIBLE_HOST_KEY_CHECKING=False
