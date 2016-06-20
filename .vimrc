@@ -44,6 +44,9 @@ Plugin 'nelstrom/vim-textobj-rubyblock'
 " Elixir
 Plugin 'elixir-lang/vim-elixir'
 
+" Dockerfile syntax
+" Plugin 'docker/docker' , {'rtp': '/contrib/syntax/vim/'}
+
 " Easy quoting with the surround plugin
 Plugin 'tpope/vim-surround'
 

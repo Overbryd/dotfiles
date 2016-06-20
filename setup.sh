@@ -33,6 +33,9 @@ brew tap caskroom/fonts
 # install Adobe Source Code Pro
 brew cask install font-source-code-pro
 
+# install direnv for project specific .envrc support
+brew install direnv
+
 # install rbenv
 if [ ! -d .rbenv ]; then git clone https://github.com/sstephenson/rbenv.git .rbenv; fi
 

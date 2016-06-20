@@ -127,3 +127,19 @@ function load-bash-completion() {
 
 # Heroku Toolbelt
 export PATH="/usr/local/heroku/bin:$PATH"
+
+# working with docker now *sigh*
+eval `docker-machine env 2>/dev/null`
+
+function docker-cleanup() {
+  docker rm `docker ps -a -q`
+  docker rmi `docker images | grep "^<none" | tr -s ' ' | cut -d' ' -f 3`
+}
+
+function docker-ip() {
+  docker inspect --format '{{ .NetworkSettings.IPAddress }}' "$@"
+}
+
+# project specific .envrc
+eval "$(direnv hook bash)"
+
