@@ -102,6 +102,9 @@ Plugin 'vim-scripts/Gundo'
 " Git integration, using it for git blame in a vertical split
 Plugin 'tpope/vim-fugitive'
 
+" Mainly working with bash .sh scripts
+let g:is_bash=1
+
 call vundle#end()
 
 filetype plugin indent on
