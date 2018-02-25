@@ -108,3 +108,7 @@ chflags nohidden ~/Library
 # Kill affected applications
 for app in Safari Finder Dock Mail SystemUIServer; do killall "$app" >/dev/null 2>&1; done
 # TODO: add default for date format weekday, month, day time
+
+# disable apple captive portal (seucrity issue)
+sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.captive.control Active -bool false
+

@@ -16,3 +16,5 @@ Thumbs.db
 
 .ssh/config
 .ssh/wooga_heroku_id_rsa
+
+.byebug_history

@@ -6,6 +6,23 @@ call vundle#begin()
 " Manage these plugins
 Plugin 'gmarik/Vundle.vim'
 
+" repeat hooks for other plugins
+Plugin 'tpope/vim-repeat'
+
+" OCaml
+Plugin 'def-lkb/ocp-indent-vim'
+let g:opamshare = substitute(system('opam config var share'),'\n$','','''')
+execute "set rtp+=" . g:opamshare . "/merlin/vim"
+execute "set rtp+=" . g:opamshare . "/merlin/vimbufsync"
+let g:syntastic_ocaml_checkers = ['merlin']
+" skip default merlin key bindings (e.g. I am using \t for Command-t)
+let g:merlin_disable_default_keybindings = 1
+" map them differently (:MerlinTypeOf* to ?, \n and \p are left default)
+autocmd FileType ocaml map  <buffer> ? :MerlinTypeOf<return>
+autocmd FileType ocaml vmap <buffer> ? :MerlinTypeOfSel<return>
+autocmd FileType ocaml map  <buffer> <LocalLeader>n :MerlinGrowEnclosing<return>
+autocmd FileType ocaml map  <buffer> <LocalLeader>p :MerlinShrinkEnclosing<return>
+
 " fuzzy search files
 Plugin 'wincent/command-t'
 let g:CommandTMatchWindowReverse=1
@@ -14,12 +31,33 @@ let g:CommandTMaxHeight=10
 let g:CommandTAcceptSelectionTabMap = '<CR>'
 let g:CommandTAcceptSelectionMap = '<C-CR>'
 let g:CommandTCancelMap = ['<ESC>', '<C-c>']
+let g:CommandTFileScanner='find'
+let g:CommandTWildIgnore=&wildignore . ",*/node_modules/*"
 
-" repeat hooks for other plugins
-Plugin 'tpope/vim-repeat'
+" Testing
+Plugin 'janko-m/vim-test'
+map <Leader>s :TestNearest<CR>
+" map <Leader>f :TestFile<CR>
 
 " Ruby
+" Load system ruby for vim (avoid JRuby slowdowns)
+let g:ruby_path=system('which -a ruby | tail -n1')
+" Ruby file type support
 Plugin 'vim-ruby/vim-ruby'
+" workaround slow ruby file handling
+if !empty(matchstr($MY_RUBY_HOME, 'jruby'))
+  let g:ruby_path = join(split(glob($MY_RUBY_HOME.'/lib/ruby/*.*')."\n".glob($MY_RUBY_HOME.'/lib/rubysite_ruby/*'),"\n"),',')
+endif
+" splitjoin.vim
+Plugin 'AndrewRadev/splitjoin.vim'
+" Run RSpec tests from within vim
+" Plugin 'thoughtbot/vim-rspec'
+" map <Leader>s :call RunNearestSpec()<CR>
+" map <Leader>f :call RunCurrentSpecFile()<CR>
+" let g:rspec_command = "!`test -x bin/rspec && printf bin/rspec || printf rspec` --no-profile {spec}"
+
+" Crystal
+Plugin 'rhysd/vim-crystal'
 
 " pgsql
 Plugin 'exu/pgsql.vim'
@@ -33,6 +71,10 @@ let g:jsx_ext_required = 0
 
 " Coffeescript
 Plugin 'kchmck/vim-coffee-script'
+let coffee_lint_options = '-f $HOME/.coffeelint.json'
+
+" GraphQL
+Plugin 'jparise/vim-graphql'
 
 " Slim templates
 Plugin 'slim-template/vim-slim'
@@ -43,6 +85,13 @@ Plugin 'nelstrom/vim-textobj-rubyblock'
 
 " Elixir
 Plugin 'elixir-lang/vim-elixir'
+Plugin 'mhinz/vim-mix-format'
+" Do not automatically format on saving.
+let g:mix_format_on_save = 0
+" Silence errors
+let g:mix_format_silent_errors = 1
+" <Leader>f to format
+map <Leader>f :MixFormat<CR>
 
 " Dockerfile syntax
 " Plugin 'docker/docker' , {'rtp': '/contrib/syntax/vim/'}
@@ -84,7 +133,7 @@ Plugin 'scrooloose/syntastic'
 let g:syntastic_aggregate_errors = 1
 let g:syntastic_always_populate_loc_list = 1
 let g:syntastic_auto_loc_list = 1
-let g:syntastic_check_on_open = 1
+let g:syntastic_check_on_open = 0
 let g:syntastic_check_on_wq = 0
 set statusline+=%#warningmsg#
 set statusline+=%{SyntasticStatuslineFlag()}
@@ -143,8 +192,9 @@ runtime macros/matchit.vim
 " show hard tabs and trailing spaces
 set list listchars=tab:»·,trail:·
 
-" no vertical line
-set fillchars=
+" use a vertical line at 100 column width
+" set fillchars=
+set cc=100
 
 " allow incremental search and highlight results
 set incsearch
@@ -190,10 +240,10 @@ set synmaxcol=160
 set ttyfast
 
 " disable arrow keys
-noremap <Up> <NOP>
-noremap <Down> <NOP>
-noremap <Left> <NOP>
-noremap <Right> <NOP>
+" noremap <Up> <NOP>
+" noremap <Down> <NOP>
+" noremap <Left> <NOP>
+" noremap <Right> <NOP>
 
 " remap close buffer to the OSX default for close window
 noremap <D-w> <C-w>q
@@ -221,7 +271,7 @@ function! Preserve(command)
 endfunction
 
 " Removes trailing whitespace on save
-autocmd BufWritePre .vimrc,Gemfile,Rakefile,*.{js,jsx,rb,ru,html,erl,erb} :call Preserve("%s/\\s\\+$//e")
+autocmd BufWritePre .vimrc,Gemfile,Rakefile,*.{js,jsx,rb,ru,html,erl,erb,ex,exs} :call Preserve("%s/\\s\\+$//e")
 
 " Reset CommandT cache when regaining focus or writing to a file
 autocmd FocusGained * :CommandTFlush

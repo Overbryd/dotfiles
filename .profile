@@ -12,8 +12,12 @@ export LANG=en_US.UTF-8
 export HOMEBREW_GITHUB_API_TOKEN=9d9f01f0d6cf2214fe951cc95f9d79872fbd5499
 export HOMEBREW_NO_ANALYTICS=1
 
-# working with docker now *sigh*
-eval `docker-machine env 2>/dev/null`
+# used to install/use go packages
+export GOPATH="$HOME/.gopath"
+export PATH="$GOPATH/bin:$PATH"
+
+# add escripts (elixir scripts) to PATH
+export PATH="/Users/lukas/.mix/escripts:$PATH"
 
 # ansible configuration, used at Betterplace
 export ANSIBLE_REMOTE_USER=lukas.rieder
@@ -60,7 +64,7 @@ if [[ $TERM != "" ]]; then
   export reset=$(tput sgr0)
 fi
 export PROMPT_DIRTRIM=1
-export PS1="\[$yellow\]\$(git-prompt)\[$red\]\$(rbenv-prompt)\n\[$reset\]\w: "
+#export PS1="\[$yellow\]\$(git-prompt)\[$red\]\$(rbenv-prompt)\n\[$reset\]\w: "
 
 # Case-insensitive globbing (used in pathname expansion)
 shopt -s nocaseglob
@@ -70,7 +74,10 @@ export HISTCONTROL=ignoreboth
 export HISTSIZE=20000
 
 shopt -s histappend
-export PROMPT_COMMAND="$PROMPT_COMMAND; history -a; history -n" # preserve other PROMPT_COMMAND stuff!
+if [ "x$PROMPT_COMMAND" != "x" ]; then
+  export PROMPT_COMMAND="$PROMPT_COMMAND;"
+fi
+export PROMPT_COMMAND="$PROMPT_COMMAND history -a; history -n" # preserve other PROMPT_COMMAND stuff!
 
 # Start an HTTP server from a directory, optionally specifying the port
 function server() {
@@ -128,18 +135,37 @@ function load-bash-completion() {
 # Heroku Toolbelt
 export PATH="/usr/local/heroku/bin:$PATH"
 
-# working with docker now *sigh*
-eval `docker-machine env 2>/dev/null`
-
 function docker-cleanup() {
   docker rm `docker ps -a -q`
   docker rmi `docker images | grep "^<none" | tr -s ' ' | cut -d' ' -f 3`
+  docker volume prune -f
 }
 
 function docker-ip() {
   docker inspect --format '{{ .NetworkSettings.IPAddress }}' "$@"
 }
 
+function print-kube-secrets() {
+  for file in $@; do
+    echo "${file}:"
+    yaml2json < $file | jq '[.select(.type == "Secret") | .data | to_entries[] | .value = (.value | @base64d)] | from_entries'
+  done
+}
+
 # project specific .envrc
 eval "$(direnv hook bash)"
 
+# better bundle open, that changes current directory
+function bundle-open() {
+  (cd $($(which bundle) show $@) && $EDITOR .)
+}
+
+# The next line updates PATH for the Google Cloud SDK.
+if [ -f /usr/local/google-cloud-sdk/path.bash.inc ]; then
+  source '/usr/local/google-cloud-sdk/path.bash.inc'
+fi
+
+# The next line enables shell command completion for gcloud.
+if [ -f /usr/local/google-cloud-sdk/completion.bash.inc ]; then
+  source '/usr/local/google-cloud-sdk/completion.bash.inc'
+fi
