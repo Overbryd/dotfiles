@@ -71,7 +71,7 @@ shopt -s nocaseglob
 
 # Long history without duplicates, flush after every command
 export HISTCONTROL=ignoreboth
-export HISTSIZE=20000
+export HISTSIZE=1000000
 
 shopt -s histappend
 if [ "x$PROMPT_COMMAND" != "x" ]; then
