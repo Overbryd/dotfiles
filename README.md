@@ -19,7 +19,7 @@ The Makefile contains sections for installing \*nix command line utilities, macO
 
     .
     ├── Makefile        # This makefile controls all sections of this project
-    ├── bootstrap.sh    # 0-100 bootstrap script for a new freshly installed Mac
+    ├── bootstrap.sh    # 0-100 bootstrap script for a new freshly installed Mac
     ├── .gitattributes  # 
     ├── .gitconfig      # colorful git config, including aliases
     ├── .gitignore      # general gitignore
