@@ -213,8 +213,8 @@ set smartcase
 set nofoldenable
 
 " directories for backup, tmp and swp files
-set backupdir=~/.vimtmp/backup
-set directory=~/.vimtmp/swap
+set backupdir=~/.vim/tmp/backup
+set directory=~/.vim/tmp/swap
 
 " save an undofile to be able to undo changes after closing files
 set undofile
