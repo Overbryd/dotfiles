@@ -16,6 +16,7 @@ Enter the `~/dotfiles` directory, make changes and make it:
 The Makefile contains sections for installing \*nix command line utilities, macOS applications, macOS settings and maintaing specific configurations.
 
 ## Contents
+
     .
     ├── Makefile        # This makefile controls all sections of this project
     ├── bootstrap.sh    # 0-100 bootstrap script for a new freshly installed Mac
@@ -30,4 +31,4 @@ The Makefile contains sections for installing \*nix command line utilities, macO
     ├── decrypt.sh      # decrypt sensitive files and put them in place
     ├── encrypt.sh      # simple wrapper to encrypt sensitive files for storage
     ├── Makefile        # this Makefile controls all sections of this project
-    └── bootstrap.sh    # 0-100 bootstrap script for a new freshly installed Mac
+    └── bootstrap.sh    # 0-100 bootstrap script for a new freshly installed Mac    
