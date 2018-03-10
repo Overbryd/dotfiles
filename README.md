@@ -1,4 +1,9 @@
 # Overbryd's dotfiles
+
+```
+curl https://raw.githubusercontent.com/Overbryd/dotfiles/master/bootstrap.sh | sh
+```
+
     .
     ├── .gitattributes  # 
     ├── .gitconfig      # colorful git config, including aliases
