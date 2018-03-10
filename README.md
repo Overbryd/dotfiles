@@ -32,3 +32,12 @@ The Makefile contains sections for installing \*nix command line utilities, macO
     ├── encrypt.sh      # simple wrapper to encrypt sensitive files for storage
     ├── Makefile        # this Makefile controls all sections of this project
     └── bootstrap.sh    # 0-100 bootstrap script for a new freshly installed Mac    
+
+## Credits
+
+This seletion of dotfiles and system settings would not be possible with the great examples provided by:
+
+* https://github.com/paulirish/dotfiles
+* https://github.com/why-jay/osx-init
+* http://dotfiles.github.io
+* https://www.stackoverflow.com/ :)
