@@ -29,9 +29,7 @@ The Makefile contains sections for installing \*nix command line utilities, macO
     ├── .tm_properties  # configuration for TextMate
     ├── .vimrc          # a great .vimrc with comments
     ├── decrypt.sh      # decrypt sensitive files and put them in place
-    ├── encrypt.sh      # simple wrapper to encrypt sensitive files for storage
-    ├── Makefile        # this Makefile controls all sections of this project
-    └── bootstrap.sh    # 0-100 bootstrap script for a new freshly installed Mac    
+    └── encrypt.sh      # simple wrapper to encrypt sensitive files for storage
 
 ## Credits
 
@@ -41,5 +39,6 @@ This seletion of dotfiles and system settings would not be possible with the gre
 * https://github.com/matijs/dotfiles
 * https://github.com/paulirish/dotfiles
 * https://github.com/why-jay/osx-init
+* https://github.com/simonmcc/osx-bootstrap/blob/master/osx-user-defaults.sh
 * http://dotfiles.github.io
 * https://www.stackoverflow.com/ :)
