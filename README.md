@@ -1,7 +1,7 @@
 # Overbryd's dotfiles
 
 ```
-curl https://raw.githubusercontent.com/Overbryd/dotfiles/master/bootstrap.sh | sh
+curl https://raw.githubusercontent.com/Overbryd/dotfiles/master/bootstrap.sh | bash
 ```
 
     .
