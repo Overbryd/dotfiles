@@ -8,6 +8,7 @@ all: \
 	vim \
 	tmux \
 	dotfiles \
+	config \
 	defaults
 
 brew: \
@@ -244,6 +245,12 @@ defaults-NSGlobalDomain:
 	# Finder: show all filename extensions
 	defaults write NSGlobalDomain AppleShowAllExtensions -bool true
 
+config: \
+	config-ssh
+
+config-ssh:
+	# Store the ssh-key passphrase in the keychain
+	ssh-add -K ~/.ssh/id_rsa
 
 dotfiles: $(DOTFILES)
 
