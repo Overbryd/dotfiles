@@ -37,6 +37,8 @@ The Makefile contains sections for installing \*nix command line utilities, macO
 
 This seletion of dotfiles and system settings would not be possible with the great examples provided by:
 
+* https://github.com/mathiasbynens/dotfiles
+* https://github.com/matijs/dotfiles
 * https://github.com/paulirish/dotfiles
 * https://github.com/why-jay/osx-init
 * http://dotfiles.github.io
