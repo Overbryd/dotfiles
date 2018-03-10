@@ -78,7 +78,7 @@ casks: \
 	# adium is a nice chat client
 	brew cask install adium
 	# I do some JRuby development where java comes in handy :)
-	brew cask install java8
+	brew cask install java
 	# Skype is still used by many of my friends :)
 	brew cask install skype
 	# VLC an excellent video player
