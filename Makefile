@@ -50,6 +50,10 @@ brew: \
 	brew install jq --HEAD
 	# pipeviewer allows to display throughput/eta information on unix pipes
 	brew install pv
+	# pstree is nice to look at
+	brew install pstree
+	# watch is great for building an overview on running stuff
+	brew install watch
 
 /usr/local/bin/brew:
 	ruby -e "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
@@ -105,11 +109,15 @@ vim-itself:
 	# newer version of vim
 	brew install vim --with-override-system-vi
 	# create vim directories
-	mkdir -p .vim/tmp/{backup,swap,undo}
+	mkdir -p ~/.vim/tmp/{backup,swap,undo}
 
 vim-plugins: \
 	~/.vim/bundle/Vundle.vim
-	vim +PluginInstall +qall
+	# disable colorscheme for installing plugins to a temporary .vimrc
+	sed 's/colorscheme/"colorscheme/' .vimrc > /tmp/.vimrc
+	# install plugins with temporary vimrc
+	vim -u /tmp/.vimrc +PluginInstall +qall
+	-rm /tmp/.vimrc
 
 # install vundle, a vim package manager
 ~/.vim/bundle/Vundle.vim:
@@ -127,18 +135,14 @@ tmux: \
 	git clone --depth=10 https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
 
 defaults: \
-	defaults-dock
+	defaults-Dock \
+	defaults-NSGlobalDomain \
+	defaults-Calendar
 	# Show remaining battery time; hide percentage
 	defaults write com.apple.menuextra.battery ShowPercent -string "NO"
 	defaults write com.apple.menuextra.battery ShowTime -string "YES"
 	# Enable AirDrop over Ethernet and on unsupported Macs running Lion
 	defaults write com.apple.NetworkBrowser BrowseAllInterfaces -bool true
-	# Disable disk image verification
-	# defaults write com.apple.frameworks.diskimages skip-verify -bool true
-	# defaults write com.apple.frameworks.diskimages skip-verify-locked -bool true
-	# defaults write com.apple.frameworks.diskimages skip-verify-remote -bool true
-	# Disable the “Are you sure you want to open this application?” dialog
-	# defaults write com.apple.LaunchServices LSQuarantine -bool false
 	# Automatically open a new Finder window when a volume is mounted
 	defaults write com.apple.frameworks.diskimages auto-open-ro-root -bool true
 	defaults write com.apple.frameworks.diskimages auto-open-rw-root -bool true
@@ -185,7 +189,7 @@ defaults: \
 	# Kill affected applications
 	for app in Safari Finder Mail SystemUIServer; do killall "$$app" >/dev/null 2>&1; done
 
-defaults-dock:
+defaults-Dock:
 	# Enable the 2D Dock
 	defaults write com.apple.dock no-glass -bool true
 	# Automatically hide and show the Dock
@@ -203,9 +207,9 @@ defaults-dock:
 	# clean up right side (persistent)
 	-defaults delete com.apple.dock persistent-others
 	# and add these folders
-	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":3, "file-label":"Dropbox", "file-data":{"_CFURLString":"file:///Users/lukas/Dropbox/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
-	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":3, "file-label":"Desktop", "file-data":{"_CFURLString":"file:///Users/lukas/Desktop/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
-	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":3, "file-label":"Downloads", "file-data":{"_CFURLString":"file:///Users/lukas/Downloads/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
+	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Dropbox", "file-data":{"_CFURLString":"file:///Users/lukas/Dropbox/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
+	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Desktop", "file-data":{"_CFURLString":"file:///Users/lukas/Desktop/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
+	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Downloads", "file-data":{"_CFURLString":"file:///Users/lukas/Downloads/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
 	# restart dock
 	killall Dock
 
@@ -226,8 +230,8 @@ defaults-NSGlobalDomain:
 	defaults write NSGlobalDomain ApplePressAndHoldEnabled -bool false
 	# Set a blazingly fast keyboard repeat rate
 	defaults write NSGlobalDomain KeyRepeat -int 0
-	# Disable auto-correct
-	defaults write NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool false
+	# Enable auto-correct
+	defaults write NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool true
 	# Disable window animations
 	defaults write NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
 	# Increase window resize speed for Cocoa applications
@@ -244,6 +248,16 @@ defaults-NSGlobalDomain:
 	defaults write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
 	# Finder: show all filename extensions
 	defaults write NSGlobalDomain AppleShowAllExtensions -bool true
+
+defaults-Calendar:
+	# Show week numbers (10.8 only)
+	defaults write com.apple.iCal "Show Week Numbers" -bool true
+	# Show 7 days
+	defaults write com.apple.iCal "n days of week" -int 7
+	# Week starts on monday
+	defaults write com.apple.iCal "first day of week" -int 1
+	# Show event times
+	defaults write com.apple.iCal "Show time in Month View" -bool true
 
 config: \
 	config-ssh

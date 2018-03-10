@@ -154,6 +154,9 @@ Plugin 'tpope/vim-fugitive'
 " Mainly working with bash .sh scripts
 let g:is_bash=1
 
+" Install colorschema paramount
+Plugin 'owickstrom/vim-colors-paramount'
+
 call vundle#end()
 
 filetype plugin indent on
