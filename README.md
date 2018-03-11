@@ -8,12 +8,27 @@ On a new mac, open a Terminal and run:
 
 ## Maintenance
 
-Enter the `~/dotfiles` directory, make changes and make it:
+Enter the `~/dotfiles` directory, make changes and `make` it:
 
     cd ~/dotfiles
     make
 
 The Makefile contains sections for installing \*nix command line utilities, macOS applications, macOS settings and maintaing specific configurations.
+
+So you can also only re-make a section of the project, for example the macOS dock settings:
+
+    cd ~/dotfiles
+    make defaults-Dock
+
+Or only rebuild your vim:
+
+    cd ~/dotfiles
+    make vim
+
+Or upgrade all installed packages:
+
+    cd ~/dotfiles
+    make brew
 
 ## Contents
 
@@ -33,7 +48,7 @@ The Makefile contains sections for installing \*nix command line utilities, macO
 
 ## Credits
 
-This seletion of dotfiles and system settings would not be possible with the great examples provided by:
+This seletion of dotfiles and system settings would not be possible without the great examples provided by:
 
 * https://github.com/mathiasbynens/dotfiles
 * https://github.com/matijs/dotfiles
