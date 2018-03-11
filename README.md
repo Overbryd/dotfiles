@@ -4,7 +4,9 @@
 
 On a new mac, open a Terminal and run:
 
-    curl https://raw.githubusercontent.com/Overbryd/dotfiles/master/bootstrap.sh | bash
+    curl -O https://raw.githubusercontent.com/Overbryd/dotfiles/master/bootstrap.sh
+    chmod +x bootstrap.sh
+    ./bootstrap.sh
 
 ## Maintenance
 
