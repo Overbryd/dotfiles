@@ -185,6 +185,8 @@ defaults: \
 	chflags nohidden ~/Library
 	# disable apple captive portal (seucrity issue)
 	sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.captive.control Active -bool false
+	# setup Quad9 DNS
+	networksetup -setdnsservers Wi-Fi 9.9.9.9
 	# Keep this bit last
 	# Kill affected applications
 	for app in Safari Finder Mail SystemUIServer; do killall "$$app" >/dev/null 2>&1; done
@@ -226,8 +228,8 @@ defaults-NSGlobalDomain:
 	defaults write NSGlobalDomain AppleFontSmoothing -int 2
 	# Disable menu bar transparency
 	defaults write NSGlobalDomain AppleEnableMenuBarTransparency -bool false
-	# Disable press-and-hold for keys in favor of key repeat
-	defaults write NSGlobalDomain ApplePressAndHoldEnabled -bool false
+	# Enable press-and-hold for keys
+	defaults write NSGlobalDomain ApplePressAndHoldEnabled -bool true
 	# Set a blazingly fast keyboard repeat rate
 	defaults write NSGlobalDomain KeyRepeat -int 0
 	# Enable auto-correct
