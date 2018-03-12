@@ -262,9 +262,11 @@ defaults-NSGlobalDomain:
 	# Disable menu bar transparency
 	defaults write NSGlobalDomain AppleEnableMenuBarTransparency -bool false
 	# Enable press-and-hold for keys
-	defaults write NSGlobalDomain ApplePressAndHoldEnabled -bool true
-	# Set a blazingly fast keyboard repeat rate
-	defaults write NSGlobalDomain KeyRepeat -int 0
+	defaults write NSGlobalDomain ApplePressAndHoldEnabled -bool false
+	# Set a blazingly fast keyboard repeat rate (1 = fastest for macOS high sierra, older versions support 0)
+	defaults write NSGlobalDomain KeyRepeat -int 1
+	# Decrase the time to initially trigger key repeat
+	defaults write NSGlobalDomain InitialKeyRepeat -int 10
 	# Enable auto-correct
 	defaults write NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool true
 	# Disable window animations
