@@ -5,6 +5,7 @@ all: \
 	brew \
 	casks \
 	bash \
+	ruby \
 	vim \
 	tmux \
 	dotfiles \
@@ -92,6 +93,8 @@ casks: \
 	brew cask install textmate
 	# Flux reduces blue/green colors on the display spectrum and helps me sleep better
 	brew cask install flux
+	# slack is my preferred team chat
+	brew cask install slack
 
 bash:
 	# newer version of bash
@@ -100,6 +103,34 @@ bash:
 	# change shell to homebrew bash
 	echo "/usr/local/bin/bash" | sudo tee -a /etc/shells
 	chsh -s /usr/local/bin/bash
+
+ruby: \
+	~/.rbenv \
+	~/.rbenv/plugins/ruby-build \
+	~/.rbenv/plugins/rbenv-update \
+	~/.rbenv/plugins/rbenv-readline \
+	~/.rbenv/plugins/rbenv-gemset
+
+# rbenv is an amazing ruby version manager, simple, straightforward, local
+~/.rbenv:
+	git clone https://github.com/rbenv/rbenv.git ~/.rbenv
+	cd ~/.rbenv && src/configure && make -C src
+
+# ruby-build is a repository hosting all kinds of ruby versions to install
+~/.rbenv/plugins/ruby-build:
+	git clone https://github.com/rbenv/ruby-build.git ~/.rbenv/plugins/ruby-build
+
+# rbenv-update allows updating rbenv plugins easily
+~/.rbenv/plugins/rbenv-update:
+	git clone https://github.com/rkh/rbenv-update.git ~/.rbenv/plugins/rbenv-update
+
+# rbenv-readline does the right thing when it comes to linking a brew installed readline to ruby
+~/.rbenv/plugins/rbenv-readline:
+	git clone git://github.com/tpope/rbenv-readline.git ~/.rbenv/plugins/rbenv-readline
+
+# rbenv-gemset allows managing project specific set of gems
+~/.rbenv/plugins/rbenv-gemset:
+	git clone git://github.com/jf/rbenv-gemset.git ~/.rbenv/plugins/rbenv-gemset
 
 vim: \
 	vim-itself \
