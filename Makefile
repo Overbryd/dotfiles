@@ -118,6 +118,8 @@ vim-plugins: \
 	# install plugins with temporary vimrc
 	vim -u /tmp/.vimrc +PluginInstall +qall
 	-rm /tmp/.vimrc
+	# post installation steps of command-t
+	cd ~/.vim/bundle/command-t/ruby/command-t/ext/command-t && ruby extconf.rb && make
 
 # install vundle, a vim package manager
 ~/.vim/bundle/Vundle.vim:
