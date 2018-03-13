@@ -95,6 +95,8 @@ casks: \
 	brew cask install flux
 	# slack is my preferred team chat
 	brew cask install slack
+	# launchbar is my preferred app launcher/clipboard history, calculator and goto mac utility
+	brew cask install launchbar
 
 bash:
 	# newer version of bash
