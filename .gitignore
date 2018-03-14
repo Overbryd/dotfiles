@@ -10,11 +10,5 @@ Thumbs.db
 .Spotlight-V100
 .Trashes
 
-# vim plugins handled by vundle
-.vim/bundle
-!.vim/bundle/vundle
-
-.ssh/config
-.ssh/wooga_heroku_id_rsa
-
+# Ruby byebug debugger history files
 .byebug_history
