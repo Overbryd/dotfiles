@@ -9,7 +9,6 @@ all: \
 	vim \
 	tmux \
 	dotfiles \
-	config \
 	defaults
 
 brew: \
@@ -160,14 +159,7 @@ vim-plugins: \
 
 tmux: \
 	~/.tmux.conf \
-	~/.tmux/plugins/tpm
 	brew install tmux
-	# install plugins
-	~/.tmux/plugins/tpm/bin/install_plugins
-
-~/.tmux/plugins/tpm:
-	# install tmux plugin manager
-	git clone --depth=10 https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
 
 defaults: \
 	defaults-Dock \
@@ -266,9 +258,9 @@ defaults-NSGlobalDomain:
 	# Enable press-and-hold for keys
 	defaults write NSGlobalDomain ApplePressAndHoldEnabled -bool false
 	# Set a blazingly fast keyboard repeat rate (1 = fastest for macOS high sierra, older versions support 0)
-	defaults write NSGlobalDomain KeyRepeat -int 1
+	defaults write NSGlobalDomain KeyRepeat -int 2
 	# Decrase the time to initially trigger key repeat
-	defaults write NSGlobalDomain InitialKeyRepeat -int 10
+	defaults write NSGlobalDomain InitialKeyRepeat -int 15
 	# Enable auto-correct
 	defaults write NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool true
 	# Disable window animations
@@ -298,14 +290,14 @@ defaults-Calendar:
 	# Show event times
 	defaults write com.apple.iCal "Show time in Month View" -bool true
 
-config: \
-	config-ssh
-
-config-ssh:
-	# Store the ssh-key passphrase in the keychain
-	ssh-add -K ~/.ssh/id_rsa
-
 dotfiles: $(DOTFILES)
+
+dotfiles-ssh:
+	# Test that .ssh/config is decrypted (gpg has been setup)
+	grep "Host *" ~/dotfiles/.ssh/config
+	# Symlink .ssh/config
+	cd ~/.ssh && ln -sv ../dotfiles/.ssh/config .
+
 
 ~/.%:
 	cd ~ && ln -sv dotfiles/$(notdir $@) $@
