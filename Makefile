@@ -106,6 +106,8 @@ casks: \
 	brew cask install slack
 	# launchbar is my preferred app launcher/clipboard history, calculator and goto mac utility
 	brew cask install launchbar
+	# graphiql helps debugging graphql based apis
+	brew cask install graphiql
 
 bash:
 	# newer version of bash
