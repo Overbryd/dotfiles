@@ -20,4 +20,4 @@ softwareupdate -i "$PROD" -v
 
 # clone my dotfiles and make them
 git clone git@github.com:Overbryd/dotfiles.git ~/dotfiles
-make -C ~/dotfiles
+make -C ~/dotfiles bootstrap

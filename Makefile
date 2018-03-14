@@ -1,6 +1,7 @@
-EXCLUDED_DOTFILES := .git .gitattributes .gitignore .gitmodules
+EXCLUDED_DOTFILES := .git .gitattributes .gitignore .gitmodules .ssh
 DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 
+# everything, geared towards to be run for setup and maintenance
 all: \
 	brew \
 	casks \
@@ -10,6 +11,15 @@ all: \
 	tmux \
 	dotfiles \
 	defaults
+
+# bootstrap only, add one-time bootstrap tasks here
+# setups everything
+# restore .gnupg and thus decrypt the secrets from this repository
+# setup ssh config (relies on decrypted repository)
+bootstrap: \
+	all \
+	~/.gnupg \
+	~/.ssh/config
 
 brew: \
 	/usr/local/bin/brew
@@ -292,12 +302,16 @@ defaults-Calendar:
 
 dotfiles: $(DOTFILES)
 
-dotfiles-ssh:
+~/.ssh/config:
 	# Test that .ssh/config is decrypted (gpg has been setup)
 	grep "Host *" ~/dotfiles/.ssh/config
 	# Symlink .ssh/config
 	cd ~/.ssh && ln -sv ../dotfiles/.ssh/config .
 
+~/.gnupg:
+	# Ask where to get .gnupg from
+	@read -p "Where is .gnupg (from backup) located?" gnupg_source;
+	cp -v $$gnupg_source ~/.gnupg
 
 ~/.%:
 	cd ~ && ln -sv dotfiles/$(notdir $@) $@
