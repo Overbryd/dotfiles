@@ -35,6 +35,11 @@ function tmate-start {
   eval "$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')"
 }
 
+function tms {
+  local name=$(basename $PWD)
+  tmux new -s $name
+}
+
 # Fancy prompt
 function git-prompt {
   if (git status >/dev/null 2>&1); then
@@ -161,11 +166,9 @@ function bundle-open() {
 }
 
 # The next line updates PATH for the Google Cloud SDK.
-if [ -f /usr/local/google-cloud-sdk/path.bash.inc ]; then
-  source '/usr/local/google-cloud-sdk/path.bash.inc'
-fi
-
+source '/usr/local/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/path.bash.inc'
 # The next line enables shell command completion for gcloud.
-if [ -f /usr/local/google-cloud-sdk/completion.bash.inc ]; then
-  source '/usr/local/google-cloud-sdk/completion.bash.inc'
-fi
+source '/usr/local/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/completion.bash.inc'
+# Source kubectl bash completion (generated with `kubectl completion bash > ~/.kube/bash_completion`)
+source ~/.kube/bash_completion
+
