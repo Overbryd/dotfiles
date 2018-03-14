@@ -108,6 +108,10 @@ casks: \
 	brew cask install launchbar
 	# graphiql helps debugging graphql based apis
 	brew cask install graphiql
+	# sequel-pro is a great graphical MySQL client
+	brew cask install sequel-pro
+	# postico is a great graphical PostgreSQL client
+	brew cask install postico
 
 bash:
 	# newer version of bash
