@@ -37,7 +37,7 @@ function tmate-start {
 
 function tms {
   local name=$(basename $PWD)
-  tmux new -s $name
+  tmux new -s $name || tmux attach-session -t $name
 }
 
 # Fancy prompt
