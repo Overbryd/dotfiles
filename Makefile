@@ -10,7 +10,8 @@ all: \
 	vim \
 	tmux \
 	dotfiles \
-	defaults
+	defaults \
+	docker
 
 # bootstrap only, add one-time bootstrap tasks here
 # setups everything
@@ -321,4 +322,9 @@ dotfiles: $(DOTFILES)
 
 ~/.%:
 	cd ~ && ln -sv dotfiles/$(notdir $@) $@
+
+docker: ~/.docker/machine/machines/default
+
+~/.docker/machine/machines/default:
+	docker-machine create default --driver virtualbox --virtualbox-cpu-count "2" --virtualbox-hostonly-cidr "10.0.0.1/24" --virtualbox-memory "2048"
 
