@@ -1,4 +1,4 @@
-EXCLUDED_DOTFILES := .git .gitattributes .gitignore .gitmodules .ssh
+EXCLUDED_DOTFILES := .git .git-crypt .gitattributes .gitignore .gitmodules .ssh
 DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 
 # everything, geared towards to be run for setup and maintenance
@@ -326,6 +326,9 @@ dotfiles: $(DOTFILES)
 
 ~/.%:
 	cd ~ && ln -sv dotfiles/$(notdir $@) $@
+
+~/.kube/bash_completion:
+	kubectl completion bash > ~/.kube/bash_completion
 
 docker: ~/.docker/machine/machines/default
 
