@@ -56,8 +56,8 @@ source ~/.kube/bash_completion
 source "$(brew --prefix)/etc/bash_completion"
 
 # Aliases are managed here
-source .bash_aliases
+source ~/.bash_aliases
 
 # Functions are managed here
-source .bash_functions
+source ~/.bash_functions
 
