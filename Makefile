@@ -45,6 +45,8 @@ brew: \
 	brew install postgres 
 	# mysql
 	brew install mysql
+	# redis
+	brew install redis
 	# sed, stream editor, but replace mac os version
 	brew install gnu-sed --with-default-names
 	# erlang programming language
@@ -113,6 +115,8 @@ casks: \
 	brew cask install sequel-pro
 	# postico is a great graphical PostgreSQL client
 	brew cask install postico
+	# itsycal is a nice menu bar clock replacement that features a calendar with events from iCal
+	brew cask install itsycal
 
 bash:
 	# newer version of bash
