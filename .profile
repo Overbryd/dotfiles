@@ -24,7 +24,7 @@ export HOMEBREW_NO_ANALYTICS=1
 
 # setup a simple PROMPT/PS1
 export PROMPT_DIRTRIM=1
-export PS1="\n\W> "
+export PS1="\n\W$ "
 
 # Case-insensitive globbing (used in pathname expansion)
 shopt -s nocaseglob
