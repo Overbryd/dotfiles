@@ -1,13 +1,13 @@
 # PATH setup
 export PATH="$HOME/bin:$PATH"
-# add ruby gems/rbenv shims to PATH
-export PATH="$RBENV_ROOT/bin:$PATH"
 # add escripts (elixir scripts) to PATH
 export PATH="/Users/lukas/.mix/escripts:$PATH"
 
 # Rbenv setup
 export RBENV_ROOT="$HOME/.rbenv"
 export RBENV_BUILD_ROOT="$RBENV_ROOT/sources"
+# add ruby gems/rbenv shims to PATH
+export PATH="$RBENV_ROOT/bin:$PATH"
 eval "$(rbenv init -)"
 
 # vim all the things
