@@ -11,7 +11,8 @@ all: \
 	tmux \
 	dotfiles \
 	defaults \
-	docker
+        docker \
+        harder
 
 # bootstrap only, add one-time bootstrap tasks here
 # setups everything
@@ -70,6 +71,7 @@ brew: \
 
 /usr/local/bin/brew:
 	ruby -e "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+        brew analytics off
 
 casks: \
 	/usr/local/bin/brew
@@ -335,3 +337,17 @@ docker: ~/.docker/machine/machines/default
 ~/.docker/machine/machines/default:
 	docker-machine create default --driver virtualbox --virtualbox-cpu-count "2" --virtualbox-hostonly-cidr "10.0.0.1/24" --virtualbox-memory "2048"
 
+# Here is a comprehensive guide: https://github.com/drduh/macOS-Security-and-Privacy-Guide
+# The following settings implement some basic security measures
+harder:
+        # Enable the firewall
+        sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on
+        # Enable logging on the firewall
+        sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setloggingmode on
+        # Enable stealth mode (computer does not respond to PING or TCP connections on closed ports)
+        sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on
+        # Prevent built-in software as well as code-signed, downloaded software from being whitelisted automatically
+        sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsigned off
+        sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsignedapp off
+        # Restart the firewall (this should remain last)
+        -sudo pkill -HUP socketfilterfw
