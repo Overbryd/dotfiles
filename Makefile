@@ -11,8 +11,8 @@ all: \
 	tmux \
 	dotfiles \
 	defaults \
-        docker \
-        harder
+	docker \
+	harder
 
 # bootstrap only, add one-time bootstrap tasks here
 # setups everything
@@ -71,7 +71,7 @@ brew: \
 
 /usr/local/bin/brew:
 	ruby -e "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
-        brew analytics off
+	brew analytics off
 
 casks: \
 	/usr/local/bin/brew
@@ -119,6 +119,8 @@ casks: \
 	brew cask install postico
 	# itsycal is a nice menu bar clock replacement that features a calendar with events from iCal
 	brew cask install itsycal
+	# macdown is a nice markdown editor, I use it to write my articles/presentation scripts
+	brew cask install macdown
 
 bash:
 	# newer version of bash
@@ -340,14 +342,15 @@ docker: ~/.docker/machine/machines/default
 # Here is a comprehensive guide: https://github.com/drduh/macOS-Security-and-Privacy-Guide
 # The following settings implement some basic security measures
 harder:
-        # Enable the firewall
-        sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on
-        # Enable logging on the firewall
-        sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setloggingmode on
-        # Enable stealth mode (computer does not respond to PING or TCP connections on closed ports)
-        sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on
-        # Prevent built-in software as well as code-signed, downloaded software from being whitelisted automatically
-        sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsigned off
-        sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsignedapp off
-        # Restart the firewall (this should remain last)
-        -sudo pkill -HUP socketfilterfw
+	# Enable the firewall
+	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on
+	# Enable logging on the firewall
+	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setloggingmode on
+	# Enable stealth mode (computer does not respond to PING or TCP connections on closed ports)
+	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on
+	# Prevent built-in software as well as code-signed, downloaded software from being whitelisted automatically
+	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsigned off
+	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsignedapp off
+	# Restart the firewall (this should remain last)
+	-sudo pkill -HUP socketfilterfw
+
