@@ -68,6 +68,8 @@ brew: \
 	brew install pstree
 	# watch is great for building an overview on running stuff
 	brew install watch
+	# nmap is great for test and probing network related stuff
+	brew install nmap
 
 /usr/local/bin/brew:
 	ruby -e "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
