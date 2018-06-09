@@ -343,7 +343,7 @@ dotfiles: $(DOTFILES)
 	kubectl completion bash > ~/.kube/bash_completion
 
 docker:
-        brew cask install docker
+	brew cask install docker
 
 
 # Here is a comprehensive guide: https://github.com/drduh/macOS-Security-and-Privacy-Guide
