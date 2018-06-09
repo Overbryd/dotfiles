@@ -55,10 +55,6 @@ brew: \
 	brew install erlang
 	# elixir programming language
 	brew install elixir
-	# docker related tools
-	brew install docker
-	brew install docker-machine
-	brew install docker-compose
 	# handle amazon web services related stuff
 	brew install awscli
 	# handle json on the command line
