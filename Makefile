@@ -5,7 +5,7 @@ DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 all: \
 	brew \
 	casks \
-        fonts \
+	fonts \
 	bash \
 	ruby \
 	vim \
@@ -116,13 +116,13 @@ casks: \
 	brew cask install itsycal
 
 fonts: \
-        /usr/local/bin/brew
-        # tap homebrew-fonts to install freely available fonts
-        brew tap caskroom/fonts
-        # install IBM Plex, an excellent modern font (https://www.ibm.com/plex/)
-        brew cask install font-ibm-plex
-        # install Adobe Source Code Pro, an excellent mono space font for programming
-        brew cask install font-source-code-pro
+	/usr/local/bin/brew
+	# tap homebrew-fonts to install freely available fonts
+	brew tap caskroom/fonts
+	# install IBM Plex, an excellent modern font (https://www.ibm.com/plex/)
+	brew cask install font-ibm-plex
+	# install Adobe Source Code Pro, an excellent mono space font for programming
+	brew cask install font-source-code-pro
 
 bash:
 	# newer version of bash
