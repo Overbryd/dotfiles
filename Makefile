@@ -336,8 +336,7 @@ dotfiles: $(DOTFILES)
 ~/.kube/bash_completion:
 	kubectl completion bash > ~/.kube/bash_completion
 
-docker: ~/.docker/machine/machines/default
+docker:
+        brew cask install docker
 
-~/.docker/machine/machines/default:
-	docker-machine create default --driver virtualbox --virtualbox-cpu-count "2" --virtualbox-hostonly-cidr "10.0.0.1/24" --virtualbox-memory "2048"
 
