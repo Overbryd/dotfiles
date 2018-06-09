@@ -21,6 +21,8 @@ export LANG=en_US.UTF-8
 # prevent API throttling when installing/updating homebrew things
 export HOMEBREW_GITHUB_API_TOKEN=9d9f01f0d6cf2214fe951cc95f9d79872fbd5499
 export HOMEBREW_NO_ANALYTICS=1
+export HOMEBREW_NO_INSECURE_REDIRECT=1
+export HOMEBREW_CASK_OPTS=--require-sha
 
 # setup a simple PROMPT/PS1
 export PROMPT_DIRTRIM=1

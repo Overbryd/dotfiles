@@ -12,7 +12,8 @@ all: \
 	tmux \
 	dotfiles \
 	defaults \
-	docker
+	docker \
+	harder
 
 # bootstrap only, add one-time bootstrap tasks here
 # setups everything
@@ -68,9 +69,12 @@ brew: \
 	brew install pstree
 	# watch is great for building an overview on running stuff
 	brew install watch
+	# nmap is great for test and probing network related stuff
+	brew install nmap
 
 /usr/local/bin/brew:
 	ruby -e "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+	brew analytics off
 
 casks: \
 	/usr/local/bin/brew
@@ -114,6 +118,8 @@ casks: \
 	brew cask install postico
 	# itsycal is a nice menu bar clock replacement that features a calendar with events from iCal
 	brew cask install itsycal
+	# macdown is a nice markdown editor, I use it to write my articles/presentation scripts
+	brew cask install macdown
 
 fonts: \
 	/usr/local/bin/brew
@@ -339,4 +345,19 @@ dotfiles: $(DOTFILES)
 docker:
         brew cask install docker
 
+
+# Here is a comprehensive guide: https://github.com/drduh/macOS-Security-and-Privacy-Guide
+# The following settings implement some basic security measures
+harder:
+	# Enable the firewall
+	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on
+	# Enable logging on the firewall
+	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setloggingmode on
+	# Enable stealth mode (computer does not respond to PING or TCP connections on closed ports)
+	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on
+	# Prevent built-in software as well as code-signed, downloaded software from being whitelisted automatically
+	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsigned off
+	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsignedapp off
+	# Restart the firewall (this should remain last)
+	-sudo pkill -HUP socketfilterfw
 
