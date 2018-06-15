@@ -46,7 +46,10 @@
 	pick = "cherry-pick"
   contributors = "shortlog -n -s --no-merges"
   amend = "commit -a --amend"
+  staged = "diff --staged"
 [push]
 	default = upstream
 [status]
 	submoduleSummary = true
+[http]
+        cookiefile = /Users/lukas/.gitcookies
