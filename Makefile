@@ -116,6 +116,8 @@ casks: \
 	brew cask install itsycal
 	# macdown is a nice markdown editor, I use it to write my articles/presentation scripts
 	brew cask install macdown
+        # Dash gives your Mac instant offline access to 200+ API documentation sets.
+        brew cask install dash
 
 fonts: \
 	/usr/local/bin/brew
