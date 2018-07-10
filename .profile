@@ -2,6 +2,11 @@
 export PATH="$HOME/bin:$PATH"
 # add escripts (elixir scripts) to PATH
 export PATH="/Users/lukas/.mix/escripts:$PATH"
+# add brew version of curl to PATH
+export PATH="/usr/local/opt/curl/bin:$PATH"
+
+export GOPATH="$HOME/Projects/go"
+export PATH="$GOPATH/bin:$PATH"
 
 # Rbenv setup
 export RBENV_ROOT="$HOME/.rbenv"
