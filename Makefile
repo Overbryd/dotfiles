@@ -67,6 +67,8 @@ brew: \
 	brew install watch
 	# nmap is great for test and probing network related stuff
 	brew install nmap
+	# curl is a http development essential
+	brew install curl
 
 /usr/local/bin/brew:
 	ruby -e "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
@@ -116,8 +118,8 @@ casks: \
 	brew cask install itsycal
 	# macdown is a nice markdown editor, I use it to write my articles/presentation scripts
 	brew cask install macdown
-        # Dash gives your Mac instant offline access to 200+ API documentation sets.
-        brew cask install dash
+	# Dash gives your Mac instant offline access to 200+ API documentation sets.
+	brew cask install dash
 
 fonts: \
 	/usr/local/bin/brew
