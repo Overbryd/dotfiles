@@ -69,6 +69,8 @@ brew: \
 	brew install nmap
 	# curl is a http development essential
 	brew install curl
+	# hugo is my blogging engine
+	brew install hugo
 
 /usr/local/bin/brew:
 	ruby -e "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
