@@ -360,4 +360,5 @@ harder:
 	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsignedapp off
 	# Restart the firewall (this should remain last)
 	-sudo pkill -HUP socketfilterfw
-
+	# Enable touch id for sudo (if available)
+	-@test -f /usr/lib/pam/pam_tid.so* && (grep pam_tid.so /etc/pam.d/sudo || sudo /usr/local/bin/sed -e '2iauth       sufficient     pam_tid.so' -i /etc/pam.d/sudo)
