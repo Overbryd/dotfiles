@@ -84,3 +84,19 @@ function print-kube-secrets() {
 function bundle-open() {
   (cd $($(which bundle) show $@) && $EDITOR .)
 }
+
+# Use local dns server
+function localdns() {
+  if [[ "$1" == "on" ]]; then
+    sudo networksetup -setdnsservers Wi-Fi 127.0.0.1
+    sudo killall -HUP mDNSResponder
+  elif [[ "$1" == "off" ]]; then
+    sudo networksetup -setdnsservers Wi-Fi empty
+    sudo killall -HUP mDNSResponder
+  else
+    cat <<USAGE
+Usage: localdns <enable|disable>
+Enables or disables local DNS configuration (knot-resolver@127.0.0.1 ==(tls)==> cloudflare)
+USAGE
+  fi
+}

@@ -12,3 +12,9 @@ alias tt="tree -L 2 --dirsfirst"
 # I use git so often that aliasing it saves a lot
 alias g="git"
 
+# Add simulator to start the iOS simulator
+alias simulator="open -a Simulator"
+
+# Access the console of the knot-resolver
+alias kresd-console="sudo socat - /usr/local/var/kresd/tty/*"
+

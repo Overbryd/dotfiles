@@ -347,10 +347,10 @@ dotfiles: $(DOTFILES)
 docker:
 	brew cask install docker
 
-
 # Here is a comprehensive guide: https://github.com/drduh/macOS-Security-and-Privacy-Guide
 # The following settings implement some basic security measures
-harder:
+harder: \
+	harder-dns-resolver
 	# Enable the firewall
 	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on
 	# Enable logging on the firewall
@@ -364,3 +364,8 @@ harder:
 	-sudo pkill -HUP socketfilterfw
 	# Enable touch id for sudo (if available)
 	-@test -f /usr/lib/pam/pam_tid.so* && (grep pam_tid.so /etc/pam.d/sudo || sudo /usr/local/bin/sed -e '2iauth       sufficient     pam_tid.so' -i /etc/pam.d/sudo)
+
+harder-dns-resolver:
+	brew install knot-resolver
+	cp -v ~/dotfiles/etc/kresd/config /usr/local/etc/kresd/config
+	sudo brew services start knot-resolver
