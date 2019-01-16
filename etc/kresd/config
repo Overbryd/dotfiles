@@ -1,0 +1,55 @@
+-- Config file for personal tls enabled resolver.
+-- Refer to manual: https://knot-resolver.readthedocs.io/en/latest/daemon.html#configuration
+--
+-- How to enter the knot resolver CLI
+-- Ctrl+D to exit
+--
+-- $ sudo socat - /tmp/kresd/tty/*
+--
+-- > cache.clear()
+--
+-- > trust_anchors.insecure
+
+-- Listen on localhost (default)
+net = { '127.0.0.1', '::1' }
+-- net.listen(net.lo)
+
+-- Drop root privileges
+-- user('knot-resolver', 'knot-resolver')
+
+-- Auto-maintain root TA
+trust_anchors.file = 'root.keys'
+
+-- If there are problems accessing a single DNSSEC domain, without turning DNSSEC off for others
+-- trust_anchors.negative = { 'some.bad.domain' }
+
+-- Load Useful modules
+modules = {
+  'hints > iterate', -- Load /etc/hosts and allow custom root hints
+  'stats',    -- Track internal statistics
+  'predict',  -- Prefetch expiring/frequent records
+}
+
+-- Configure blocks (e.g. block YouTube for getting productive)
+-- modules.load('daf')
+-- daf.add 'qname youtube.com deny'
+-- daf.add 'qname youtu.be deny'
+
+-- Smaller cache size
+cache.size = 10 * MB
+
+-- use the homebrew openssl ca cert bundle
+cloudflare_ca_file='/Users/lukas/dotfiles/certs/DigiCertECCSecureServerCA.pem'
+
+-- forward all queries to Cloudflare DNS over tls
+policy.add(
+  policy.all(
+    policy.TLS_FORWARD({
+      {'1.1.1.1', hostname='cloudflare-dns.com', ca_file=cloudflare_ca_file},
+      {'1.0.0.1', hostname='cloudflare-dns.com', ca_file=cloudflare_ca_file},
+      {'2606:4700:4700::1111', hostname='cloudflare-dns.com', ca_file=cloudflare_ca_file},
+      {'2606:4700:4700::1001', hostname='cloudflare-dns.com', ca_file=cloudflare_ca_file},
+    })
+  )
+)
+
