@@ -39,7 +39,7 @@ modules = {
 cache.size = 10 * MB
 
 -- use the homebrew openssl ca cert bundle
-cloudflare_ca_file='/Users/lukas/dotfiles/certs/DigiCertECCSecureServerCA.pem'
+cloudflare_ca_file='/Users/lukas/dotfiles/etc/certs/DigiCertECCSecureServerCA.pem'
 
 -- forward all queries to Cloudflare DNS over tls
 policy.add(
