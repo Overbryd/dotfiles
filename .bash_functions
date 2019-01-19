@@ -87,11 +87,14 @@ function bundle-open() {
 
 # Use local dns server
 function localdns() {
+  if [[ "x$2" == "x" ]]; then
+    local network="Wi-Fi"
+  fi
   if [[ "$1" == "on" ]]; then
-    sudo networksetup -setdnsservers Wi-Fi 127.0.0.1
+    sudo networksetup -setdnsservers "$network" 127.0.0.1
     sudo killall -HUP mDNSResponder
   elif [[ "$1" == "off" ]]; then
-    sudo networksetup -setdnsservers Wi-Fi empty
+    sudo networksetup -setdnsservers "$network" empty
     sudo killall -HUP mDNSResponder
   else
     cat <<USAGE

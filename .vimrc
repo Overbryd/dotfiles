@@ -9,20 +9,6 @@ Plugin 'gmarik/Vundle.vim'
 " repeat hooks for other plugins
 Plugin 'tpope/vim-repeat'
 
-" OCaml
-Plugin 'def-lkb/ocp-indent-vim'
-let g:opamshare = substitute(system('opam config var share'),'\n$','','''')
-execute "set rtp+=" . g:opamshare . "/merlin/vim"
-execute "set rtp+=" . g:opamshare . "/merlin/vimbufsync"
-let g:syntastic_ocaml_checkers = ['merlin']
-" skip default merlin key bindings (e.g. I am using \t for Command-t)
-let g:merlin_disable_default_keybindings = 1
-" map them differently (:MerlinTypeOf* to ?, \n and \p are left default)
-autocmd FileType ocaml map  <buffer> ? :MerlinTypeOf<return>
-autocmd FileType ocaml vmap <buffer> ? :MerlinTypeOfSel<return>
-autocmd FileType ocaml map  <buffer> <LocalLeader>n :MerlinGrowEnclosing<return>
-autocmd FileType ocaml map  <buffer> <LocalLeader>p :MerlinShrinkEnclosing<return>
-
 " fuzzy search files
 Plugin 'wincent/command-t'
 let g:CommandTMatchWindowReverse=1
@@ -135,6 +121,7 @@ let g:syntastic_always_populate_loc_list = 1
 let g:syntastic_auto_loc_list = 1
 let g:syntastic_check_on_open = 0
 let g:syntastic_check_on_wq = 0
+let g:syntastic_mode_map = {'mode':'passive'}
 set statusline+=%#warningmsg#
 set statusline+=%{SyntasticStatuslineFlag()}
 set statusline+=%*
