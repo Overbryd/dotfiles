@@ -9,6 +9,10 @@ Plugin 'gmarik/Vundle.vim'
 " repeat hooks for other plugins
 Plugin 'tpope/vim-repeat'
 
+" Dart / Flutter
+Plugin 'dart-lang/dart-vim-plugin'
+Plugin 'reisub0/hot-reload.vim'
+
 " fuzzy search files
 Plugin 'wincent/command-t'
 let g:CommandTMatchWindowReverse=1
@@ -143,6 +147,9 @@ let g:is_bash=1
 
 " Install colorschema paramount
 Plugin 'owickstrom/vim-colors-paramount'
+
+" Terraform support
+Plugin 'hashivim/vim-terraform'
 
 call vundle#end()
 
