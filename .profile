@@ -8,6 +8,11 @@ export PATH="/usr/local/opt/curl/bin:$PATH"
 export GOPATH="$HOME/Projects/go"
 export PATH="$GOPATH/bin:$PATH"
 
+# Jenv setup
+export JENV_ROOT="$HOME/.jenv"
+export PATH="$JENV_ROOT/bin:$PATH"
+eval "$(jenv init -)"
+
 # Rbenv setup
 export RBENV_ROOT="$HOME/.rbenv"
 export RBENV_BUILD_ROOT="$RBENV_ROOT/sources"
