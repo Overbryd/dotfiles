@@ -71,6 +71,8 @@ brew: \
 	brew install curl
 	# hugo is my blogging engine
 	brew install hugo
+	# jenv manages different java versions
+	brew install jenv
 
 /usr/local/bin/brew:
 	ruby -e "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
@@ -174,7 +176,7 @@ vim: \
 
 vim-itself:
 	# newer version of vim
-	brew install vim --with-override-system-vi
+	brew install vim
 	# create vim directories
 	mkdir -p ~/.vim/tmp/{backup,swap,undo}
 
