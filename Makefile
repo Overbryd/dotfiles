@@ -71,6 +71,8 @@ brew: \
 	brew install curl
 	# hugo is my blogging engine
 	brew install hugo
+	# jenv manages different java versions
+	brew install jenv
 
 /usr/local/bin/brew:
 	ruby -e "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
@@ -174,7 +176,7 @@ vim: \
 
 vim-itself:
 	# newer version of vim
-	brew install vim --with-override-system-vi
+	brew install vim
 	# create vim directories
 	mkdir -p ~/.vim/tmp/{backup,swap,undo}
 
@@ -185,8 +187,8 @@ vim-plugins: \
 	# install plugins with temporary vimrc
 	vim -u /tmp/.vimrc +PluginInstall +qall
 	-rm /tmp/.vimrc
-	# post installation steps of command-t
-	cd ~/.vim/bundle/command-t/ruby/command-t/ext/command-t && ruby extconf.rb && make
+	# post installation steps of command-t (use the ruby that ships with vim)
+	cd ~/.vim/bundle/command-t/ruby/command-t/ext/command-t && /usr/local/opt/ruby/bin/ruby extconf.rb && make
 
 # install vundle, a vim package manager
 ~/.vim/bundle/Vundle.vim:
