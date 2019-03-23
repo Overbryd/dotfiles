@@ -254,6 +254,8 @@ defaults: \
 	# Keep this bit last
 	# Kill affected applications
 	for app in Safari Finder Mail SystemUIServer; do killall "$$app" >/dev/null 2>&1; done
+	# Re-enable subpixel aliases that got disabled by default in Mojave
+	defaults write -g CGFontRenderingFontSmoothingDisabled -bool NO
 
 defaults-Dock:
 	# Enable the 2D Dock
