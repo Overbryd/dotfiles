@@ -368,4 +368,4 @@ harder: \
 harder-dns-resolver:
 	brew install knot-resolver
 	cp -v ~/dotfiles/etc/kresd/config /usr/local/etc/kresd/config
-	sudo brew services start knot-resolver
+	sudo brew services restart knot-resolver
