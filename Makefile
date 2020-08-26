@@ -45,7 +45,7 @@ brew-baseline: brew-itself
 	# git-crypt for encrypted repository contents
 	brew install git-crypt
 	# install silver searcher, a very fast grep alternative
-	brew install ag
+	brew install the_silver_searcher
 	# tree, a nice directory tree listing
 	brew install tree
 	# install readline, useful in combination with ruby-build because it will link ruby installations to it
@@ -78,8 +78,12 @@ brew-devops: casks-itself
 	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# handle amazon web services related stuff
 	brew install awscli
+	# tail cloudwatch logs (e.g. from Fargate containers)
+	brew install saw
 	# handle google cloud related stuff
 	brew cask install google-cloud-sdk
+	# neat way to expose a locally running service
+	brew install cloudflare/cloudflare/cloudflared
 
 brew-nettools: brew-itself
 	@brew update
@@ -88,6 +92,8 @@ brew-nettools: brew-itself
 	brew install nmap
 	# curl is a http development essential
 	brew install curl
+	# websocket client
+	brew install websocat
 	# vegeta is an insanely great http load tester and scalable http-client
 	# hugo is my blogging engine
 	brew install hugo
