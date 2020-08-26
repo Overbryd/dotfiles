@@ -1,8 +1,11 @@
 #!/bin/sh
 
-for file in `find . -name '*.enc'`; do
-  target=${file%%.enc}
-  echo "Decrypting '$file' to '$target'..."
-  openssl enc -d -aes-256-cbc -in "$file" -out "$target"
+if echo "$1" | grep -E ".enc$"; do
+  target=${1%%.enc}
+  echo "Decrypting '$1' to '$target'"
+  openssl enc -d -aes-256-cbc -in "$1" -out "$target"
+else
+  echo "Cannot decrypt files not ending in .enc"
+  exit 1
 done
 
