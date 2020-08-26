@@ -125,6 +125,8 @@ casks-baseline: casks-itself
 	brew cask install flux
 	# launchbar is my preferred app launcher/clipboard history, calculator and goto mac utility
 	brew cask install launchbar
+	# appcleaner removed macOS applications and their cruft
+	brew cask install appcleaner
 
 casks-work: casks-itself
 	@brew update
