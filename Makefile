@@ -3,7 +3,7 @@ DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 
 # Execute all commands per task in one shell, allowing for environment variables to be set for
 # all following commands.
-.ONESHELL
+.ONESHELL:
 
 # bootstrap only, add one-time bootstrap tasks here
 # setups the necessary stuff
@@ -15,8 +15,12 @@ bootstrap: \
 	brew-baseline \
 	casks-baseline \
 	dotfiles \
+	vim \
+	docker \
 	~/.gnupg \
-	~/.ssh/config
+	~/.ssh/config \
+	defaults \
+	harder
 
 brew-itself: /usr/local/bin/brew
 brew: \
@@ -253,6 +257,8 @@ defaults: \
 	# Keep this bit last
 	# Kill affected applications
 	for app in Safari Finder Mail SystemUIServer; do killall "$$app" >/dev/null 2>&1; done
+	# Re-enable subpixel aliases that got disabled by default in Mojave
+	defaults write -g CGFontRenderingFontSmoothingDisabled -bool NO
 
 defaults-Dock:
 	# Enable the 2D Dock
