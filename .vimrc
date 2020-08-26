@@ -2,6 +2,9 @@ set nocompatible
 filetype off
 set rtp+=~/.vim/bundle/Vundle.vim
 call vundle#begin()
+" Turn of modeline
+set modelines=0
+set nomodeline
 
 " Manage these plugins
 Plugin 'gmarik/Vundle.vim'
