@@ -1,29 +1,10 @@
-# print some information on the current tmate session
-function tmate-info {
-  echo "rw: $(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}' 2>/dev/null)"
-  echo "ro: $(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh_ro}' 2>/dev/null)"
-}
-
-# start tmate session
-function tmate-start {
-  tmate -S /tmp/tmate.sock new-session -d
-  tmate -S /tmp/tmate.sock wait tmate-ready
-  eval "$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')"
-}
-
 # tmux, be there and be named well
 function tms {
   local name=$(basename $PWD | sed -e s/\[^a-zA-Z0-9\\\//\$]/-/g -e s/--*/-/g)
   tmux new -s $name || tmux attach-session -t $name
 }
 
-# docker-machine, be there and make it happen
-function dms {
-  docker-machine start
-  eval `docker-machine env`
-}
-
-# Start an HTTP server from a directory, optionally specifying the port
+# Start a HTTP server from a directory, optionally specifying the port
 function server() {
   local port="${1:-8000}"
   open "http://localhost:${port}/"
@@ -48,18 +29,6 @@ function mirror-website() {
     $url
 }
 
-# Put my computer to sleep in X minutes
-function sleep-in() {
-  local minutes=$1
-  if [ -z "$minutes" ]; then
-    echo "Usage: sleep-in <minutes>"
-  else
-    local datetime=`date -v+${minutes}M +"%m/%d/%y %H:%M:%S"`
-    echo "Scheduling sleep at $datetime"
-    sudo pmset schedule sleep "$datetime"
-  fi
-}
-
 # Open conflicts at once, setting the search pattern to <<<<<<< in order to cycle through them pressing 'n'
 function editconflicts() { 
   vim +/"<<<<<<<" `git diff --name-only --diff-filter=U | xargs`
@@ -72,34 +41,3 @@ function docker-cleanup() {
   docker volume prune -f
 }
 
-# quickly peek at secrets stored in kubernetes yaml files (base64 encoded)
-function print-kube-secrets() {
-  for file in $@; do
-    echo "${file}:"
-    yaml2json < $file | jq '[.select(.type == "Secret") | .data | to_entries[] | .value = (.value | @base64d)] | from_entries'
-  done
-}
-
-# better bundle open, that changes current directory
-function bundle-open() {
-  (cd $($(which bundle) show $@) && $EDITOR .)
-}
-
-# Use local dns server
-function localdns() {
-  if [[ "x$2" == "x" ]]; then
-    local network="Wi-Fi"
-  fi
-  if [[ "$1" == "on" ]]; then
-    sudo networksetup -setdnsservers "$network" 127.0.0.1
-    sudo killall -HUP mDNSResponder
-  elif [[ "$1" == "off" ]]; then
-    sudo networksetup -setdnsservers "$network" empty
-    sudo killall -HUP mDNSResponder
-  else
-    cat <<USAGE
-Usage: localdns <enable|disable>
-Enables or disables local DNS configuration (knot-resolver@127.0.0.1 ==(tls)==> cloudflare)
-USAGE
-  fi
-}
