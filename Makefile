@@ -1,36 +1,41 @@
 EXCLUDED_DOTFILES := .git .git-crypt .gitattributes .gitignore .gitmodules .ssh
 DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 
-# everything, geared towards to be run for setup and maintenance
-all: \
-	brew \
-	casks \
-	fonts \
-	bash \
-	ruby \
-	vim \
-	tmux \
-	dotfiles \
-	defaults \
-	docker \
-	harder
+# Execute all commands per task in one shell, allowing for environment variables to be set for
+# all following commands.
+.ONESHELL
 
 # bootstrap only, add one-time bootstrap tasks here
-# setups everything
-# restore .gnupg and thus decrypt the secrets from this repository
+# setups the necessary stuff
+# restore .gnupg to decrypt the secrets from this repository
 # setup ssh config (relies on decrypted repository)
 bootstrap: \
-	all \
+	bash \
+	tmux \
+	brew-baseline \
+	casks-baseline \
+	dotfiles \
 	~/.gnupg \
 	~/.ssh/config
 
+brew-itself: /usr/local/bin/brew
 brew: \
-	/usr/local/bin/brew
+	brew-itself \
+	brew-upgrade
+
+/usr/local/bin/brew:
+	ruby -e "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+	brew analytics off
+
+brew-upgrade: brew-itself
 	# upgrade all installed packages
 	brew upgrade
+
+brew-baseline: brew-itself
+	@brew update
+	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# GNU coreutils instead of outdated mac os defaults
-	brew install coreutils
-	brew install moreutils
+	brew install coreutils moreutils
 	# newer version of git
 	brew install git
 	# git-crypt for encrypted repository contents
@@ -43,45 +48,59 @@ brew: \
 	brew install readline
 	# install direnv for project specific .envrc support
 	brew install direnv
-	# postgres
-	brew install postgres 
-	# mysql
-	brew install mysql
-	# redis
-	brew install redis
-	# sed, stream editor, but replace mac os version
-	brew install gnu-sed --with-default-names
-	# erlang programming language
-	brew install erlang
-	# elixir programming language
-	brew install elixir
-	# handle amazon web services related stuff
-	brew install awscli
-	# handle json on the command line
-	brew install jq --HEAD
 	# pipeviewer allows to display throughput/eta information on unix pipes
 	brew install pv
 	# pstree is nice to look at
 	brew install pstree
 	# watch is great for building an overview on running stuff
 	brew install watch
+	# sed, stream editor, but replace mac os version
+	brew install gnu-sed --with-default-names
+	# handle json on the command line
+	brew install jq --HEAD
+
+brew-programming: casks-itself
+	@brew update
+	@export HOMEBREW_NO_AUTO_UPDATE=1
+	# erlang programming language
+	brew install erlang
+	# elixir programming language
+	brew install elixir
+	# I do some JRuby development, java comes in handy :)
+	brew cask install java
+
+brew-devops: casks-itself
+	@brew update
+	@export HOMEBREW_NO_AUTO_UPDATE=1
+	# handle amazon web services related stuff
+	brew install awscli
+	# handle google cloud related stuff
+	brew cask install google-cloud-sdk
+
+brew-nettools: brew-itself
+	@brew update
+	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# nmap is great for test and probing network related stuff
 	brew install nmap
 	# curl is a http development essential
 	brew install curl
+	# vegeta is an insanely great http load tester and scalable http-client
 	# hugo is my blogging engine
 	brew install hugo
-	# jenv manages different java versions
-	brew install jenv
+	# smartmontools great for monitoring disks
+	brew install smartmontools
 
-/usr/local/bin/brew:
-	ruby -e "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
-	brew analytics off
-
-casks: \
-	/usr/local/bin/brew
+casks-itself: brew-itself
 	# tap homebrew-cask to install other osx related stuff
 	brew tap caskroom/cask
+
+casks: \
+	casks-itself \
+	casks-baseline
+
+casks-baseline: casks-itself
+	@brew update
+	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# spectacle for mac osx window management/tiling
 	brew cask install spectacle
 	# opera for browsing the web
@@ -92,41 +111,21 @@ casks: \
 	brew cask install 1password
 	# gpg-suite provide me with all gpp related things
 	brew cask install gpg-suite
-	# virtualbox to handle virtual machines
-	brew cask install virtualbox
-	# handle google cloud related stuff
-	brew cask install google-cloud-sdk
-	# adium is a nice chat client
-	brew cask install adium
-	# I do some JRuby development where java comes in handy :)
-	brew cask install java
-	# Skype is still used by many of my friends :)
-	brew cask install skype
-	# VLC an excellent video player
-	brew cask install vlc
-	# TextMate is an excellent GUI based editor
-	brew cask install textmate
 	# Flux reduces blue/green colors on the display spectrum and helps me sleep better
 	brew cask install flux
-	# slack is my preferred team chat
-	brew cask install slack
 	# launchbar is my preferred app launcher/clipboard history, calculator and goto mac utility
 	brew cask install launchbar
-	# graphiql helps debugging graphql based apis
-	brew cask install graphiql
-	# sequel-pro is a great graphical MySQL client
-	brew cask install sequel-pro
-	# postico is a great graphical PostgreSQL client
-	brew cask install postico
-	# itsycal is a nice menu bar clock replacement that features a calendar with events from iCal
-	brew cask install itsycal
-	# macdown is a nice markdown editor, I use it to write my articles/presentation scripts
-	brew cask install macdown
-	# Dash gives your Mac instant offline access to 200+ API documentation sets.
-	brew cask install dash
+
+casks-work: casks-itself
+	@brew update
+	@export HOMEBREW_NO_AUTO_UPDATE=1
+	# slack is my preferred team chat
+	brew cask install slack
+	# tableplus is the best graphical multi-database client
+	brew cask install tableplus
 
 fonts: \
-	/usr/local/bin/brew
+	casks-itself
 	# tap homebrew-fonts to install freely available fonts
 	brew tap caskroom/fonts
 	# install IBM Plex, an excellent modern font (https://www.ibm.com/plex/)
@@ -134,7 +133,9 @@ fonts: \
 	# install Adobe Source Code Pro, an excellent mono space font for programming
 	brew cask install font-source-code-pro
 
-bash:
+bash: brew-itself
+	@brew update
+	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# newer version of bash
 	brew install bash
 	brew install bash-completion
@@ -174,7 +175,7 @@ vim: \
 	vim-itself \
 	vim-plugins
 
-vim-itself:
+vim-itself: brew-itself
 	# newer version of vim
 	brew install vim
 	# create vim directories
@@ -228,7 +229,7 @@ defaults: \
 	defaults write com.apple.screencapture disable-shadow -bool true
 	# Save screenshots in PNG format (other options: BMP, GIF, JPG, PDF, TIFF)
 	defaults write com.apple.screencapture type -string "png"
-	# Hide all desktop icons because who need 'em'
+	# Hide all desktop icons because who needs them, I certainly don't
 	defaults write com.apple.finder CreateDesktop -bool false
 	# Enable HiDPI display modes (requires restart)
 	sudo defaults write /Library/Preferences/com.apple.windowserver DisplayResolutionEnabled -bool true
@@ -249,8 +250,6 @@ defaults: \
 	chflags nohidden ~/Library
 	# disable apple captive portal (seucrity issue)
 	sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.captive.control Active -bool false
-	# setup Quad9 DNS
-	networksetup -setdnsservers Wi-Fi 9.9.9.9
 	# Keep this bit last
 	# Kill affected applications
 	for app in Safari Finder Mail SystemUIServer; do killall "$$app" >/dev/null 2>&1; done
@@ -343,16 +342,12 @@ dotfiles: $(DOTFILES)
 ~/.%:
 	cd ~ && ln -sv dotfiles/$(notdir $@) $@
 
-~/.kube/bash_completion:
-	kubectl completion bash > ~/.kube/bash_completion
-
 docker:
 	brew cask install docker
 
 # Here is a comprehensive guide: https://github.com/drduh/macOS-Security-and-Privacy-Guide
 # The following settings implement some basic security measures
 harder: \
-	harder-dns-resolver
 	# Enable the firewall
 	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on
 	# Enable logging on the firewall
@@ -367,7 +362,3 @@ harder: \
 	# Enable touch id for sudo (if available)
 	-@test -f /usr/lib/pam/pam_tid.so* && (grep pam_tid.so /etc/pam.d/sudo || sudo /usr/local/bin/sed -e '2iauth       sufficient     pam_tid.so' -i /etc/pam.d/sudo)
 
-harder-dns-resolver:
-	brew install knot-resolver
-	cp -v ~/dotfiles/etc/kresd/config /usr/local/etc/kresd/config
-	sudo brew services start knot-resolver
