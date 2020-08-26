@@ -9,9 +9,8 @@ Plugin 'gmarik/Vundle.vim'
 " repeat hooks for other plugins
 Plugin 'tpope/vim-repeat'
 
-" Dart / Flutter
-Plugin 'dart-lang/dart-vim-plugin'
-Plugin 'reisub0/hot-reload.vim'
+" Easy quoting with the surround plugin
+Plugin 'tpope/vim-surround'
 
 " fuzzy search files
 Plugin 'wincent/command-t'
@@ -46,23 +45,33 @@ Plugin 'AndrewRadev/splitjoin.vim'
 " map <Leader>f :call RunCurrentSpecFile()<CR>
 " let g:rspec_command = "!`test -x bin/rspec && printf bin/rspec || printf rspec` --no-profile {spec}"
 
-" Crystal
-Plugin 'rhysd/vim-crystal'
-
 " pgsql
 Plugin 'exu/pgsql.vim'
 
+" html
+" The following settings allow to match % to tags
+set matchpairs+=<:>
+set showmatch
+set matchtime=3
+" The following Plugin closes tags
+Plugin 'alvan/vim-closetag'
+let g:closetag_filenames = '*.html,*.xhtml,*.phtml,*.jsx,*.svelte'
+let g:closetag_filetypes = 'html,xhtml,phtml,jsx,svelte'
+let g:closetag_xhtml_filenames = '*.xhtml,*.jsx'
+let g:closetag_xhtml_filetypes = 'xhtml,jsx'
+let g:closetag_regions = {
+    \ 'typescript.tsx': 'jsxRegion,tsxRegion',
+    \ 'javascript.jsx': 'jsxRegion',
+    \ }
+
 " Javascript
-Plugin 'pangloss/vim-javascript'
-
+Plugin 'yuezk/vim-js'
+" Svelte
+Plugin 'evanleck/vim-svelte'
+let g:svelte_indent_script = 1
+let g:svelte_indent_style = 1
 " JSX
-Plugin 'mxw/vim-jsx'
-let g:jsx_ext_required = 0
-
-" Coffeescript
-Plugin 'kchmck/vim-coffee-script'
-let coffee_lint_options = '-f $HOME/.coffeelint.json'
-
+Plugin 'maxmellon/vim-jsx-pretty'
 " GraphQL
 Plugin 'jparise/vim-graphql'
 
@@ -76,6 +85,8 @@ Plugin 'nelstrom/vim-textobj-rubyblock'
 " Elixir
 Plugin 'elixir-lang/vim-elixir'
 Plugin 'mhinz/vim-mix-format'
+Plugin 'slime-lang/vim-slime-syntax'
+
 " Do not automatically format on saving.
 let g:mix_format_on_save = 0
 " Silence errors
@@ -85,9 +96,6 @@ map <Leader>f :MixFormat<CR>
 
 " Dockerfile syntax
 " Plugin 'docker/docker' , {'rtp': '/contrib/syntax/vim/'}
-
-" Easy quoting with the surround plugin
-Plugin 'tpope/vim-surround'
 
 " Insert or delete brackets, parens, quotes in pair
 Plugin 'jiangmiao/auto-pairs'
@@ -104,7 +112,12 @@ map <leader>F :<c-u>Ag <C-R>=shellescape(expand(@"),1)<CR>:copen<CR>
 nnoremap <leader>* <*>:Ag<Space><C-R><C-W><CR>
 
 " textmate like <Tab> expansion snippets
-Plugin 'msanders/snipmate.vim'
+Plugin 'MarcWeber/vim-addon-mw-utils'
+Plugin 'tomtom/tlib_vim'
+Plugin 'garbas/vim-snipmate'
+
+" load a bunch of those snippets
+Plugin 'honza/vim-snippets'
 
 " comment stuff in/out with gc<motion>
 Plugin 'tpope/vim-commentary'
