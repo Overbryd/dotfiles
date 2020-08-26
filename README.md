@@ -42,8 +42,6 @@ Or upgrade all installed packages:
     ├── .gitignore      # general gitignore
     ├── .inputrc        # great for navigating bash history
     ├── .profile        # the complete bash setup with comments
-    ├── .slate          # configuration for Slate, a Mac OSX window manager
-    ├── .tm_properties  # configuration for TextMate
     ├── .vimrc          # a great .vimrc with comments
     ├── decrypt.sh      # decrypt sensitive files and put them in place
     └── encrypt.sh      # simple wrapper to encrypt sensitive files for storage
