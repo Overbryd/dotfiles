@@ -34,7 +34,12 @@ source "$HOMEBREW_PREFIX/etc/bash_completion"
 
 # Setup a simple PROMPT/PS1
 export PROMPT_DIRTRIM=1
-export PS1="\n\W$ "
+if id -Gn | grep admin >/dev/null; then
+  export ADMIN_PROMPT="\[\e[37;41m\]"
+else
+  export ADMIN_PROMPT=""
+fi
+export PS1="\n${ADMIN_PROMPT}\W$\[\e[m\] "
 
 # Case-insensitive globbing (used in pathname expansion)
 shopt -s nocaseglob
