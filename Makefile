@@ -378,13 +378,18 @@ defaults-Calendar:
 	# Show event times
 	defaults write com.apple.iCal "Show time in Month View" -bool true
 
-dotfiles: $(DOTFILES)
+dotfiles: \
+	$(DOTFILES) \
+	~/dotfiles
+
+~/dotfiles:
+	cd ~ && ln -svf $(DOTFILES_ROOT) dotfiles
 
 ~/.ssh/config:
 	# Test that .ssh/config is decrypted (gpg has been setup)
 	grep "Host *" $(DOTFILES_ROOT)/.ssh/config
 	# Symlink .ssh/config
-	cd ~/.ssh && ln -sv $(DOTFILES_ROOT)/.ssh/config .
+	cd ~/.ssh && ln -svf $(DOTFILES_ROOT)/.ssh/config .
 
 ~/.gnupg:
 	# Ask where to get .gnupg from
