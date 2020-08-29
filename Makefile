@@ -44,8 +44,8 @@ brew-baseline: brew-itself
 	brew install git
 	# git-crypt for encrypted repository contents
 	brew install git-crypt
-	# install silver searcher, a very fast grep alternative
-	brew install the_silver_searcher
+	# install ripgrep, currently the fasted grep alternative
+	brew install ripgrep
 	# tree, a nice directory tree listing
 	brew install tree
 	# install readline, useful in combination with ruby-build because it will link ruby installations to it
