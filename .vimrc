@@ -125,9 +125,6 @@ Plugin 'honza/vim-snippets'
 " comment stuff in/out with gc<motion>
 Plugin 'tpope/vim-commentary'
 
-" collect programming metrics
-Plugin 'wakatime/vim-wakatime'
-
 " plugin that helps to end certain structures like if ... end
 Plugin 'tpope/vim-endwise'
 
