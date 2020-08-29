@@ -167,6 +167,8 @@ casks-baseline: casks-itself
 	$(CASK) install launchbar
 	# appcleaner removed macOS applications and their cruft
 	$(CASK) install appcleaner
+	# Carbon Copy Cloner is my backup tool of choice
+	$(CASK) install carbon-copy-cloner
 
 casks-work: casks-itself
 	@$(BREW) update
