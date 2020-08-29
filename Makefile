@@ -1,6 +1,10 @@
 EXCLUDED_DOTFILES := .git .git-crypt .gitattributes .gitignore .gitmodules .ssh
 DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 
+DOTFILES_ROOT = /usr/local/dotfiles
+BREW = sudo -ubinary brew
+CASK = /usr/local/bin/brew cask
+
 # Execute all commands per task in one shell, allowing for environment variables to be set for
 # all following commands.
 .ONESHELL:
@@ -12,15 +16,38 @@ DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 bootstrap: \
 	bash \
 	tmux \
-	brew-baseline \
+	dotfiles \
+	vim \
+	~/.gnupg \
+	~/.ssh/config \
+	defaults
+
+bootstrap-administrator: \
+	bootstrap-binary-user \
+	bash \
+	tmux \
 	casks-baseline \
+	mas-baseline \
 	dotfiles \
 	vim \
 	docker \
-	~/.gnupg \
-	~/.ssh/config \
 	defaults \
 	harder
+
+# bootstrap a system user + group that is used to procted executable paths in $PATH
+# Any directory in $PATH should not be writable by normal user.
+# The normal user however can execute binaries from that PATH
+bootstrap-binary-user:
+	id binary || sudo .bin/macos-add-system-user binary 503 "Binary"
+	echo "partenkirchen	ALL = (_binary) ALL" | sudo tee /etc/sudoers.d/partenkirchen
+	echo 'Defaults!/usr/local/bin/brew env_keep += "HOMEBREW_*"' | sudo tee -a /etc/sudoers.d/partenkirchen
+	test -d /usr/local/Caches || sudo mkdir /usr/local/Caches
+	sudo chown binary:binary /usr/local/Caches
+	test -d /usr/local/Logs/Homebrew || sudo mkdir -p /usr/local/Logs/Homebrew
+	sudo chown binary:binary /usr/local/Logs/Homebrew
+	sudo chmod g+w /usr/local/Logs/Homebrew
+	sudo chown root:staff /usr/local/Logs
+	sudo chmod g+w /usr/local/Logs
 
 brew-itself: /usr/local/bin/brew
 brew: \
@@ -28,132 +55,142 @@ brew: \
 	brew-upgrade
 
 /usr/local/bin/brew:
-	ruby -e "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
-	brew analytics off
+	$(BREW) doctor || sudo -ubinary ruby -e "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+	$(BREW) analytics off
 
 brew-upgrade: brew-itself
 	# upgrade all installed packages
-	brew upgrade
+	$(BREW) upgrade
 
 brew-baseline: brew-itself
-	@brew update
+	@$(BREW) update
 	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# GNU coreutils instead of outdated mac os defaults
-	brew install coreutils moreutils
+	-$(BREW) install coreutils moreutils
 	# newer version of git
-	brew install git
+	$(BREW) install git
 	# git-crypt for encrypted repository contents
-	brew install git-crypt
+	$(BREW) install git-crypt
 	# install ripgrep, currently the fasted grep alternative
-	brew install ripgrep
+	$(BREW) install ripgrep
 	# tree, a nice directory tree listing
-	brew install tree
+	$(BREW) install tree
 	# install readline, useful in combination with ruby-build because it will link ruby installations to it
-	brew install readline
+	$(BREW) install readline
 	# install direnv for project specific .envrc support
-	brew install direnv
+	$(BREW) install direnv
 	# pipeviewer allows to display throughput/eta information on unix pipes
-	brew install pv
+	$(BREW) install pv
 	# pstree is nice to look at
-	brew install pstree
+	$(BREW) install pstree
 	# watch is great for building an overview on running stuff
-	brew install watch
+	$(BREW) install watch
 	# sed, stream editor, but replace mac os version
-	brew install gnu-sed --with-default-names
+	$(BREW) install gnu-sed
 	# handle json on the command line
-	brew install jq --HEAD
+	$(BREW) install jq --HEAD
 
-brew-programming: casks-itself
-	@brew update
+brew-programming: brew-itself
+	@$(BREW) update
 	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# erlang programming language
-	brew install erlang
+	$(BREW) install erlang
 	# elixir programming language
-	brew install elixir
-	# I do some JRuby development, java comes in handy :)
-	brew cask install java
+	$(BREW) install elixir
 
 brew-devops: casks-itself
-	@brew update
+	@$(BREW) update
 	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# handle amazon web services related stuff
-	brew install awscli
+	$(BREW) install awscli
 	# tail cloudwatch logs (e.g. from Fargate containers)
-	brew install saw
+	$(BREW) install saw
 	# handle google cloud related stuff
-	brew cask install google-cloud-sdk
+	$(CASK) install google-cloud-sdk
 	# neat way to expose a locally running service
-	brew install cloudflare/cloudflare/cloudflared
+	$(BREW) install cloudflare/cloudflare/cloudflared
+	# smartmontools great for monitoring disks
+	$(BREW) install smartmontools
 
 brew-nettools: brew-itself
-	@brew update
+	@$(BREW) update
 	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# nmap is great for test and probing network related stuff
-	brew install nmap
+	$(BREW) install nmap
 	# curl is a http development essential
-	brew install curl
+	$(BREW) install curl
 	# websocket client
-	brew install websocat
+	$(BREW) install websocat
 	# vegeta is an insanely great http load tester and scalable http-client
 	# hugo is my blogging engine
-	brew install hugo
-	# smartmontools great for monitoring disks
-	brew install smartmontools
+	$(BREW) install hugo
+
+mas-itself: brew-itself
+	$(BREW) install mas
+
+mas-baseline: mas-itself
+	# Keynote
+	mas install 409183694
+	# Numbers
+	mas install 409203825
+	# Pages
+	mas install 409201541
+	# Pixelmator
+	mas install 407963104
 
 casks-itself: brew-itself
 	# tap homebrew-cask to install other osx related stuff
-	brew tap caskroom/cask
+	$(BREW) tap homebrew/cask
 
 casks: \
 	casks-itself \
 	casks-baseline
 
 casks-baseline: casks-itself
-	@brew update
+	@$(BREW) update
 	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# spectacle for mac osx window management/tiling
-	brew cask install spectacle
+	$(CASK) install spectacle
 	# opera for browsing the web
-	brew cask install opera
+	$(CASK) install opera
 	# dropbox synchronised files across devices
-	brew cask install dropbox
-	# 1password is an excellent password manager
-	brew cask install 1password
+	$(CASK) install dropbox
+	# 1password is my password manager
+	$(CASK) install 1password
+	$(CASK) install 1password-cli
 	# gpg-suite provide me with all gpp related things
-	brew cask install gpg-suite
+	$(CASK) install gpg-suite
 	# Flux reduces blue/green colors on the display spectrum and helps me sleep better
-	brew cask install flux
+	$(CASK) install flux
 	# launchbar is my preferred app launcher/clipboard history, calculator and goto mac utility
-	brew cask install launchbar
+	$(CASK) install launchbar
 	# appcleaner removed macOS applications and their cruft
-	brew cask install appcleaner
+	$(CASK) install appcleaner
 
 casks-work: casks-itself
-	@brew update
+	@$(BREW) update
 	@export HOMEBREW_NO_AUTO_UPDATE=1
-	# slack is my preferred team chat
-	brew cask install slack
 	# tableplus is the best graphical multi-database client
-	brew cask install tableplus
+	$(CASK) install tableplus
 
 fonts: \
 	casks-itself
 	# tap homebrew-fonts to install freely available fonts
-	brew tap caskroom/fonts
+	$(BREW) tap caskroom/fonts
 	# install IBM Plex, an excellent modern font (https://www.ibm.com/plex/)
-	brew cask install font-ibm-plex
+	$(CASK) install font-ibm-plex
 	# install Adobe Source Code Pro, an excellent mono space font for programming
-	brew cask install font-source-code-pro
+	$(CASK) install font-source-code-pro
 
 bash: brew-itself
-	@brew update
+	@$(BREW) update
 	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# newer version of bash
-	brew install bash
-	brew install bash-completion
+	$(BREW) install bash
+	$(BREW) install bash-completion
 	# change shell to homebrew bash
-	echo "/usr/local/bin/bash" | sudo tee -a /etc/shells
-	chsh -s /usr/local/bin/bash
+	grep /usr/local/bin/bash /etc/shells || (echo "/usr/local/bin/bash" | sudo tee -a /etc/shells)
+	test "$$SHELL" = /usr/local/bin/bash || chsh -s /usr/local/bin/bash
 
 ruby: \
 	~/.rbenv \
@@ -189,7 +226,7 @@ vim: \
 
 vim-itself: brew-itself
 	# newer version of vim
-	brew install vim
+	$(BREW) install vim
 	# create vim directories
 	mkdir -p ~/.vim/tmp/{backup,swap,undo}
 
@@ -208,8 +245,9 @@ vim-plugins: \
 	git clone https://github.com/gmarik/Vundle.vim.git ~/.vim/bundle/Vundle.vim
 
 tmux: \
-	~/.tmux.conf \
-	brew install tmux
+	~/.tmux.conf
+	$(BREW) install tmux
+	$(BREW) install reattach-to-user-namespace
 
 defaults: \
 	defaults-Dock \
@@ -290,7 +328,7 @@ defaults-Dock:
 	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Desktop", "file-data":{"_CFURLString":"file:///Users/lukas/Desktop/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
 	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Downloads", "file-data":{"_CFURLString":"file:///Users/lukas/Downloads/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
 	# restart dock
-	killall Dock
+	sudo killall Dock
 
 defaults-NSGlobalDomain:
 	# Locale
@@ -344,9 +382,9 @@ dotfiles: $(DOTFILES)
 
 ~/.ssh/config:
 	# Test that .ssh/config is decrypted (gpg has been setup)
-	grep "Host *" ~/dotfiles/.ssh/config
+	grep "Host *" $(DOTFILES_ROOT)/.ssh/config
 	# Symlink .ssh/config
-	cd ~/.ssh && ln -sv ../dotfiles/.ssh/config .
+	cd ~/.ssh && ln -sv $(DOTFILES_ROOT)/.ssh/config .
 
 ~/.gnupg:
 	# Ask where to get .gnupg from
@@ -354,10 +392,10 @@ dotfiles: $(DOTFILES)
 	cp -v $$gnupg_source ~/.gnupg
 
 ~/.%:
-	cd ~ && ln -sv dotfiles/$(notdir $@) $@
+	cd ~ && ln -svf $(DOTFILES_ROOT)/$(notdir $@) $@
 
 docker:
-	brew cask install docker
+	$(CASK) install docker
 
 # Here is a comprehensive guide: https://github.com/drduh/macOS-Security-and-Privacy-Guide
 # The following settings implement some basic security measures
@@ -365,7 +403,7 @@ harder: harder-firewall
 	# Enable secure keyboard entry for Terminal
 	defaults write com.apple.terminal SecureKeyboardEntry -bool true
 	# Enable touch id for sudo (if available)
-	.bin/macos-enable-sudo-pam_tid
+	sudo .bin/macos-enable-sudo-pam_tid
 
 harder-firewall:
 	# Enable the firewall
