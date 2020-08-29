@@ -1,0 +1,7 @@
+#!/bin/sh
+
+random=$(od -vAn -N4 -tu4 < /dev/urandom | /usr/bin/sed -e 's/[[:space:]]*//')
+words=$(wc -w < /usr/share/dict/words)
+/usr/bin/sed -n "$(($random % $words))p" < /usr/share/dict/words \
+| tr '[[:upper:]]' '[[:lower:]]'
+
