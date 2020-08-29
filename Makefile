@@ -32,6 +32,7 @@ bootstrap-administrator: \
 	vim \
 	docker \
 	defaults \
+	defaults-administrator \
 	harder
 
 # bootstrap a system user + group that is used to procted executable paths in $PATH
@@ -281,8 +282,6 @@ defaults: \
 	defaults write com.apple.screencapture type -string "png"
 	# Hide all desktop icons because who needs them, I certainly don't
 	defaults write com.apple.finder CreateDesktop -bool false
-	# Enable HiDPI display modes (requires restart)
-	sudo defaults write /Library/Preferences/com.apple.windowserver DisplayResolutionEnabled -bool true
 	# Finder: disable window animations and Get Info animations
 	defaults write com.apple.finder DisableAllAnimations -bool true
 	# Finder: show hidden files by default
@@ -298,13 +297,17 @@ defaults: \
 	defaults write com.apple.terminal StringEncodings -array 4
 	# Show the ~/Library folder
 	chflags nohidden ~/Library
-	# disable apple captive portal (seucrity issue)
-	sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.captive.control Active -bool false
 	# Keep this bit last
 	# Kill affected applications
 	for app in Safari Finder Mail SystemUIServer; do killall "$$app" >/dev/null 2>&1; done
 	# Re-enable subpixel aliases that got disabled by default in Mojave
 	defaults write -g CGFontRenderingFontSmoothingDisabled -bool NO
+
+defaults-administrator:
+	# disable apple captive portal (seucrity issue)
+	sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.captive.control Active -bool false
+	# Enable HiDPI display modes (requires restart)
+	sudo defaults write /Library/Preferences/com.apple.windowserver DisplayResolutionEnabled -bool true
 
 defaults-Dock:
 	# Enable the 2D Dock
@@ -324,11 +327,11 @@ defaults-Dock:
 	# clean up right side (persistent)
 	-defaults delete com.apple.dock persistent-others
 	# and add these folders
-	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Dropbox", "file-data":{"_CFURLString":"file:///Users/lukas/Dropbox/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
-	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Desktop", "file-data":{"_CFURLString":"file:///Users/lukas/Desktop/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
-	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Downloads", "file-data":{"_CFURLString":"file:///Users/lukas/Downloads/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
+	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Dropbox", "file-data":{"_CFURLString":"file:///Users/$(USER)/Dropbox/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
+	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Desktop", "file-data":{"_CFURLString":"file:///Users/$(USER)/Desktop/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
+	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Downloads", "file-data":{"_CFURLString":"file:///Users/$(USER)/Downloads/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
 	# restart dock
-	sudo killall Dock
+	killall Dock
 
 defaults-NSGlobalDomain:
 	# Locale
