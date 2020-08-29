@@ -1,0 +1,20 @@
+#!/bin/sh
+
+die() {
+  echo >&2 "$@"
+  exit 1
+}
+
+# Check that we are superuser (i.e. $(id -u) is zero)
+[ `id -u` -eq 0 ] || die "This script needs to run as root"
+
+test -f /usr/lib/pam/pam_tid.so* || (echo "pam_tid not present on this machine" && exit 0)
+
+grep pam_tid.so /etc/pam.d/sudo \
+|| /usr/bin/sed -i'' -e '2i\
+auth       sufficient     pam_tid.so
+' /etc/pam.d/sudo
+
+echo "Contents of /etc/pam.d/sudo"
+cat /etc/pam.d/sudo
+
