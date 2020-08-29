@@ -1,0 +1,6 @@
+#!/bin/sh
+
+echo $PATH \
+| tr ':' '\n' \
+| xargs -I{} find {} -perm +111 -exec sh -c "test -w {} && echo 'UNSAFE: {}'" \;
+
