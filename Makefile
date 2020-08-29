@@ -361,9 +361,17 @@ docker:
 
 # Here is a comprehensive guide: https://github.com/drduh/macOS-Security-and-Privacy-Guide
 # The following settings implement some basic security measures
-harder: \
+harder: harder-firewall
+	# Enable secure keyboard entry for Terminal
+	defaults write com.apple.terminal SecureKeyboardEntry -bool true
+	# Enable touch id for sudo (if available)
+	.bin/macos-enable-sudo-pam_tid
+
+harder-firewall:
 	# Enable the firewall
 	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on
+	# Block all incoming connections
+	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setblockall on
 	# Enable logging on the firewall
 	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setloggingmode on
 	# Enable stealth mode (computer does not respond to PING or TCP connections on closed ports)
@@ -371,8 +379,7 @@ harder: \
 	# Prevent built-in software as well as code-signed, downloaded software from being whitelisted automatically
 	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsigned off
 	sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsignedapp off
+	##
 	# Restart the firewall (this should remain last)
-	-sudo pkill -HUP socketfilterfw
-	# Enable touch id for sudo (if available)
-	-@test -f /usr/lib/pam/pam_tid.so* && (grep pam_tid.so /etc/pam.d/sudo || sudo /usr/local/bin/sed -e '2iauth       sufficient     pam_tid.so' -i /etc/pam.d/sudo)
+	sudo pkill -HUP socketfilterfw
 
