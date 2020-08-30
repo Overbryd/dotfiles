@@ -108,6 +108,8 @@ brew-work: \
 	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# slack is the current communication platform
 	$(CASK) install slack
+	# tableplus is my preferred SQL-client
+	$(CASK) install tableplus
 
 brew-programming: brew-itself
 	@$(BREW) update
