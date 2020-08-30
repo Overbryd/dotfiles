@@ -42,13 +42,18 @@ bootstrap-binary-user:
 	id binary || sudo .bin/macos-add-system-user binary 503 "Binary"
 	echo "partenkirchen	ALL = (_binary) ALL" | sudo tee /etc/sudoers.d/partenkirchen
 	echo 'Defaults!/usr/local/bin/brew env_keep += "HOMEBREW_*"' | sudo tee -a /etc/sudoers.d/partenkirchen
+
+bootstrap-homebrew-folder:
 	test -d /usr/local/Caches || sudo mkdir /usr/local/Caches
-	sudo chown binary:binary /usr/local/Caches
 	test -d /usr/local/Logs/Homebrew || sudo mkdir -p /usr/local/Logs/Homebrew
-	sudo chown binary:binary /usr/local/Logs/Homebrew
-	sudo chmod g+w /usr/local/Logs/Homebrew
 	sudo chown root:staff /usr/local/Logs
 	sudo chmod g+w /usr/local/Logs
+	# The binary user + group own everything around homebrew.
+	# The administrative user is member of the binary group, hence he can use brew directly.
+	sudo chown -R binary:binary /usr/local/{Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
+	# Set the proper ACLs on the Homebrew folders in order to inherit ACLs
+	sudo chmod g+w /usr/local/{Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
+	sudo chmod +a "group:_binary allow list,add_file,search,add_subdirectory,delete_child,readattr,writeattr,readextattr,writeextattr,readsecurity,file_inherit,directory_inherit" /usr/local/{Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
 
 brew-itself: /usr/local/bin/brew
 brew: \
