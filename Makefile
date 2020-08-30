@@ -143,6 +143,8 @@ mas-baseline: mas-itself
 	mas install 409201541
 	# Pixelmator
 	mas install 407963104
+	# Wireguard VPN Client
+	mas install 1451685025
 
 casks-itself: brew-itself
 	# tap homebrew-cask to install other osx related stuff
