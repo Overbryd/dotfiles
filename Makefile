@@ -123,6 +123,7 @@ brew-devops: casks-itself
 	# handle amazon web services related stuff
 	$(BREW) install awscli
 	# tail cloudwatch logs (e.g. from Fargate containers)
+	$(BREW) tap TylerBrock/saw
 	$(BREW) install saw
 	# handle google cloud related stuff
 	$(CASK) install google-cloud-sdk
