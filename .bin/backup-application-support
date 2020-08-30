@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+BACKUP_FOLDER="$HOME/Dropbox/Backups/Application Support"
+APPLICATIONS=(
+  "Farrago"
+  "Fission"
+  "Loopback"
+  "Audio Hijack"
+  "Flux"
+  "com.operasoftware.Opera"
+  "com.tinyapp.TablePlus"
+  "obs-studio"
+)
+
+datestamp=$(date +%Y-%m-%d)
+directory="${BACKUP_FOLDER}/${datestamp}"
+
+test -d "$directory" || mkdir -p "$directory"
+
+cd "$HOME/Library/Application Support"
+
+for application in "${APPLICATIONS[@]}"; do
+  echo "Archiving settings of ${application} to ${directory}"
+  tar cjf "${directory}/${application}.tar.bz2" "$application"
+done
+
