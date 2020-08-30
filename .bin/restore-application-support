@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+BACKUP_FOLDER="$HOME/Dropbox/Backups/Application Support"
+last=$(ls "$BACKUP_FOLDER" | sort | tail -n1)
+datestamp="${1:-$last}"
+source_directory="${BACKUP_FOLDER}/${datestamp}"
+
+cd "$HOME/Library/Application Support"
+
+echo "Restoring '~/Library/Application Support' from $source_directory"
+
+IFS=$'\n'
+for app in $(find "$source_directory" -name "*tar.bz2"); do
+  target="$(basename -s .tar.bz2 "$app")"
+  echo "$target"
+  test -d "$target" \
+    && mv "$target" "${target}__old_$(date +%s)"
+  tar xjf "$app"
+done
+
