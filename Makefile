@@ -260,6 +260,8 @@ tmux: \
 	$(BREW) install reattach-to-user-namespace
 
 defaults: \
+        defaults-Trackpad \
+        defaults-Terminal \
 	defaults-Dock \
 	defaults-NSGlobalDomain \
 	defaults-Calendar
@@ -302,15 +304,15 @@ defaults: \
 	# Require password immediately after 5 seconds on sleep or screen saver begins
 	defaults write com.apple.screensaver askForPassword -int 1
 	defaults write com.apple.screensaver askForPasswordDelay -int 5
-	# Only use UTF-8 in Terminal.app
-	defaults write com.apple.terminal StringEncodings -array 4
+        # Disable Game Center
+        defaults write com.apple.gamed Disabled -bool true
 	# Show the ~/Library folder
 	chflags nohidden ~/Library
 	# Keep this bit last
 	# Kill affected applications
 	for app in Safari Finder Mail SystemUIServer; do killall "$$app" >/dev/null 2>&1; done
 	# Re-enable subpixel aliases that got disabled by default in Mojave
-	defaults write -g CGFontRenderingFontSmoothingDisabled -bool NO
+        defaults write -g CGFontRenderingFontSmoothingDisabled -bool false
 
 defaults-administrator:
 	# disable apple captive portal (seucrity issue)
@@ -373,12 +375,16 @@ defaults-NSGlobalDomain:
 	defaults write NSGlobalDomain NSAutomaticQuoteSubstitutionEnabled -bool false
 	# Disable smart dashes as they’re annoying when typing code
 	defaults write NSGlobalDomain NSAutomaticDashSubstitutionEnabled -bool false
+        # Finder: show all filename extensions
+        defaults write NSGlobalDomain AppleShowAllExtensions -bool true
+
+defaults-Trackpad:
 	# Trackpad: enable tap to click for this user and for the login screen
 	defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
 	defaults -currentHost write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
 	defaults write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
-	# Finder: show all filename extensions
-	defaults write NSGlobalDomain AppleShowAllExtensions -bool true
+        # Enable three-finger dragging
+        defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerDrag -int 1
 
 defaults-Calendar:
 	# Show week numbers (10.8 only)
@@ -389,6 +395,16 @@ defaults-Calendar:
 	defaults write com.apple.iCal "first day of week" -int 1
 	# Show event times
 	defaults write com.apple.iCal "Show time in Month View" -bool true
+
+defaults-Terminal:
+        # Only use UTF-8 in Terminal.app
+        defaults write com.apple.terminal StringEncodings -array 4
+        # Set the default shell
+        defaults write com.apple.terminal Shell -string "/usr/local/bin/bash"
+        # Open new windows with our own Theme
+        plutil -replace "Window Settings"."Pro-gramming" -xml "$$(cat Pro-gramming.terminal)" ~/Library/Preferences/com.apple.Terminal.plist
+        defaults write com.apple.Terminal "Default Window Settings" -string "Pro-gramming"
+        defaults write com.apple.Terminal "Startup Window Settings" -string "Pro-gramming"
 
 dotfiles: \
 	$(DOTFILES) \
