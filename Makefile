@@ -100,6 +100,15 @@ brew-baseline: brew-itself
 	# handle json on the command line
 	$(BREW) install jq --HEAD
 
+brew-work: \
+	brew-programming \
+	brew-devops \
+	brew-nettools
+	@$(BREW) update
+	@export HOMEBREW_NO_AUTO_UPDATE=1
+	# slack is the current communication platform
+	$(CASK) install slack
+
 brew-programming: brew-itself
 	@$(BREW) update
 	@export HOMEBREW_NO_AUTO_UPDATE=1
