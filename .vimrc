@@ -103,16 +103,15 @@ map <Leader>f :MixFormat<CR>
 " Insert or delete brackets, parens, quotes in pair
 Plugin 'jiangmiao/auto-pairs'
 
-" Ag file searching
-Plugin 'rking/ag.vim'
-" search case sensitive if there is an uppercase letter
-let g:ag_prg="ag --vimgrep --smart-case"
-" highlight search term after searching
-let g:ag_highlight=1
-" map <leader> F to project search
-map <leader>F :<c-u>Ag <C-R>=shellescape(expand(@"),1)<CR>:copen<CR>
-" map <leader> ** to project search for word under cursor
-nnoremap <leader>* <*>:Ag<Space><C-R><C-W><CR>
+" Rg (ripgrep) file searching
+Plugin 'jremmen/vim-ripgrep'
+" highlight matches
+let g:rg_highlight=1
+" derive root from cwd
+let g:rg_derive_root=1
+" Searches case insensitively if the pattern is all lowercase, case
+" sensitively otherwise.
+let g:rg_command='rg --vimgrep --smart-case'
 
 " textmate like <Tab> expansion snippets
 Plugin 'MarcWeber/vim-addon-mw-utils'
