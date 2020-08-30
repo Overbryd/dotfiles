@@ -14,6 +14,7 @@ CASK = /usr/local/bin/brew cask
 # restore .gnupg to decrypt the secrets from this repository
 # setup ssh config (relies on decrypted repository)
 bootstrap: \
+	bootstrap-fonts-directory \
 	bash \
 	tmux \
 	dotfiles \
@@ -24,6 +25,8 @@ bootstrap: \
 
 bootstrap-administrator: \
 	bootstrap-binary-user \
+	bootstrap-homebrew-folder \
+	bootstrap-fonts-directory \
 	bash \
 	tmux \
 	casks-baseline \
@@ -46,13 +49,14 @@ bootstrap-binary-user:
 bootstrap-homebrew-folder:
 	test -d /usr/local/Caches || sudo mkdir /usr/local/Caches
 	test -d /usr/local/Logs/Homebrew || sudo mkdir -p /usr/local/Logs/Homebrew
+	test -d /usr/local/Fonts || sudo mkdir /usr/local/Fonts
 	sudo chown root:staff /usr/local/Logs
 	sudo chmod g+w /usr/local/Logs
 	# The binary user + group own everything around homebrew.
 	# The administrative user is member of the binary group, hence he can use brew directly.
-	sudo chown -R binary:binary /usr/local/{Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
+	sudo chown -R binary:binary /usr/local/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
 	# Set the proper ACLs on the Homebrew folders in order to inherit ACLs
-	sudo chmod g+w /usr/local/{Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
+	sudo chmod g+w /usr/local/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
 	sudo chmod +a "group:_binary allow list,add_file,search,add_subdirectory,delete_child,readattr,writeattr,readextattr,writeextattr,readsecurity,file_inherit,directory_inherit" /usr/local/{Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
 
 brew-itself: /usr/local/bin/brew
@@ -183,10 +187,16 @@ casks-work: casks-itself
 	# tableplus is the best graphical multi-database client
 	$(CASK) install tableplus
 
+bootstrap-fonts-directory:
+	# Share user fonts via /usr/local
+	chmod -a "group:everyone deny delete" ~/Library/Fonts || echo "No ACL present"
+	rm -rf ~/Library/Fonts
+	ln -svf /usr/local/Fonts ~/Library/Fonts
+
 fonts: \
 	casks-itself
 	# tap homebrew-fonts to install freely available fonts
-	$(BREW) tap caskroom/fonts
+	$(BREW) tap homebrew/cask-fonts
 	# install IBM Plex, an excellent modern font (https://www.ibm.com/plex/)
 	$(CASK) install font-ibm-plex
 	# install Adobe Source Code Pro, an excellent mono space font for programming
@@ -260,8 +270,8 @@ tmux: \
 	$(BREW) install reattach-to-user-namespace
 
 defaults: \
-        defaults-Trackpad \
-        defaults-Terminal \
+	defaults-Trackpad \
+	defaults-Terminal \
 	defaults-Dock \
 	defaults-NSGlobalDomain \
 	defaults-Calendar
@@ -304,15 +314,15 @@ defaults: \
 	# Require password immediately after 5 seconds on sleep or screen saver begins
 	defaults write com.apple.screensaver askForPassword -int 1
 	defaults write com.apple.screensaver askForPasswordDelay -int 5
-        # Disable Game Center
-        defaults write com.apple.gamed Disabled -bool true
+	# Disable Game Center
+	defaults write com.apple.gamed Disabled -bool true
 	# Show the ~/Library folder
 	chflags nohidden ~/Library
 	# Keep this bit last
 	# Kill affected applications
 	for app in Safari Finder Mail SystemUIServer; do killall "$$app" >/dev/null 2>&1; done
 	# Re-enable subpixel aliases that got disabled by default in Mojave
-        defaults write -g CGFontRenderingFontSmoothingDisabled -bool false
+	defaults write -g CGFontRenderingFontSmoothingDisabled -bool false
 
 defaults-administrator:
 	# disable apple captive portal (seucrity issue)
@@ -375,16 +385,16 @@ defaults-NSGlobalDomain:
 	defaults write NSGlobalDomain NSAutomaticQuoteSubstitutionEnabled -bool false
 	# Disable smart dashes as they’re annoying when typing code
 	defaults write NSGlobalDomain NSAutomaticDashSubstitutionEnabled -bool false
-        # Finder: show all filename extensions
-        defaults write NSGlobalDomain AppleShowAllExtensions -bool true
+	# Finder: show all filename extensions
+	defaults write NSGlobalDomain AppleShowAllExtensions -bool true
 
 defaults-Trackpad:
 	# Trackpad: enable tap to click for this user and for the login screen
 	defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
 	defaults -currentHost write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
 	defaults write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
-        # Enable three-finger dragging
-        defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerDrag -int 1
+	# Enable three-finger dragging
+	defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerDrag -int 1
 
 defaults-Calendar:
 	# Show week numbers (10.8 only)
@@ -397,14 +407,14 @@ defaults-Calendar:
 	defaults write com.apple.iCal "Show time in Month View" -bool true
 
 defaults-Terminal:
-        # Only use UTF-8 in Terminal.app
-        defaults write com.apple.terminal StringEncodings -array 4
-        # Set the default shell
-        defaults write com.apple.terminal Shell -string "/usr/local/bin/bash"
-        # Open new windows with our own Theme
-        plutil -replace "Window Settings"."Pro-gramming" -xml "$$(cat Pro-gramming.terminal)" ~/Library/Preferences/com.apple.Terminal.plist
-        defaults write com.apple.Terminal "Default Window Settings" -string "Pro-gramming"
-        defaults write com.apple.Terminal "Startup Window Settings" -string "Pro-gramming"
+	# Only use UTF-8 in Terminal.app
+	defaults write com.apple.terminal StringEncodings -array 4
+	# Set the default shell
+	defaults write com.apple.terminal Shell -string "/usr/local/bin/bash"
+	# Open new windows with our own Theme
+	plutil -replace "Window Settings"."Pro-gramming" -xml "$$(cat Pro-gramming.terminal)" ~/Library/Preferences/com.apple.Terminal.plist
+	defaults write com.apple.Terminal "Default Window Settings" -string "Pro-gramming"
+	defaults write com.apple.Terminal "Startup Window Settings" -string "Pro-gramming"
 
 dotfiles: \
 	$(DOTFILES) \
