@@ -1,4 +1,4 @@
 * text=auto
-.ssh/config filter=git-crypt diff=git-crypt
+.ssh/config text=auto
 .ssh/*.pem  filter=git-crypt diff=git-crypt
 
