@@ -424,10 +424,8 @@ dotfiles: \
 	cd ~ && ln -svf $(DOTFILES_ROOT) dotfiles
 
 ~/.ssh/config:
-	# Test that .ssh/config is decrypted (gpg has been setup)
-	grep "Host *" $(DOTFILES_ROOT)/.ssh/config
-	# Symlink .ssh/config
-	cd ~/.ssh && ln -svf $(DOTFILES_ROOT)/.ssh/config .
+	# Copy a default .ssh/config
+	grep "Host *" ~/.ssh/config || cp $(DOTFILES_ROOT)/.ssh/config ~/.ssh/config
 
 ~/.gnupg:
 	# Ask where to get .gnupg from
