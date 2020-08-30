@@ -284,7 +284,8 @@ defaults: \
 	defaults-Terminal \
 	defaults-Dock \
 	defaults-NSGlobalDomain \
-	defaults-Calendar
+	defaults-Calendar \
+	defaults-Menubar
 	# Show remaining battery time; hide percentage
 	defaults write com.apple.menuextra.battery ShowPercent -string "NO"
 	defaults write com.apple.menuextra.battery ShowTime -string "YES"
@@ -425,6 +426,18 @@ defaults-Terminal:
 	plutil -replace "Window Settings"."Pro-gramming" -xml "$$(cat Pro-gramming.terminal)" ~/Library/Preferences/com.apple.Terminal.plist
 	defaults write com.apple.Terminal "Default Window Settings" -string "Pro-gramming"
 	defaults write com.apple.Terminal "Startup Window Settings" -string "Pro-gramming"
+
+defaults-Menubar:
+	# I want my menubar to look like this
+	defaults write com.apple.systemuiserver menuExtras -array \
+		"/System/Library/CoreServices/Menu Extras/AirPort.menu" \
+		"/System/Library/CoreServices/Menu Extras/Bluetooth.menu" \
+		"/System/Library/CoreServices/Menu Extras/Clock.menu" \
+		"/System/Library/CoreServices/Menu Extras/Displays.menu" \
+		"/System/Library/CoreServices/Menu Extras/Volume.menu"
+	# I want the datetime display in my menubar to look like this
+	defaults write com.apple.menuextra.clock DateFormat -string "EEE d MMM HH:mm"
+	killall SystemUIServer
 
 dotfiles: \
 	$(DOTFILES) \
