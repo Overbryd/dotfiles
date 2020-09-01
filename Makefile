@@ -327,7 +327,7 @@ defaults: \
 	defaults write com.apple.finder ShowPathbar -bool true
 	# Empty Trash securely by default
 	defaults write com.apple.finder EmptyTrashSecurely -bool false
-	# Require password immediately after 5 seconds on sleep or screen saver begins
+	# Require password after 5 seconds on sleep or screen saver begins
 	defaults write com.apple.screensaver askForPassword -int 1
 	defaults write com.apple.screensaver askForPasswordDelay -int 5
 	# Disable Game Center
@@ -406,11 +406,13 @@ defaults-NSGlobalDomain:
 
 defaults-Trackpad:
 	# Trackpad: enable tap to click for this user and for the login screen
-	defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
-	defaults -currentHost write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
 	defaults write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
+	defaults write NSGlobalDomain com.apple.trackpad.tapBehavior -int 1
 	# Enable three-finger dragging
-	defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerDrag -int 1
+	defaults write NSGlobalDomain com.apple.driver.AppleBluetoothMultitouch.trackpad.TrackpadThreeFingerDrag -int 1
+	# Make the trackpad fast
+	defaults write NSGlobalDomain com.apple.mouse.scaling -float 10.0
+	defaults write NSGlobalDomain com.apple.trackpad.scaling -float 10.0
 
 defaults-Calendar:
 	# Show week numbers (10.8 only)
