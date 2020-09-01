@@ -133,6 +133,9 @@ brew-devops: casks-itself
 	$(BREW) install cloudflare/cloudflare/cloudflared
 	# smartmontools great for monitoring disks
 	$(BREW) install smartmontools
+	# I need to control kubernetes clusters
+	$(BREW) install kubernetes-cli
+	$(BREW) install helm
 
 brew-nettools: brew-itself
 	@$(BREW) update
