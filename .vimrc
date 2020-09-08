@@ -5,6 +5,14 @@ call vundle#begin()
 " Turn of modeline
 set modelines=0
 set nomodeline
+" Prescribe Vim to switch to an existing tab page if it contains a window displaying
+" the target buffer, otherwise open a new tab.
+" https://stackoverflow.com/a/6853779
+set switchbuf+=usetab,newtab
+" Configure the quickfix buffer (also works in location lists).
+" Open file using <Enter> in a new tab.
+" https://vi.stackexchange.com/a/6999
+autocmd FileType qf nnoremap <buffer> <Enter> <C-W><Enter><C-W>T
 
 " Manage these plugins
 Plugin 'gmarik/Vundle.vim'
