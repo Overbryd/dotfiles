@@ -13,6 +13,9 @@ set switchbuf+=usetab,newtab
 " Open file using <Enter> in a new tab.
 " https://vi.stackexchange.com/a/6999
 autocmd FileType qf nnoremap <buffer> <Enter> <C-W><Enter><C-W>T
+" Close tabs (and their splits) to the right with tabr
+" https://superuser.com/questions/555011/vim-close-all-tabs-to-the-right
+command -nargs=0 Tabr :.+1,$tabdo :tabc
 
 " Manage these plugins
 Plugin 'gmarik/Vundle.vim'
