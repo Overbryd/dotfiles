@@ -18,7 +18,8 @@ bootstrap: \
 	bash \
 	tmux \
 	dotfiles \
-	vim \
+	vim-directories \
+	vim-plugins \
 	~/.gnupg \
 	~/.ssh/config \
 	defaults
@@ -256,14 +257,18 @@ ruby: \
 	git clone git://github.com/jf/rbenv-gemset.git ~/.rbenv/plugins/rbenv-gemset
 
 vim: \
+	vim-directories \
 	vim-itself \
 	vim-plugins
+
+vim-directories:
+	# create vim directories
+	mkdir -p ~/.vim/tmp/{backup,swap,undo}
+	chmod go= ~/.vim/tmp{,/*}
 
 vim-itself: brew-itself
 	# newer version of vim
 	$(BREW) install vim
-	# create vim directories
-	mkdir -p ~/.vim/tmp/{backup,swap,undo}
 
 vim-plugins: \
 	~/.vim/bundle/Vundle.vim
