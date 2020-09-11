@@ -125,6 +125,7 @@ brew-devops: casks-itself
 	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# handle amazon web services related stuff
 	$(BREW) install awscli
+	$(BREW) install aws-iam-authenticator
 	# tail cloudwatch logs (e.g. from Fargate containers)
 	$(BREW) tap TylerBrock/saw
 	$(BREW) install saw
@@ -137,6 +138,8 @@ brew-devops: casks-itself
 	# I need to control kubernetes clusters
 	$(BREW) install kubernetes-cli
 	$(BREW) install helm
+	# Terraform, this is what makes the money
+	$(BREW) install terraform
 
 brew-nettools: brew-itself
 	@$(BREW) update
