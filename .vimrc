@@ -238,7 +238,7 @@ set directory=~/.vim/tmp/swap
 
 " save an undofile to be able to undo changes after closing files
 set undofile
-set undodir=~/.vimtmp/undo
+set undodir=~/.vim/tmp/undo
 " use many levels of undo
 
 " I got enough memory, no need for swap files
