@@ -131,6 +131,9 @@ brew-devops: casks-itself
 	$(BREW) install saw
 	# handle google cloud related stuff
 	$(CASK) install google-cloud-sdk
+	# Google, you are fucking kidding me
+	gcloud config set disable_usage_reporting false
+	gcloud config set survey/disable_prompts True
 	# neat way to expose a locally running service
 	$(BREW) install cloudflare/cloudflare/cloudflared
 	# smartmontools great for monitoring disks
