@@ -1,0 +1,9 @@
+# Load the specific ruby version into the environment
+# Usage: use ruby <version>
+#
+use_ruby() {
+  local ruby_dir=$HOME/.rubies/$1
+  load_prefix $ruby_dir
+  layout ruby
+}
+
