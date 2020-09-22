@@ -119,6 +119,8 @@ brew-programming: brew-itself
 	$(BREW) install erlang
 	# elixir programming language
 	$(BREW) install elixir
+	# install and manage ruby versions
+	$(BREW) install ruby-install
 
 brew-devops: casks-itself
 	@$(BREW) update
@@ -143,6 +145,8 @@ brew-devops: casks-itself
 	$(BREW) install helm
 	# Terraform, this is what makes the money
 	$(BREW) install terraform
+	# Kops is an alternative to EKS clusters (I no longer prefer)
+	$(BREW) install kops
 
 brew-nettools: brew-itself
 	@$(BREW) update
