@@ -33,6 +33,9 @@ export HOMEBREW_PREFIX=/usr/local
 # Bash completion for brew installed tools
 source "$HOMEBREW_PREFIX/etc/bash_completion"
 
+# Pin down google cloud sdk python executable
+export CLOUDSDK_PYTHON="/usr/local/opt/python@3.8/libexec/bin/python"
+
 # Setup a simple PROMPT/PS1
 export PROMPT_DIRTRIM=1
 if id -Gn | grep admin >/dev/null; then
