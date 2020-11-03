@@ -2,7 +2,7 @@
 # Usage: use ruby <version>
 #
 use_ruby() {
-  local ruby_dir=$HOME/.rubies/$1
+  local ruby_dir=$HOMEBREW_PREFIX/rubies/$1
   load_prefix $ruby_dir
   layout ruby
 }
