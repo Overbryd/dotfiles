@@ -35,6 +35,8 @@ source "$HOMEBREW_PREFIX/etc/bash_completion"
 
 # Pin down google cloud sdk python executable
 export CLOUDSDK_PYTHON="/usr/local/opt/python@3.8/libexec/bin/python"
+source "/usr/local/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/path.bash.inc"
+source "/usr/local/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/completion.bash.inc"
 
 # Setup a simple PROMPT/PS1
 export PROMPT_DIRTRIM=1
