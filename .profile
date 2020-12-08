@@ -20,7 +20,7 @@ export LANG=en_US.UTF-8
 # Note: I am using a isolated user setup, no-one except that 'binary' user can write to the
 #       Homebrew directories.
 alias brew="sudo -ubinary brew"
-alias cask="/usr/local/bin/brew cask"
+alias cask="/usr/local/bin/brew --cask"
 # prevent API throttling when installing/updating homebrew things
 export HOMEBREW_GITHUB_API_TOKEN=9d9f01f0d6cf2214fe951cc95f9d79872fbd5499
 export HOMEBREW_NO_ANALYTICS=1
