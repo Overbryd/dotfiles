@@ -57,7 +57,7 @@ bootstrap-homebrew-folder:
 	# The administrative user is member of the binary group, hence he can use brew directly.
 	sudo chown -R binary:binary /usr/local/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
 	# Set the proper ACLs on the Homebrew folders in order to inherit ACLs
-	sudo chmod g+w /usr/local/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
+	sudo chmod -R g+w /usr/local/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
 	sudo chmod +a "group:_binary allow list,add_file,search,add_subdirectory,delete_child,readattr,writeattr,readextattr,writeextattr,readsecurity,file_inherit,directory_inherit" /usr/local/{Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
 
 brew-itself: /usr/local/bin/brew
