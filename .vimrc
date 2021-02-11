@@ -173,6 +173,8 @@ Plugin 'owickstrom/vim-colors-paramount'
 
 " Terraform support
 Plugin 'hashivim/vim-terraform'
+" Packer support
+Plugin 'hashivim/vim-packer'
 
 call vundle#end()
 
