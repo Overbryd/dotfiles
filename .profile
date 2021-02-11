@@ -3,6 +3,8 @@
 export PATH="$HOME/.bin:$PATH"
 # add brew version of curl to PATH
 export PATH="/usr/local/opt/curl/bin:$PATH"
+# add brew /usr/local/sbin
+export PATH="/usr/local/sbin:$PATH"
 
 # directory specific .envrc files
 eval "$(direnv hook bash)"
@@ -14,6 +16,13 @@ export VISUAL="$EDITOR"
 # utf-8 all the things
 export LC_ALL=en_US.UTF-8
 export LANG=en_US.UTF-8
+
+# pyenv
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+if command -v pyenv 1>/dev/null 2>&1; then
+  eval "$(pyenv init -)"
+fi
 
 ##
 # Homebrew settings
