@@ -30,8 +30,6 @@ fi
 #       Homebrew directories.
 alias brew="sudo -ubinary brew"
 alias cask="/usr/local/bin/brew --cask"
-# prevent API throttling when installing/updating homebrew things
-export HOMEBREW_GITHUB_API_TOKEN=9d9f01f0d6cf2214fe951cc95f9d79872fbd5499
 export HOMEBREW_NO_ANALYTICS=1
 export HOMEBREW_NO_INSECURE_REDIRECT=1
 export HOMEBREW_CASK_OPTS=--require-sha
@@ -70,9 +68,7 @@ if [ "x$PROMPT_COMMAND" != "x" ]; then
 fi
 export PROMPT_COMMAND="$PROMPT_COMMAND history -a; history -n" # preserve other PROMPT_COMMAND stuff!
 
-# Aliases are managed here
-source ~/.bash_aliases
-
-# Functions are managed here
-source ~/.bash_functions
+source ~/.profile.d/credentials
+source ~/.profile.d/aliases
+source ~/.profile.d/functions
 
