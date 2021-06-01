@@ -1,0 +1,12 @@
+# local .bin
+export PATH="$HOME/.bin:$PATH"
+# add pyenv path
+export PATH="$PYENV_ROOT/bin:$PATH"
+# add brew version of curl
+export PATH="/usr/local/opt/curl/bin:$PATH"
+# add brew /usr/local/sbin
+export PATH="/usr/local/sbin:$PATH"
+# add brew version of OpenJDK
+export PATH="/usr/local/opt/openjdk@11/bin:$PATH"
+# link brew version of ruby
+export PATH="/usr/local/opt/ruby/bin:$PATH"
