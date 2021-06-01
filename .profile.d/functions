@@ -41,3 +41,13 @@ function docker-cleanup() {
   docker volume prune -f
 }
 
+update_terminal_cwd() {
+  # Identify the directory using a "file:" scheme URL,
+  # including the host name to disambiguate local vs.
+  # remote connections. Percent-escape spaces.
+  local search=' '
+  local replace='%20'
+  local pwd_url="file://$HOSTNAME${PWD//$SEARCH/$replace}"
+  printf '\e]7;%s\a' "$pwd_url"
+}
+

@@ -51,7 +51,5 @@
 	default = upstream
 [status]
 	submoduleSummary = true
-[http]
-        cookiefile = /Users/lukas/.gitcookies
 [pull]
 	ff = only

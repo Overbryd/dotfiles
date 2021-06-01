@@ -124,14 +124,6 @@ let g:rg_derive_root=1
 " sensitively otherwise.
 let g:rg_command='rg --vimgrep --smart-case'
 
-" textmate like <Tab> expansion snippets
-Plugin 'MarcWeber/vim-addon-mw-utils'
-Plugin 'tomtom/tlib_vim'
-Plugin 'garbas/vim-snipmate'
-
-" load a bunch of those snippets
-Plugin 'honza/vim-snippets'
-
 " comment stuff in/out with gc<motion>
 Plugin 'tpope/vim-commentary'
 
