@@ -1,0 +1,9 @@
+# Setup a simple PROMPT/PS1
+export PROMPT_DIRTRIM=1
+if id -Gn | grep admin >/dev/null; then
+  export ADMIN_PROMPT="\[\e[37;41m\]"
+else
+  export ADMIN_PROMPT=""
+fi
+export PS1="\n${ADMIN_PROMPT}\W$\[\e[m\] "
+

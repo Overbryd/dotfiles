@@ -142,6 +142,7 @@ brew-devops: casks-itself
 	$(BREW) install smartmontools
 	# I need to control kubernetes clusters
 	$(BREW) install kubernetes-cli
+	kubectl completion bash > $$HOME/dotfiles/.completion.d/kubectl
 	$(BREW) install helm
 	# Terraform, this is what makes the money
 	$(BREW) install terraform
@@ -288,7 +289,7 @@ vim-plugins: \
 	vim -u /tmp/.vimrc +PluginInstall +qall
 	-rm /tmp/.vimrc
 	# post installation steps of command-t (use the ruby that ships with vim)
-	cd ~/.vim/bundle/command-t/ruby/command-t/ext/command-t && /usr/local/opt/ruby/bin/ruby extconf.rb && make
+	cd ~/.vim/bundle/command-t/ruby/command-t/ext/command-t && make clean && export PATH="/usr/local/opt/ruby/bin:$$PATH" && ruby extconf.rb && make
 
 # install vundle, a vim package manager
 ~/.vim/bundle/Vundle.vim:
