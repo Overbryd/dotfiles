@@ -253,6 +253,10 @@ set synmaxcol=160
 " we have a good terminal connection, send more characters for redrawing
 set ttyfast
 
+" Disable modeline as a security precaution
+set modelines=0
+set nomodeline
+
 " disable arrow keys
 " noremap <Up> <NOP>
 " noremap <Down> <NOP>
