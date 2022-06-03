@@ -46,6 +46,7 @@
 	pick = "cherry-pick"
   contributors = "shortlog -n -s --no-merges"
   amend = "commit -a --amend"
+  amen = "commit --amend --no-edit"
   staged = "diff --staged"
 [push]
 	default = upstream
