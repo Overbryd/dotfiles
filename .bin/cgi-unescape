@@ -1,0 +1,12 @@
+#!/usr/bin/env ruby -rcgi
+
+if ARGV.any?
+  ARGV.each do |arg|
+    puts CGI.unescape(arg)
+  end
+else
+  STDIN.each_line do |line|
+    puts CGI.unescape(line.sub(/\n$/, ''))
+  end
+end
+
