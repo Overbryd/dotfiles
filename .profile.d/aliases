@@ -1,5 +1,5 @@
 # nice directory listing
-alias l="ls -Glah"
+alias l="ls -lah"
 
 # nice directory tree listing, but just 2 levels
 alias tree2="tree -L 2 --dirsfirst"
@@ -8,4 +8,3 @@ alias tree2="tree -L 2 --dirsfirst"
 alias g="git"
 # I often mistype gs and then this stupid ghost script shell pops up
 alias gs="git status"
-
