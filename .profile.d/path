@@ -10,3 +10,5 @@ export PATH="/usr/local/sbin:$PATH"
 export PATH="/usr/local/opt/openjdk@11/bin:$PATH"
 # link brew version of ruby
 export PATH="/usr/local/opt/ruby/bin:$PATH"
+# add brew version of getop
+export PATH="/usr/local/opt/gnu-getopt/bin:$PATH"
