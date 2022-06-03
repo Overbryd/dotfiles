@@ -162,6 +162,14 @@ brew-nettools: brew-itself
 	# hugo is my blogging engine
 	$(BREW) install hugo
 
+brew-fzf: brew-itself
+        @$(BREW) update
+        @export HOMEBREW_NO_AUTO_UPDATE=1
+        # fzf is a fuzzy file finder
+        $(BREW) install fzf
+        /usr/local/opt/fzf/install --key-bindings --completion --no-update-rc --no-zsh --no-fish
+        $(BREW) install fzf-tmux
+
 mas-itself: brew-itself
 	$(BREW) install mas
 
