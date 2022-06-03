@@ -4,15 +4,6 @@ function tms {
   tmux new -s $name || tmux attach-session -t $name
 }
 
-# Start a HTTP server from a directory, optionally specifying the port
-function server() {
-  local port="${1:-8000}"
-  open "http://localhost:${port}/"
-  # Set the default Content-Type to `text/plain` instead of `application/octet-stream`
-  # And serve everything as UTF-8 (although not technically correct, this doesn’t break anything for binary files)
-  python -c $'import SimpleHTTPServer;\nmap = SimpleHTTPServer.SimpleHTTPRequestHandler.extensions_map;\nmap[""] = "text/plain";\nfor key, value in map.items():\n\tmap[key] = value + ";charset=UTF-8";\nSimpleHTTPServer.test();' "$port"
-}
-
 # Mirror a complete website
 function mirror-website() {
   local url=$@
@@ -41,13 +32,18 @@ function docker-cleanup() {
   docker volume prune -f
 }
 
+# Identify the directory using a "file:" scheme URL,
+# including the host name to disambiguate local vs.
+# remote connections. Percent-escape spaces.
 update_terminal_cwd() {
-  # Identify the directory using a "file:" scheme URL,
-  # including the host name to disambiguate local vs.
-  # remote connections. Percent-escape spaces.
   local search=' '
   local replace='%20'
   local pwd_url="file://$HOSTNAME${PWD//$SEARCH/$replace}"
   printf '\e]7;%s\a' "$pwd_url"
+}
+
+# Escape terraform state identifierts
+tf-escape() {
+  sed -e 's/"/\\"/g'
 }
 
