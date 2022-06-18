@@ -1,0 +1,17 @@
+{
+  "python.pythonPath": "python",
+  "coc.preferences.jumpCommand": "tabe",
+  "languageserver": {
+    "terraform": {
+      "command": "terraform-ls",
+      "args": ["serve"],
+      "filetypes": [
+        "terraform",
+        "tf"
+      ],
+      "initializationOptions": {},
+      "settings": {}
+    }
+  }
+}
+

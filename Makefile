@@ -1,9 +1,9 @@
 EXCLUDED_DOTFILES := .git .git-crypt .gitattributes .gitignore .gitmodules .ssh
 DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
+DOT_CONFIG_FILES := $(addprefix ~/, $(wildcard .config/*))
 
 DOTFILES_ROOT = /usr/local/dotfiles
-BREW = sudo -ubinary brew
-CASK = /usr/local/bin/brew cask
+BREW = sudo -Eubinary brew
 
 # Execute all commands per task in one shell, allowing for environment variables to be set for
 # all following commands.
@@ -47,18 +47,39 @@ bootstrap-binary-user:
 	echo "partenkirchen	ALL = (_binary) ALL" | sudo tee /etc/sudoers.d/partenkirchen
 	echo 'Defaults!/usr/local/bin/brew env_keep += "HOMEBREW_*"' | sudo tee -a /etc/sudoers.d/partenkirchen
 
-bootstrap-homebrew-folder:
-	test -d /usr/local/Caches || sudo mkdir /usr/local/Caches
-	test -d /usr/local/Logs/Homebrew || sudo mkdir -p /usr/local/Logs/Homebrew
-	test -d /usr/local/Fonts || sudo mkdir /usr/local/Fonts
-	sudo chown root:staff /usr/local/Logs
-	sudo chmod g+w /usr/local/Logs
-	# The binary user + group own everything around homebrew.
-	# The administrative user is member of the binary group, hence he can use brew directly.
-	sudo chown -R binary:binary /usr/local/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
+bootstrap-homebrew-folder: \
+	/usr/local/Caches \
+	/usr/local/Caskroom \
+	/usr/local/Cellar \
+	/usr/local/Frameworks \
+	/usr/local/Homebrew \
+	/usr/local/Logs/Homebrew \
+	/usr/local/Fonts \
+	/usr/local/bin \
+	/usr/local/etc \
+	/usr/local/include \
+	/usr/local/lib \
+	/usr/local/opt \
+	/usr/local/sbin \
+	/usr/local/share \
+	/usr/local/var \
+	/usr/local/pyenv \
+	/usr/local/npm
+	sudo chown -R binary:binary /usr/local/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var,pyenv,npm}
 	# Set the proper ACLs on the Homebrew folders in order to inherit ACLs
-	sudo chmod -R g+w /usr/local/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
-	sudo chmod +a "group:_binary allow list,add_file,search,add_subdirectory,delete_child,readattr,writeattr,readextattr,writeextattr,readsecurity,file_inherit,directory_inherit" /usr/local/{Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var}
+	sudo chmod -R g+w /usr/local/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var,pyenv,npm}
+	sudo chmod +a "group:_binary allow list,add_file,search,add_subdirectory,delete_child,readattr,writeattr,readextattr,writeextattr,readsecurity,file_inherit,directory_inherit" /usr/local/{Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var,pyenv,npm}
+
+/usr/local/Logs/Homebrew:
+	test -d /usr/local/Logs/Homebrew || sudo mkdir -p /usr/local/Logs/Homebrew
+	sudo chown -R root:staff /usr/local/Logs
+	sudo chmod -R g+w /usr/local/Logs
+
+/usr/local/%:
+	test -d $@ || sudo mkdir $@
+	sudo chown -R binary:binary $@
+	sudo chmod -R g+w $@
+	sudo chmod +a "group:_binary allow list,add_file,search,add_subdirectory,delete_child,readattr,writeattr,readextattr,writeextattr,readsecurity,file_inherit,directory_inherit" $@
 
 brew-itself: /usr/local/bin/brew
 brew: \
@@ -108,9 +129,9 @@ brew-work: \
 	@$(BREW) update
 	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# slack is the current communication platform
-	$(CASK) install slack
+	$(BREW) install --cask slack
 	# tableplus is my preferred SQL-client
-	$(CASK) install tableplus
+	$(BREW) install --cask tableplus
 
 brew-programming: brew-itself
 	@$(BREW) update
@@ -121,6 +142,8 @@ brew-programming: brew-itself
 	$(BREW) install elixir
 	# install and manage ruby versions
 	$(BREW) install ruby-install
+	# install pyenv to manage python versions
+	$(BREW) install pyenv
 
 brew-devops: casks-itself
 	@$(BREW) update
@@ -132,7 +155,7 @@ brew-devops: casks-itself
 	$(BREW) tap TylerBrock/saw
 	$(BREW) install saw
 	# handle google cloud related stuff
-	$(CASK) install google-cloud-sdk
+	$(BREW) install --cask google-cloud-sdk
 	# Google, you are fucking kidding me
 	gcloud config set disable_usage_reporting false
 	gcloud config set survey/disable_prompts True
@@ -145,7 +168,7 @@ brew-devops: casks-itself
 	kubectl completion bash > $$HOME/dotfiles/.completion.d/kubectl
 	$(BREW) install helm
 	# Terraform, this is what makes the money
-	$(BREW) install terraform
+	$(BREW) install terraform-ls
 	# Kops is an alternative to EKS clusters (I no longer prefer)
 	$(BREW) install kops
 
@@ -163,12 +186,12 @@ brew-nettools: brew-itself
 	$(BREW) install hugo
 
 brew-fzf: brew-itself
-        @$(BREW) update
-        @export HOMEBREW_NO_AUTO_UPDATE=1
-        # fzf is a fuzzy file finder
-        $(BREW) install fzf
-        /usr/local/opt/fzf/install --key-bindings --completion --no-update-rc --no-zsh --no-fish
-        $(BREW) install fzf-tmux
+	@$(BREW) update
+	@export HOMEBREW_NO_AUTO_UPDATE=1
+	# fzf is a fuzzy file finder
+	$(BREW) install fzf
+	/usr/local/opt/fzf/install --key-bindings --completion --no-update-rc --no-zsh --no-fish
+	$(BREW) install fzf-tmux
 
 mas-itself: brew-itself
 	$(BREW) install mas
@@ -197,30 +220,30 @@ casks-baseline: casks-itself
 	@$(BREW) update
 	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# spectacle for mac osx window management/tiling
-	$(CASK) install spectacle
-	# opera for browsing the web
-	$(CASK) install opera
+	$(BREW) install --cask spectacle
+	# vivaldi for browsing the web
+	$(BREW) install --cask vivaldi
 	# dropbox synchronised files across devices
-	$(CASK) install dropbox
+	$(BREW) install --cask dropbox
 	# 1password is my password manager
-	$(CASK) install 1password
-	$(CASK) install 1password-cli
+	$(BREW) install --cask 1password
+	$(BREW) install --cask 1password-cli
 	# gpg-suite provide me with all gpp related things
-	$(CASK) install gpg-suite
+	$(BREW) install --cask gpg-suite
 	# Flux reduces blue/green colors on the display spectrum and helps me sleep better
-	$(CASK) install flux
+	$(BREW) install --cask flux
 	# launchbar is my preferred app launcher/clipboard history, calculator and goto mac utility
-	$(CASK) install launchbar
+	$(BREW) install --cask launchbar
 	# appcleaner removed macOS applications and their cruft
-	$(CASK) install appcleaner
+	$(BREW) install --cask appcleaner
 	# Carbon Copy Cloner is my backup tool of choice
-	$(CASK) install carbon-copy-cloner
+	$(BREW) install --cask carbon-copy-cloner
 
 casks-work: casks-itself
 	@$(BREW) update
 	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# tableplus is the best graphical multi-database client
-	$(CASK) install tableplus
+	$(BREW) install --cask tableplus
 
 bootstrap-fonts-directory:
 	# Share user fonts via /usr/local
@@ -233,9 +256,9 @@ fonts: \
 	# tap homebrew-fonts to install freely available fonts
 	$(BREW) tap homebrew/cask-fonts
 	# install IBM Plex, an excellent modern font (https://www.ibm.com/plex/)
-	$(CASK) install font-ibm-plex
+	$(BREW) install --cask font-ibm-plex
 	# install Adobe Source Code Pro, an excellent mono space font for programming
-	$(CASK) install font-source-code-pro
+	$(BREW) install --cask font-source-code-pro
 
 bash: brew-itself
 	@$(BREW) update
@@ -275,6 +298,18 @@ ruby: \
 ~/.rbenv/plugins/rbenv-gemset:
 	git clone git://github.com/jf/rbenv-gemset.git ~/.rbenv/plugins/rbenv-gemset
 
+python:
+	sudo -Eubinary pyenv install --skip-existing 3.10.4
+	sudo -Eubinary pyenv global 3.10.4
+	sudo -Eubinary pip install --upgrade pip
+	sudo -Eubinary pip install neovim
+
+node: ~/.npmrc
+	sudo -Eubinary npm install --location=global neovim
+	sudo mkdir /usr/local/npm/{_logs,_cache,_cacache} || true
+	sudo chown -R binary:staff /usr/local/npm/{_logs,_cache,_cacache}
+	sudo chmod -R g+w /usr/local/npm/{_logs,_cache,_cacache}
+
 vim: \
 	vim-directories \
 	vim-itself \
@@ -302,6 +337,33 @@ vim-plugins: \
 # install vundle, a vim package manager
 ~/.vim/bundle/Vundle.vim:
 	git clone https://github.com/gmarik/Vundle.vim.git ~/.vim/bundle/Vundle.vim
+
+nvim: \
+	nvim-directories \
+	~/.config/nvim \
+	nvim-itself \
+	nvim-plugins \
+	nvim-lsp-support
+
+nvim-user: \
+	nvim-directories \
+	~/.config/nvim \
+	nvim-plugins \
+	nvim-coc-install
+
+nvim-directories:
+	# create nvim directories
+	mkdir -p ~/.nvim/tmp/{backup,swap,undo}
+	chmod go= ~/.nvim/tmp{,/*}
+
+nvim-itself:
+	$(BREW) install nvim
+
+nvim-lsp-support: nvim-plugins
+	nvim -c 'CocInstall -sync coc-just-complete coc-pairs coc-tsserver coc-json coc-html coc-css coc-pyright coc-docker coc-erlang_ls coc-fzf-preview coc-go coc-html coc-svelte coc-yaml coc-elixir coc-terraform | qa'
+
+nvim-plugins:
+	nvim -c 'PlugInstall | qa'
 
 tmux: \
 	~/.tmux.conf
@@ -472,6 +534,7 @@ defaults-Menubar:
 
 dotfiles: \
 	$(DOTFILES) \
+	$(DOT_CONFIG_FILES) \
 	~/dotfiles
 
 ~/dotfiles:
@@ -486,11 +549,17 @@ dotfiles: \
 	@read -p "Where is .gnupg (from backup) located?" gnupg_source;
 	cp -v $$gnupg_source ~/.gnupg
 
+~/.config/%: ~/.config
+	cd ~ && ln -svf $(DOTFILES_ROOT)/.config/$(notdir $@) .config/$(notdir $@)
+
+~/.config:
+	mkdir ~/.config
+
 ~/.%:
 	cd ~ && ln -svf $(DOTFILES_ROOT)/$(notdir $@) $@
 
 docker:
-	$(CASK) install docker
+	$(BREW) install --cask docker
 
 # Here is a comprehensive guide: https://github.com/drduh/macOS-Security-and-Privacy-Guide
 # The following settings implement some basic security measures
