@@ -8,3 +8,8 @@ alias tree2="tree -L 2 --dirsfirst"
 alias g="git"
 # I often mistype gs and then this stupid ghost script shell pops up
 alias gs="git status"
+
+# Prefer neovim over vim
+alias vim="nvim"
+alias vi="nvim"
+
