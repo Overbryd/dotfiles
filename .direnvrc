@@ -7,3 +7,12 @@ use_ruby() {
   layout ruby
 }
 
+layout_docker-shims() {
+  export DOCKER_SHIMS_DIR="$(direnv_layout_dir)/.docker-shims"
+  mkdir -p "$DOCKER_SHIMS_DIR/bin"
+  mkdir -p "$DOCKER_SHIMS_DIR/home"
+  test -d "$HOME/.docker-shims/$1" && cp -r "$HOME/.docker-shims/$1/" "$DOCKER_SHIMS_DIR/"
+  PATH_add "$DOCKER_SHIMS_DIR/bin"
+  PATH_add "$HOME/.docker-shims/bin"
+}
+

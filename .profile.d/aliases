@@ -13,3 +13,6 @@ alias gs="git status"
 alias vim="nvim"
 alias vi="nvim"
 
+# Utilities
+alias lower="tr '[[:upper:]]' '[[:lower:]]'"
+

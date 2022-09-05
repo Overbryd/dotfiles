@@ -132,6 +132,8 @@ brew-work: \
 	$(BREW) install --cask slack
 	# tableplus is my preferred SQL-client
 	$(BREW) install --cask tableplus
+	# Alacritty is a better terminal emulator
+	$(BREW) install --cask alacritty
 
 brew-programming: brew-itself
 	@$(BREW) update
@@ -360,10 +362,11 @@ nvim-itself:
 	$(BREW) install nvim
 
 nvim-lsp-support: nvim-plugins
-	nvim -c 'CocInstall -sync coc-just-complete coc-pairs coc-tsserver coc-json coc-html coc-css coc-pyright coc-docker coc-erlang_ls coc-fzf-preview coc-go coc-html coc-svelte coc-yaml coc-elixir coc-terraform | qa'
+	nvim -c 'CocInstall -sync coc-just-complete coc-pairs coc-tsserver coc-json coc-html coc-css coc-pyright coc-docker coc-erlang_ls coc-fzf-preview coc-go coc-html coc-svelte coc-yaml coc-elixir coc-terraform coc-snippets | qa'
 
 nvim-plugins:
 	nvim -c 'PlugInstall | qa'
+	nvim -c 'PlugClean | qa'
 
 tmux: \
 	~/.tmux.conf
