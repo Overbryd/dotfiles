@@ -1,5 +1,6 @@
 " Always show the signcolumn, otherwise it would shift the text each time
 set signcolumn=number
+set completeopt+=menuone
 
 " trigger completion on CTRL-N and CTRL-P
 inoremap <silent><expr> <c-n> coc#refresh()
@@ -73,3 +74,12 @@ nnoremap <silent><nowait> <space>j  :<C-u>CocNext<CR>
 nnoremap <silent><nowait> <space>k  :<C-u>CocPrev<CR>
 " Resume latest coc list.
 nnoremap <silent><nowait> <space>p  :<C-u>CocListResume<CR>
+
+" Mappings for coc-snippets
+" Use <C-j> for both expand and jump (make expand higher priority.)
+imap <C-j> <Plug>(coc-snippets-expand-jump)
+" Use <C-j> for select text for visual placeholder of snippet
+vmap <C-j> <Plug>(coc-snippets-select)
+
+inoremap <expr> <Tab> pumvisible() ? "\<C-n>" : "\<Tab>"
+inoremap <expr> <S-Tab> pumvisible() ? "\<C-p>" : "\<S-Tab>"

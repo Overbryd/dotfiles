@@ -1,6 +1,13 @@
 {
   "python.pythonPath": "python",
   "coc.preferences.jumpCommand": "tabe",
+  "coc.preferences.messageLevel": "error",
+  "coc.preferences.formatOnSaveFiletypes": [
+    "markdown",
+    "Markdown",
+    "terraform"
+  ],
+  "suggest.triggerCompletionWait": 15,
   "languageserver": {
     "terraform": {
       "command": "terraform-ls",

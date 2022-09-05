@@ -25,4 +25,16 @@ Plug 'elixir-editors/vim-elixir'
 Plug 'junegunn/fzf'
 Plug 'junegunn/fzf.vim'
 
+" Snippets
+Plug 'honza/vim-snippets'
+
+" Multiple cursors
+" Plug 'mg979/vim-visual-multi', {'branch': 'master'}
+
+" Rename current buffer and file on disk
+Plug 'danro/rename.vim'
+
+" Work smarter, not harder™
+Plug 'github/copilot.vim'
+
 call plug#end()
