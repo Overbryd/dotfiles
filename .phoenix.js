@@ -174,24 +174,25 @@ class ContainerManager {
     if (render) this.render();
   }
 
-  swapFocused(name, render) {
+  swapFocused(targetContainerName, render) {
     render = render === undefined || render;
     const window = Window.focused();
-    const targetContainer = this.containers.get(name);
+    const targetContainer = this.containers.get(targetContainerName);
     if (!targetContainer)
       return;
-    let current;
+    let currentContainerName;
     for (const [name, container] of this.containers) {
-      if (container.has(window))
-        current = name;
+      if (container.has(window)) {
+        currentContainerName = name;
         break;
+      }
     }
-    if (current === name)
+    if (currentContainerName === targetContainerName)
       return;
     const swapWindow = targetContainer.stackHead();
-    this.unshiftWindow(window, name, false);
-    if (swapWindow !== undefined && current)
-      this.unshiftWindow(swapWindow, current, false);
+    this.unshiftWindow(window, targetContainerName, false);
+    if (swapWindow !== undefined && currentContainerName)
+      this.unshiftWindow(swapWindow, currentContainerName, false);
     if (render) this.render();
   }
 
