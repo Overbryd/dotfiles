@@ -409,8 +409,8 @@ const mash = ['ctrl', 'cmd'];
 // Move windows
 Key.on('up', mash, () => SpaceManager.active().containerManager.swapFocused('main', true))
 Key.on('down', mash, () => SpaceManager.active().containerManager.swapFocused('secondary', true))
-Key.on('right', mash, () => SpaceManager.active().containerManager.swapFocused('right', true))
-Key.on('left', mash, () => SpaceManager.active().containerManager.swapFocused('left', true))
+Key.on('right', mash, () => SpaceManager.active().containerManager.pushFocused('right', true))
+Key.on('left', mash, () => SpaceManager.active().containerManager.pushFocused('left', true))
 
 // Focus windows
 Key.on('h', mash, () => Window.focused().focusClosestNeighbour('west'));
