@@ -7,6 +7,9 @@ let g:loaded_ruby_provider = 0
 " disable perl provider
 let g:loaded_perl_provider = 0
 
+" disable node provider
+let g:loaded_node_provider = 0
+
 " common settings
 filetype plugin indent on
 set number

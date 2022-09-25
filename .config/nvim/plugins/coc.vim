@@ -81,5 +81,3 @@ imap <C-j> <Plug>(coc-snippets-expand-jump)
 " Use <C-j> for select text for visual placeholder of snippet
 vmap <C-j> <Plug>(coc-snippets-select)
 
-inoremap <expr> <Tab> pumvisible() ? "\<C-n>" : "\<Tab>"
-inoremap <expr> <S-Tab> pumvisible() ? "\<C-p>" : "\<S-Tab>"
