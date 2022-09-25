@@ -8,11 +8,23 @@ const FULLHD = {
   width: 1920,
   height: 1080,
 };
+const IGNORE_WINDOWS = [
+  // ignore Microsoft Teams notification windows which are invisible, and should not be managed
+  new RegExp('^Microsoft Teams Notification$'),
+]
 
 class WindowContainer {
   constructor() {
     this.stack = [];
     this.windowDidCloseHandler = new Event('windowDidClose', (window) => this.removeWindow(window))
+  }
+
+  debug(indent) {
+    indent = indent || '';
+    log(`${indent}${this.constructor.name}: ${this.stack.length}`);
+    for (const window of this.stack) {
+      log(`${indent}${window}: [${window.app().name()}][${window.title()}]`);
+    }
   }
 
   has(window) {
@@ -116,10 +128,19 @@ class ContainerManager {
     this.containers = new Map();
   }
 
+  debug(indent) {
+    indent = indent || '';
+    log(`${indent}${this.constructor.name}: ${[...this.containers.keys()].join(', ')}`);
+    for (const [name, container] of this.containers) {
+      log(`${indent}${name}:`)
+      container.debug(indent + '  ');
+    }
+  }
+
   setupContainer(screen, name, containerCallback) {
     const screenFrame = screen.flippedVisibleFrame();
     const frame = containerCallback(screen, screenFrame);
-    const container = new frame.handler(frame);
+    const container = new frame.handler({name: name, ...frame});
     this.containers.set(name, container);
   }
 
@@ -153,7 +174,8 @@ class ContainerManager {
     if (render) this.render();
   }
 
-  swapFocused(name) {
+  swapFocused(name, render) {
+    render = render === undefined || render;
     const window = Window.focused();
     const targetContainer = this.containers.get(name);
     if (!targetContainer)
@@ -167,33 +189,16 @@ class ContainerManager {
     if (current === name)
       return;
     const swapWindow = targetContainer.stackHead();
-    this.unshiftWindow(window, name);
+    this.unshiftWindow(window, name, false);
     if (swapWindow !== undefined && current)
-      this.unshiftWindow(swapWindow, current);
+      this.unshiftWindow(swapWindow, current, false);
+    if (render) this.render();
   }
 
   render() {
     for (const [name, container] of this.containers) {
       container.render();
     }
-  }
-
-  adopt(space) {
-    const containerNames = [...this.containers.keys()];
-    const focusedHash = Window.focused().hash();
-    let mainWindow;
-    for (const i in space.windows()) {
-      const window = space.windows()[i];
-      const containerName = containerNames[i % containerNames.length];
-      this.pushWindow(window, containerName, false);
-      if (window.hash() === focusedHash) {
-        mainWindow = window;
-      }
-    }
-    if (mainWindow && containerNames.includes('main')) {
-      this.pushWindow(mainWindow, 'main', false);
-    }
-    this.render();
   }
 }
 
@@ -207,22 +212,56 @@ class SpaceManager {
 
   static add(screen, space, containers) {
     const spaceManager = new SpaceManager(screen, space, containers);
+    spaceManager.setup();
     SpaceManager.spaceManagers.set(space.hash(), spaceManager);
   }
 
-  constructor(screen, space, containers) {
+  static debug(indent) {
+    indent = indent || '';
+    for (const [key, spaceManager] of SpaceManager.spaceManagers) {
+      log(`${indent}${this.name}[${key}]:`);
+      spaceManager.containerManager.debug(indent + '  ');
+    }
+  }
+
+  constructor(screen, space, containerSpec) {
     this.screen = screen;
     this.space = space;
     this.containerManager = new ContainerManager();
-    this.setupContainers(containers);
+    this.containerSpec = containerSpec;
   }
 
-  setupContainers(containers) {
-    for (const [_i, container] of containers.entries()) {
-      const {name, containerCallback} = container;
-      this.containerManager.setupContainer(this.screen, name, containerCallback);
+  setup() {
+    const windows = this.space.windows();
+    const affinityRules = [
+      (window) => { return window.hash() == Window.focused().hash() ? 'main' : null}
+    ];
+
+    for (const containerSpec of this.containerSpec.values()) {
+      this.containerManager.setupContainer(this.screen, containerSpec.name, containerSpec.containerCallback);
+      const affinity = containerSpec.affinity || [];
+      for (const [appName, windowTitle] of affinity) {
+        affinityRules.push((window) => {
+          return (
+            window.app().name().match(new RegExp(appName)) && window.title().match(new RegExp(windowTitle))
+          ) ? containerSpec.name : null;
+        })
+      }
     }
-    this.containerManager.adopt(this.space);
+    const containerNames = [...this.containerManager.containers.keys()].filter(name => name !== 'main');
+
+    for (const i in this.space.windows()) {
+      const window = this.space.windows()[i];
+      if (IGNORE_WINDOWS.find(regex => { return window.title().match(regex)})) {
+        log(`ignoring [${window.app().name()}][${window.title()}]`);
+        continue;
+      }
+      const affinityRule = affinityRules.find(rule => rule(window));
+      const containerName = affinityRule && affinityRule(window) || containerNames[i % containerNames.length];
+      log(`[${window.app().name()}][${window.title()}] assigned to ${containerName}`);
+      this.containerManager.pushWindow(window, containerName, false);
+    }
+    this.containerManager.render();
   }
 }
 
@@ -259,6 +298,12 @@ function setupOneScreen() {
       },
       {
         name: 'left',
+        affinity: [
+          ['Slack', '.*'],
+          ['Spark', '.*'],
+          ['Vivaldi', 'WhatsApp'],
+          ['Microsoft Teams', '.*'],
+        ],
         containerCallback: (screen, screenFrame) => {
           return {
             handler: VerticalContainer,
@@ -271,6 +316,10 @@ function setupOneScreen() {
       },
       {
         name: 'right',
+        affinity: [
+          ['Notes', '.*'],
+          ['Preview', '.*'],
+        ],
         containerCallback: (screen, screenFrame) => {
           return {
             handler: VerticalContainer,
@@ -357,10 +406,10 @@ function setup() {
 const mash = ['ctrl', 'cmd'];
 
 // Move windows
-Key.on('up', mash, () => SpaceManager.active().containerManager.swapFocused('main'))
-Key.on('down', mash, () => SpaceManager.active().containerManager.swapFocused('secondary'))
-Key.on('right', mash, () => SpaceManager.active().containerManager.swapFocused('right'))
-Key.on('left', mash, () => SpaceManager.active().containerManager.swapFocused('left'))
+Key.on('up', mash, () => SpaceManager.active().containerManager.swapFocused('main', true))
+Key.on('down', mash, () => SpaceManager.active().containerManager.swapFocused('secondary', true))
+Key.on('right', mash, () => SpaceManager.active().containerManager.swapFocused('right', true))
+Key.on('left', mash, () => SpaceManager.active().containerManager.swapFocused('left', true))
 
 // Focus windows
 Key.on('h', mash, () => Window.focused().focusClosestNeighbour('west'));
@@ -368,6 +417,8 @@ Key.on('j', mash, () => Window.focused().focusClosestNeighbour('south'));
 Key.on('k', mash, () => Window.focused().focusClosestNeighbour('north'));
 Key.on('l', mash, () => Window.focused().focusClosestNeighbour('east'));
 
+// Debug
+Key.on('d', mash, () => SpaceManager.debug());
 // Phoenix keys
 // mash + r => reload
 // Key.on('r', mash, () => Phoenix.reload())
