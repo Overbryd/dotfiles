@@ -1,1 +1,19 @@
-[ -f ~/.fzf.bash ] && source ~/.fzf.bash
+# Setup fzf
+if [[ ! "$PATH" == */usr/local/opt/fzf/bin* ]]; then
+  export PATH="${PATH:+${PATH}:}/usr/local/opt/fzf/bin"
+fi
+
+# Auto-completion
+[[ $- == *i* ]] && source "/usr/local/opt/fzf/shell/completion.bash" 2> /dev/null
+
+# Key bindings
+source "/usr/local/opt/fzf/shell/key-bindings.bash"
+
+# Configuration
+export FZF_DFEAULT_COMMAND="fd --type file --exclude .git"
+export FZF_DEFAULT_OPTS="--layout=reverse"
+export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+
+
+# bind "$(bind -s | grep '^"\\C-r"' | sed 's/"/"\\C-x/' | sed 's/"$/\\C-m"/')"
+
