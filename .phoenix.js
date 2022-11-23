@@ -8,10 +8,13 @@ const FULLHD = {
   width: 1920,
   height: 1080,
 };
+const IGNORE_APPS = [
+  new RegExp('^1Password$'),
+];
 const IGNORE_WINDOWS = [
   // ignore Microsoft Teams notification windows which are invisible, and should not be managed
   new RegExp('^Microsoft Teams Notification$'),
-]
+];
 
 class WindowContainer {
   constructor() {
@@ -253,6 +256,10 @@ class SpaceManager {
 
     for (const i in this.space.windows()) {
       const window = this.space.windows()[i];
+      if (IGNORE_APPS.find(regex => { return window.app().name().match(regex)})) {
+        log(`ignoring [${window.app().name()}][*]`);
+        continue;
+      }
       if (IGNORE_WINDOWS.find(regex => { return window.title().match(regex)})) {
         log(`ignoring [${window.app().name()}][${window.title()}]`);
         continue;
