@@ -232,6 +232,22 @@ class SpaceManager {
     }
   }
 
+  static isWindowIgnored(window) {
+    if (window.size().width === 0 && window.size().height === 0) {
+      log(`ignoring size 0 [${window.app().name()}][${window.title()}]`);
+      return true;
+    }
+    if (IGNORE_APPS.find(regex => { return window.app().name().match(regex)})) {
+      log(`ignoring [${window.app().name()}][*]`);
+      return true;
+    }
+    if (IGNORE_WINDOWS.find(regex => { return window.title().match(regex)})) {
+      log(`ignoring [${window.app().name()}][${window.title()}]`);
+      return true;
+    }
+    return false;
+  }
+
   constructor(screen, space, containerSpec) {
     this.screen = screen;
     this.space = space;
@@ -260,12 +276,7 @@ class SpaceManager {
 
     for (const i in this.space.windows()) {
       const window = this.space.windows()[i];
-      if (IGNORE_APPS.find(regex => { return window.app().name().match(regex)})) {
-        log(`ignoring [${window.app().name()}][*]`);
-        continue;
-      }
-      if (IGNORE_WINDOWS.find(regex => { return window.title().match(regex)})) {
-        log(`ignoring [${window.app().name()}][${window.title()}]`);
+      if (SpaceManager.isWindowIgnored(window)) {
         continue;
       }
       const affinityRule = affinityRules.find(rule => rule(window));
