@@ -9,9 +9,13 @@ const FULLHD = {
   height: 1080,
 };
 const IGNORE_APPS = [
-  new RegExp('^1Password$'),
+  new RegExp('^1Password'),
+  new RegExp('^System Settings'),
+  new RegExp('^Activity Monitor'),
 ];
 const IGNORE_WINDOWS = [
+  // ignore windows that have no title
+  new RegExp('^\s*$'),
   // ignore Microsoft Teams notification windows which are invisible, and should not be managed
   new RegExp('^Microsoft Teams Notification$'),
 ];
@@ -401,13 +405,13 @@ function setupTwoScreen() {
 
 function setup() {
   const screenCount = Screen.all().length;
-  if (screenCount === 1) {
-    log('setting up one screen layout');
-    setupOneScreen();
-  } else if (screenCount === 2) {
-    log('setting up two screen layout');
-    setupTwoScreen();
-  }
+  // if (screenCount === 1) {
+  log('setting up one screen layout');
+  setupOneScreen();
+  // } else if (screenCount === 2) {
+  //   log('setting up two screen layout');
+  //   setupTwoScreen();
+  // }
 }
 
 // Keybindings
@@ -429,7 +433,7 @@ Key.on('l', mash, () => Window.focused().focusClosestNeighbour('east'));
 Key.on('d', mash, () => SpaceManager.debug());
 // Phoenix keys
 // mash + r => reload
-// Key.on('r', mash, () => Phoenix.reload())
+Key.on('r', mash, () => Phoenix.reload())
 
 // Event.on('screensDidChange', () => Phoenix.reload());
 
