@@ -12,6 +12,7 @@ const IGNORE_APPS = [
   new RegExp('^1Password'),
   new RegExp('^System Settings'),
   new RegExp('^Activity Monitor'),
+  new RegExp('^Remote Desktop'),
 ];
 const IGNORE_WINDOWS = [
   // ignore windows that have no title
@@ -32,6 +33,14 @@ class WindowContainer {
     for (const window of this.stack) {
       log(`${indent}${window}: [${window.app().name()}][${window.title()}]`);
     }
+  }
+
+  reload() {
+    for (const window of this.stack) {
+      if (SpaceManager.isWindowIgnored(window))
+        this.stack = this.stack.filter(instance => instance.hash() !== window.hash());
+    }
+    this.render();
   }
 
   has(window) {
@@ -144,6 +153,12 @@ class ContainerManager {
     }
   }
 
+  reload() {
+    for (const [name, container] of this.containers) {
+      container.reload();
+    }
+  }
+
   setupContainer(screen, name, containerCallback) {
     const screenFrame = screen.flippedVisibleFrame();
     const frame = containerCallback(screen, screenFrame);
@@ -184,6 +199,8 @@ class ContainerManager {
   swapFocused(targetContainerName, render) {
     render = render === undefined || render;
     const window = Window.focused();
+    if (SpaceManager.isWindowIgnored(window))
+      return;
     const targetContainer = this.containers.get(targetContainerName);
     if (!targetContainer)
       return;
@@ -232,7 +249,17 @@ class SpaceManager {
     }
   }
 
+  static reload() {
+    for (const [key, spaceManager] of SpaceManager.spaceManagers) {
+      spaceManager.containerManager.reload();
+    }
+  }
+
   static isWindowIgnored(window) {
+    if (!window || `${window.app().name()}` === '' || `${window.title()}` === '') {
+      log(`ignoring empty app or window title [${window.app().name()}][${window.title()}]`);
+      return true;
+    }
     if (window.size().width === 0 && window.size().height === 0) {
       log(`ignoring size 0 [${window.app().name()}][${window.title()}]`);
       return true;
@@ -444,7 +471,7 @@ Key.on('l', mash, () => Window.focused().focusClosestNeighbour('east'));
 Key.on('d', mash, () => SpaceManager.debug());
 // Phoenix keys
 // mash + r => reload
-Key.on('r', mash, () => Phoenix.reload())
+Key.on('r', mash, () => SpaceManager.reload())
 
 // Event.on('screensDidChange', () => Phoenix.reload());
 
