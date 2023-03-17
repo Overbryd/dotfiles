@@ -2,3 +2,5 @@
 .ssh/config text=auto
 .ssh/*.pem  filter=git-crypt diff=git-crypt
 .profile.d/credentials filter=git-crypt diff=git-crypt
+.envrc filter=git-crypt diff=git-crypt
+
