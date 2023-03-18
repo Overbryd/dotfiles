@@ -28,4 +28,8 @@ Plug 'honza/vim-snippets'
 " Rename current buffer and file on disk
 Plug 'danro/rename.vim'
 
+" A little help from OpenAI
+Plug 'aduros/ai.vim'
+
 call plug#end()
+
