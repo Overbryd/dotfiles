@@ -13,18 +13,25 @@ const IGNORE_APPS = [
   new RegExp('^System Settings'),
   new RegExp('^Activity Monitor'),
   new RegExp('^Remote Desktop'),
+  new RegExp('^Loopback'),
+  new RegExp('^LaunchBar'),
 ];
 const IGNORE_WINDOWS = [
   // ignore windows that have no title
   new RegExp('^\s*$'),
   // ignore Microsoft Teams notification windows which are invisible, and should not be managed
   new RegExp('^Microsoft Teams Notification$'),
+  // ignore invisible or small short lived auto-update windows that sometimes appear
+  new RegExp('^Updating.*'),
 ];
 
 class WindowContainer {
   constructor() {
     this.stack = [];
+    this.minimized = [];
     this.windowDidCloseHandler = new Event('windowDidClose', (window) => this.removeWindow(window))
+    this.windowDidMinimizeHandler = new Event('windowDidMinimize', (window) => this.minimizeWindow(window))
+    this.windowDidUnminimizeHandler = new Event('windowDidUnminimize', (window) => this.unminimizeWindow(window));
   }
 
   debug(indent) {
@@ -51,6 +58,20 @@ class WindowContainer {
 
   stackHead() {
     return this.stack[0];
+  }
+
+  minimizeWindow(window, opts) {
+    if (!this.has(window))
+      return;
+    this.minimized.push(window);
+    this.removeWindow(window);
+  }
+
+  unminimizeWindow(window, opts) {
+    const found = this.minimized.find(instance => instance.hash() === window.hash());
+    this.minimized = this.minimized.filter(instance => instance.hash() !== window.hash());
+    if (found)
+      this.pushWindow(window, opts);
   }
 
   removeWindow(window, opts) {
@@ -148,7 +169,7 @@ class ContainerManager {
     indent = indent || '';
     log(`${indent}${this.constructor.name}: ${[...this.containers.keys()].join(', ')}`);
     for (const [name, container] of this.containers) {
-      log(`${indent}${name}:`)
+      log(`${indent}${name}: [x: ${container.frame.x}, y: ${container.frame.y}, w: ${container.frame.width}, h: ${container.frame.height}`)
       container.debug(indent + '  ');
     }
   }
@@ -183,6 +204,14 @@ class ContainerManager {
     }
     const container = this.containers.get(name);
     container.unshiftWindow(window, {render: false});
+    if (render) this.render();
+  }
+
+  removeWindow(window, render) {
+    render = render === undefined || render;
+    for (const [name, container] of this.containers) {
+      container.removeWindow(window, {render: false});
+    }
     if (render) this.render();
   }
 
@@ -273,6 +302,15 @@ class SpaceManager {
       return true;
     }
     return false;
+  }
+
+  static releaseFocusedWindow() {
+    const window = Window.focused();
+    if (!window)
+      return;
+    for (const [key, spaceManager] of SpaceManager.spaceManagers) {
+      spaceManager.containerManager.removeWindow(window);
+    }
   }
 
   constructor(screen, space, containerSpec) {
@@ -472,6 +510,8 @@ Key.on('d', mash, () => SpaceManager.debug());
 // Phoenix keys
 // mash + r => reload
 Key.on('r', mash, () => SpaceManager.reload())
+// mash + space => release
+Key.on('space', mash, () => SpaceManager.releaseFocusedWindow());
 
 // Event.on('screensDidChange', () => Phoenix.reload());
 
