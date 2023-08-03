@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+LC_ALL=C od -A n -t x1 < /dev/urandom \
+| sed 's/ *//g' \
+| head -c ${1:-20}
+
