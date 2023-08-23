@@ -15,6 +15,7 @@ const IGNORE_APPS = [
   new RegExp('^Remote Desktop'),
   new RegExp('^Loopback'),
   new RegExp('^LaunchBar'),
+  new RegExp('^Temp Monitor'),
 ];
 const IGNORE_WINDOWS = [
   // ignore windows that have no title
@@ -407,6 +408,7 @@ function setupOneScreen() {
         affinity: [
           ['Notes', '.*'],
           ['Preview', '.*'],
+          ['Google Meet', '.*'],
         ],
         containerCallback: (screen, screenFrame) => {
           return {
@@ -511,7 +513,7 @@ Key.on('d', mash, () => SpaceManager.debug());
 // mash + r => reload
 Key.on('r', mash, () => SpaceManager.reload())
 // mash + space => release
-Key.on('space', mash, () => SpaceManager.releaseFocusedWindow());
+Key.on('x', mash, () => SpaceManager.releaseFocusedWindow());
 
 // Event.on('screensDidChange', () => Phoenix.reload());
 
