@@ -16,3 +16,6 @@ alias vi="nvim"
 # Utilities
 alias lower="tr '[[:upper:]]' '[[:lower:]]'"
 
+# openai_pipe
+alias ai="openai_pipe"
+
