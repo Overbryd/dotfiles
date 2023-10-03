@@ -1,0 +1,6 @@
+#!/bin/sh
+
+find $1 -name .git -type d \
+| sed 's/\/\.git//' \
+| xargs -t -P $(nproc) -I{} git --git-dir="{}/.git" --work-tree="{}" fetch --all
+
