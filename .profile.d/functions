@@ -1,7 +1,11 @@
 # tmux, be there and be named well
 function tms {
   local name=$(basename $PWD | sed -e s/\[^a-zA-Z0-9\\\//\$]/-/g -e s/--*/-/g)
-  tmux new -s $name || tmux attach-session -t $name
+  if [ -z "$TMUX" ]; then
+    tmux new -s $name || tmux attach-session -t $name
+  else
+    tmux new-session -d -s $name -c $name && tmux switch-client -t $name
+  fi
 }
 
 # Mirror a complete website
