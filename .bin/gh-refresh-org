@@ -1,0 +1,21 @@
+#!/bin/sh
+
+for org in $(gh org list); do
+  test -d $org || mkdir $org
+
+  for repo in $(gh repo list $org --json 'nameWithOwner' | jq -r '.[] | .nameWithOwner'); do
+    if test -d $repo; then
+      cd $repo
+      git fetch --all
+      cd -
+    else
+      cd $org
+      git clone https://$GITHUB_USER:$GITHUB_TOKEN@github.com/$repo.git
+      cd -
+      cd $repo
+      git fetch --all
+      cd -
+    fi
+  done
+done
+
