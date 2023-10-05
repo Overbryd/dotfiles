@@ -63,7 +63,7 @@ brew: \
 	brew-upgrade
 
 $(HOMEBREW_PREFIX)/bin/brew:
-	$(BREW) doctor || sudo -Eubinary /bin/bash -c "$$(curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+	$(BREW) doctor 2>&1 >/dev/null || sudo /bin/bash -c "$$(curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 	$(BREW) analytics off
 
 brew-upgrade: brew-itself
