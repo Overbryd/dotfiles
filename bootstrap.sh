@@ -12,11 +12,11 @@ sudo scutil --set LocalHostName "$hostname"
 sudo scutil --set ComputerName "$hostname"
 
 # Generate a new ssh key
-if ! test -f ~/.ssh/id_rsa; then
+if ! test -f ~/.ssh/id_ed25519; then
   ssh-keygen -t ed25519
 
   # Wait for the user to add it to github
-  pbcopy < ~/.ssh/id_rsa.pub
+  pbcopy < ~/.ssh/id_ed25519.pub
   echo "Now login to https://github.com/settings/keys and add the key that has already been copied to your clipboard."
   read -p "Press any key to continue. Ctrl-C to abort."
 fi
@@ -27,9 +27,9 @@ touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress;
 COMMAND_LINE_TOOLS=$(
   softwareupdate --list \
   | grep "\*.*Command Line" \
-  | head -n 1 | awk -F"*" '{print $2}' \
-  | sed -e 's/^ *//' \
-  | tr -d '\n'
+  | sort -n \
+  | tail -n1 \
+  | sed 's/* Label: //'
 )
 softwareupdate --install "$COMMAND_LINE_TOOLS" --verbose
 
