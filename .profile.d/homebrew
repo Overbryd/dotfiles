@@ -3,7 +3,7 @@
 # Note: I am using a isolated user setup, no-one except that 'binary' user can write to the
 #       Homebrew directories.
 if [[ "$(uname -p)" = "arm" ]]; then
-  export HOMEBREW_PREFIX=/opt/local
+  export HOMEBREW_PREFIX=/opt/homebrew
 else
   export HOMEBREW_PREFIX=/usr/local
 fi
