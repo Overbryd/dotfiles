@@ -12,3 +12,4 @@ Thumbs.db
 
 # Ruby byebug debugger history files
 .byebug_history
+.envrc

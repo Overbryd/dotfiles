@@ -45,7 +45,8 @@ fi
 # Make this user
 if id -Gn $(id -un) | grep -qw admin; then
   make -C /usr/local/dotfiles bootstrap-administrator
+  # Execute first-boot stuff last, requires restart
+  make -C /usr/local/dotfiles bootstrap-administrator-first-boot
 else
   make -C /usr/local/dotfiles bootstrap
 fi
-
