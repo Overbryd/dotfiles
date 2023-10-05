@@ -26,7 +26,6 @@ bootstrap: \
 bootstrap-administrator: \
 	bootstrap-user \
 	bootstrap-binary-user \
-	bootstrap-homebrew-folder \
 	defaults-administrator \
 	defaults
 

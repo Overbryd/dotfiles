@@ -11,8 +11,6 @@ sudo scutil --set HostName "$hostname"
 sudo scutil --set LocalHostName "$hostname"
 sudo scutil --set ComputerName "$hostname"
 
-exit
-
 # Generate a new ssh key
 if ! test -f ~/.ssh/id_rsa; then
   ssh-keygen -t ed25519
@@ -45,8 +43,7 @@ fi
 # Make this user
 if id -Gn $(id -un) | grep -qw admin; then
   make -C /usr/local/dotfiles bootstrap-administrator
-  # Execute first-boot stuff last, requires restart
-  make -C /usr/local/dotfiles bootstrap-administrator-first-boot
 else
   make -C /usr/local/dotfiles bootstrap
 fi
+
