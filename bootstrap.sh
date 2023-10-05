@@ -49,12 +49,11 @@ if ! test -d /usr/local/dotfiles; then
   git checkout --force
 fi
 
-source .profile
-
 # Make this user
+export PATH="$PATH:$HOME/.bin"
 if id -Gn $(id -un) | grep -qw admin; then
-  make -C /usr/local/dotfiles bootstrap-administrator
+  make bootstrap-administrator
 else
-  make -C /usr/local/dotfiles bootstrap
+  make bootstrap
 fi
 

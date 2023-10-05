@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Found on https://gist.github.com/asv/a286b8aefb972af8f62c
+
+if [[ -p /dev/stdin ]]; then
+  string="$(cat - | titleize)"
+else
+  string="$(titleize $@)"
+fi
+
+echo "${string// /}"
+

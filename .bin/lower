@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+if [[ -p /dev/stdin ]]; then
+  string="$(cat -)"
+else
+  string="$@"
+fi
+
+echo "$string" | tr '[[:upper:]]' '[[:lower:]]'
+
