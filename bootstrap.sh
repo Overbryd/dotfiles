@@ -22,23 +22,34 @@ if ! test -f ~/.ssh/id_ed25519; then
 fi
 
 # Install Xcode Command Line Tools
-# https://github.com/timsutton/osx-vm-templates/blob/ce8df8a7468faa7c5312444ece1b977c1b2f77a4/scripts/xcode-cli-tools.sh
-touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress;
-COMMAND_LINE_TOOLS=$(
-  softwareupdate --list \
-  | grep "\*.*Command Line" \
-  | sort -n \
-  | tail -n1 \
-  | sed 's/* Label: //'
-)
-softwareupdate --install "$COMMAND_LINE_TOOLS" --verbose
+if !(softwareupdate --history | grep "Command Line Tools"); then
+  touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+  COMMAND_LINE_TOOLS=$(
+    softwareupdate --list \
+    | grep "\*.*Command Line" \
+    | sort -n \
+    | tail -n1 \
+    | sed 's/* Label: //'
+  )
+  softwareupdate --install "$COMMAND_LINE_TOOLS" --verbose
+  rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+fi
 
 # Clone my dotfiles and make them
 if ! test -d /usr/local/dotfiles; then
-  git clone --bare git@github.com:Overbryd/dotfiles.git --git-dir=/usr/local/dotfiles --work-tree="$HOME"
-  git --git-dir=/usr/local/dotfiles config --local status.showUntrackedFiles no
-  git --git-dir=/usr/local/dotfiles --work-tree="$HOME" checkout --force
+  sudo mkdir /usr/local/dotfiles
+  sudo chown $(id -un):admin /usr/local/dotfiles
+  cd /usr/local/dotfiles
+  # Note: We need some older ways to get bare repositories working with Apples old git version.
+  #       This was tested with git version 2.39.3 (Apple Git-145).
+  git clone --bare git@github.com:Overbryd/dotfiles.git .
+  git config --local status.showUntrackedFiles no
+  git init --separate-git-dir=. $HOME
+  cd $HOME
+  git checkout --force
 fi
+
+source .profile
 
 # Make this user
 if id -Gn $(id -un) | grep -qw admin; then
