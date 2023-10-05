@@ -2,7 +2,7 @@ EXCLUDED_DOTFILES := .git .git-crypt .gitattributes .gitignore .gitmodules .ssh
 DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 DOT_CONFIG_FILES := $(addprefix ~/, $(wildcard .config/*))
 
-DOTFILES_ROOT = /usr/local/dotfiles
+DOTFILES_ROOT = $(HOME)/dotfiles
 BREW = sudo -Eubinary brew
 
 # Execute all commands per task in one shell, allowing for environment variables to be set for
@@ -50,46 +50,46 @@ bootstrap-binary-user:
 	id binary || sudo .bin/macos-add-system-user binary
 
 bootstrap-homebrew-folder: \
-	/usr/local/Caches \
-	/usr/local/Caskroom \
-	/usr/local/Cellar \
-	/usr/local/Frameworks \
-	/usr/local/Homebrew \
-	/usr/local/Logs/Homebrew \
-	/usr/local/Fonts \
-	/usr/local/bin \
-	/usr/local/etc \
-	/usr/local/include \
-	/usr/local/lib \
-	/usr/local/opt \
-	/usr/local/sbin \
-	/usr/local/share \
-	/usr/local/var \
-	/usr/local/pyenv \
-	/usr/local/npm
-	sudo chown -R binary:binary /usr/local/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var,pyenv,npm}
+	$(HOMEBREW_PREFIX)/Caches \
+	$(HOMEBREW_PREFIX)/Caskroom \
+	$(HOMEBREW_PREFIX)/Cellar \
+	$(HOMEBREW_PREFIX)/Frameworks \
+	$(HOMEBREW_PREFIX)/Homebrew \
+	$(HOMEBREW_PREFIX)/Logs/Homebrew \
+	$(HOMEBREW_PREFIX)/Fonts \
+	$(HOMEBREW_PREFIX)/bin \
+	$(HOMEBREW_PREFIX)/etc \
+	$(HOMEBREW_PREFIX)/include \
+	$(HOMEBREW_PREFIX)/lib \
+	$(HOMEBREW_PREFIX)/opt \
+	$(HOMEBREW_PREFIX)/sbin \
+	$(HOMEBREW_PREFIX)/share \
+	$(HOMEBREW_PREFIX)/var \
+	$(HOMEBREW_PREFIX)/pyenv \
+	$(HOMEBREW_PREFIX)/npm
+	sudo chown -R binary:binary $(HOMEBREW_PREFIX)/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var,pyenv,npm}
 	# Set the proper ACLs on the Homebrew folders in order to inherit ACLs
-	sudo chmod -R g+w /usr/local/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var,pyenv,npm}
-	sudo chmod +a "group:_binary allow list,add_file,search,add_subdirectory,delete_child,readattr,writeattr,readextattr,writeextattr,readsecurity,file_inherit,directory_inherit" /usr/local/{Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var,pyenv,npm}
+	sudo chmod -R g+w $(HOMEBREW_PREFIX)/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var,pyenv,npm}
+	sudo chmod +a "group:_binary allow list,add_file,search,add_subdirectory,delete_child,readattr,writeattr,readextattr,writeextattr,readsecurity,file_inherit,directory_inherit" $(HOMEBREW_PREFIX)/{Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var,pyenv,npm}
 
-/usr/local/Logs/Homebrew:
-	test -d /usr/local/Logs/Homebrew || sudo mkdir -p /usr/local/Logs/Homebrew
-	sudo chown -R root:staff /usr/local/Logs
-	sudo chmod -R g+w /usr/local/Logs
+$(HOMEBREW_PREFIX)/Logs/Homebrew:
+	test -d $(HOMEBREW_PREFIX)/Logs/Homebrew || sudo mkdir -p $(HOMEBREW_PREFIX)/Logs/Homebrew
+	sudo chown -R root:staff $(HOMEBREW_PREFIX)/Logs
+	sudo chmod -R g+w $(HOMEBREW_PREFIX)/Logs
 
-/usr/local/%:
+$(HOMEBREW_PREFIX)/%:
 	test -d $@ || sudo mkdir $@
 	sudo chown -R binary:binary $@
 	sudo chmod -R g+w $@
 	sudo chmod +a "group:_binary allow list,add_file,search,add_subdirectory,delete_child,readattr,writeattr,readextattr,writeextattr,readsecurity,file_inherit,directory_inherit" $@
 
-brew-itself: /usr/local/bin/brew
+brew-itself: $(HOMEBREW_PREFIX)/bin/brew
 brew: \
 	brew-itself \
 	brew-upgrade
 
-/usr/local/bin/brew:
-	$(BREW) doctor || sudo -ubinary ruby -e "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+$(HOMEBREW_PREFIX)/bin/brew:
+	$(BREW) doctor || sudo -Eubinary /bin/bash -c "$$(curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 	$(BREW) analytics off
 
 brew-upgrade: brew-itself
@@ -195,7 +195,7 @@ brew-fzf: brew-itself
 	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# fzf is a fuzzy file finder
 	$(BREW) install fzf
-	/usr/local/opt/fzf/install --key-bindings --completion --no-update-rc --no-zsh --no-fish
+	$(HOMEBREW_PREFIX)/opt/fzf/install --key-bindings --completion --no-update-rc --no-zsh --no-fish
 	$(BREW) install fzf-tmux
 
 mas-itself: brew-itself
@@ -256,7 +256,7 @@ casks-work: casks-itself
 # 	# Share user fonts via /usr/local
 # 	chmod -a "group:everyone deny delete" ~/Library/Fonts || echo "No ACL present"
 # 	rm -rf ~/Library/Fonts
-# 	ln -svf /usr/local/Fonts ~/Library/Fonts
+# 	ln -svf $(HOMEBREW_PREFIX)/Fonts ~/Library/Fonts
 
 fonts: \
 	casks-itself
@@ -274,8 +274,8 @@ bash: brew-itself
 	$(BREW) install bash
 	$(BREW) install bash-completion
 	# change shell to homebrew bash
-	grep /usr/local/bin/bash /etc/shells || (echo "/usr/local/bin/bash" | sudo tee -a /etc/shells)
-	test "$$SHELL" = /usr/local/bin/bash || chsh -s /usr/local/bin/bash
+	grep $(HOMEBREW_PREFIX)/bin/bash /etc/shells || (echo "$(HOMEBREW_PREFIX)/bin/bash" | sudo tee -a /etc/shells)
+	test "$$SHELL" = $(HOMEBREW_PREFIX)/bin/bash || chsh -s $(HOMEBREW_PREFIX)/bin/bash
 
 ruby: \
 	~/.rbenv \
@@ -311,12 +311,6 @@ python:
 	sudo -Eubinary pip install --upgrade pip
 	sudo -Eubinary pip install neovim
 
-node: ~/.npmrc
-	sudo -Eubinary npm install --location=global neovim
-	sudo mkdir /usr/local/npm/{_logs,_cache,_cacache} || true
-	sudo chown -R binary:staff /usr/local/npm/{_logs,_cache,_cacache}
-	sudo chmod -R g+w /usr/local/npm/{_logs,_cache,_cacache}
-
 vim: \
 	vim-directories \
 	vim-itself \
@@ -339,7 +333,7 @@ vim-plugins: \
 	vim -u /tmp/.vimrc +PluginInstall +qall
 	-rm /tmp/.vimrc
 	# post installation steps of command-t (use the ruby that ships with vim)
-	cd ~/.vim/bundle/command-t/ruby/command-t/ext/command-t && make clean && export PATH="/usr/local/opt/ruby/bin:$$PATH" && ruby extconf.rb && make
+	cd ~/.vim/bundle/command-t/ruby/command-t/ext/command-t && make clean && export PATH="$(HOMEBREW_PREFIX)/opt/ruby/bin:$$PATH" && ruby extconf.rb && make
 
 # install vundle, a vim package manager
 ~/.vim/bundle/Vundle.vim:
@@ -433,11 +427,11 @@ defaults: \
 	# Kill affected applications
 	for app in Safari Finder Mail SystemUIServer; do killall "$$app" >/dev/null 2>&1; done
 	# Re-enable subpixel aliases that got disabled by default in Mojave
-	defaults write -g CGFontRenderingFontSmoothingDisabled -bool false
+	# defaults write -g CGFontRenderingFontSmoothingDisabled -bool false
 
 defaults-administrator:
-	# disable apple captive portal (seucrity issue)
-	sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.captive.control Active -bool false
+	# disable apple captive portal (security issue)
+	# sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.captive.control Active -bool false
 	# Enable HiDPI display modes (requires restart)
 	sudo defaults write /Library/Preferences/com.apple.windowserver DisplayResolutionEnabled -bool true
 
@@ -523,7 +517,7 @@ defaults-Terminal:
 	# Only use UTF-8 in Terminal.app
 	defaults write com.apple.terminal StringEncodings -array 4
 	# Set the default shell
-	defaults write com.apple.terminal Shell -string "/usr/local/bin/bash"
+	defaults write com.apple.terminal Shell -string "$(HOMEBREW_PREFIX)/bin/bash"
 	# Open new windows with our own Theme
 	plutil -replace "Window Settings"."Pro-gramming" -xml "$$(cat Pro-gramming.terminal)" ~/Library/Preferences/com.apple.Terminal.plist
 	defaults write com.apple.Terminal "Default Window Settings" -string "Pro-gramming"
@@ -541,13 +535,14 @@ defaults-Menubar:
 	defaults write com.apple.menuextra.clock DateFormat -string "EEE d MMM HH:mm"
 	killall SystemUIServer
 
+dotfiles:
 dotfiles: \
+	~/dotfiles \
 	$(DOTFILES) \
-	$(DOT_CONFIG_FILES) \
-	~/dotfiles
+	$(DOT_CONFIG_FILES)
 
 ~/dotfiles:
-	cd ~ && ln -svf $(DOTFILES_ROOT) dotfiles
+	git init --separate-git-dir=/usr/local/dotfiles ~/dotfiles
 
 ~/.ssh/config:
 	# Copy a default .ssh/config
@@ -567,15 +562,15 @@ dotfiles: \
 ~/.%:
 	cd ~ && ln -svf $(DOTFILES_ROOT)/$(notdir $@) $@
 
-docker:
-	$(BREW) install --cask docker
+# docker:
+# 	$(BREW) install --cask docker
 
 # Here is a comprehensive guide: https://github.com/drduh/macOS-Security-and-Privacy-Guide
 # The following settings implement some basic security measures
 harder: \
 	harder-common \
-	harder-firewall \
 	harder-filevault
+	# harder-firewall \
 
 harder-common:
 	# Enable secure keyboard entry for Terminal
