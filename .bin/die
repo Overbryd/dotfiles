@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+die() {
+  echo >&2 "$@"
+  exit 1
+}
+
+# run if not sourced
+if [[ "$_" = "$0" ]]; then
+  die $@
+fi
+

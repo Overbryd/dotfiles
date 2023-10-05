@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -e
 test "$(id -u)" -eq 0 || die "This script needs to run as root"
 
 # obtain a username
