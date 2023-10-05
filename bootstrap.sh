@@ -40,7 +40,7 @@ if !(softwareupdate --history | grep "Command Line Tools"); then
   rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
 fi
 
-# Clone my dotfiles and make them
+# Clone the dotfiles
 if ! test -d /usr/local/dotfiles; then
   sudo mkdir /usr/local/dotfiles
   sudo chown $(id -un):admin /usr/local/dotfiles
@@ -54,7 +54,7 @@ if ! test -d /usr/local/dotfiles; then
   git checkout --force
 fi
 
-# Make this user
+# Make the administrative stuff
 export PATH="$PATH:$HOME/.bin"
 make bootstrap-administrator
 
