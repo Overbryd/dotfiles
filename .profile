@@ -28,8 +28,8 @@ source ~/.profile.d/credentials
 source ~/.profile.d/aliases
 source ~/.profile.d/functions
 source ~/.profile.d/prompt
-source ~/.profile.d/pyenv
 source ~/.profile.d/homebrew
+source ~/.profile.d/pyenv
 source ~/.profile.d/path
 source ~/.profile.d/direnv
 source ~/.profile.d/google-cloud-sdk

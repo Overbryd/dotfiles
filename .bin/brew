@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
 
-sudo -Eubinary /bin/bash -c "cd $HOMEBREW_PREFIX; ./bin/brew $@"
+brew="$HOMEBREW_PREFIX/bin/brew $@"
+
+sudo -Eubinary /bin/bash -c "cd $HOMEBREW_PREFIX; $brew"
 
