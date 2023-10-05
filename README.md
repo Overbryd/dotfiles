@@ -4,7 +4,7 @@
 
 On a new mac, open a Terminal and run:
 
-    curl -O https://raw.githubusercontent.com/Overbryd/dotfiles/master/bootstrap.sh
+    curl --proto '=https' --tlsv1.2 -sSf -O https://raw.githubusercontent.com/Overbryd/dotfiles/master/bootstrap.sh
     chmod +x bootstrap.sh
     ./bootstrap.sh
 
