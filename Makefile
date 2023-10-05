@@ -27,7 +27,8 @@ bootstrap-administrator: \
 	bootstrap-user \
 	bootstrap-binary-user \
 	defaults-administrator \
-	defaults
+	defaults \
+	harder
 
 # 	bash \
 # 	tmux \
