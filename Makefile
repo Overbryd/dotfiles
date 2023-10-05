@@ -14,7 +14,6 @@ BREW = sudo -Eubinary brew
 # restore .gnupg to decrypt the secrets from this repository
 # setup ssh config (relies on decrypted repository)
 bootstrap: \
-	bootstrap-fonts-directory \
 	bash \
 	tmux \
 	dotfiles \
@@ -25,27 +24,30 @@ bootstrap: \
 	defaults
 
 bootstrap-administrator: \
+	bootstrap-user \
 	bootstrap-binary-user \
 	bootstrap-homebrew-folder \
-	bootstrap-fonts-directory \
-	bash \
-	tmux \
-	casks-baseline \
-	mas-baseline \
-	dotfiles \
-	vim \
-	docker \
-	defaults \
 	defaults-administrator \
-	harder
+	defaults
 
-# bootstrap a system user + group that is used to procted executable paths in $PATH
+# 	bash \
+# 	tmux \
+# 	casks-baseline \
+# 	mas-baseline \
+# 	dotfiles \
+# 	vim \
+# 	docker \
+# 	harder
+
+# Bootstrap a daily driver user, low privileged that is used to run the computer with.
+bootstrap-user:
+	id partenkirchen || sudo .bin/macos-add-user partenkirchen
+
+# Bootstrap a system user + group that is used to protect executable paths in $PATH.
 # Any directory in $PATH should not be writable by normal user.
-# The normal user however can execute binaries from that PATH
+# The normal user however can execute binaries from that PATH.
 bootstrap-binary-user:
-	id binary || sudo .bin/macos-add-system-user binary 503 "Binary"
-	echo "partenkirchen	ALL = (_binary) ALL" | sudo tee /etc/sudoers.d/partenkirchen
-	echo 'Defaults!/usr/local/bin/brew env_keep += "HOMEBREW_*"' | sudo tee -a /etc/sudoers.d/partenkirchen
+	id binary || sudo .bin/macos-add-system-user binary
 
 bootstrap-homebrew-folder: \
 	/usr/local/Caches \
@@ -184,8 +186,9 @@ brew-nettools: brew-itself
 	# websocket client
 	$(BREW) install websocat
 	# vegeta is an insanely great http load tester and scalable http-client
+	$(BREW) install vegeta
 	# hugo is my blogging engine
-	$(BREW) install hugo
+	# $(BREW) install hugo
 
 brew-fzf: brew-itself
 	@$(BREW) update
@@ -247,11 +250,13 @@ casks-work: casks-itself
 	# tableplus is the best graphical multi-database client
 	$(BREW) install --cask tableplus
 
-bootstrap-fonts-directory:
-	# Share user fonts via /usr/local
-	chmod -a "group:everyone deny delete" ~/Library/Fonts || echo "No ACL present"
-	rm -rf ~/Library/Fonts
-	ln -svf /usr/local/Fonts ~/Library/Fonts
+# FIXME: This was a bad idea
+#
+# bootstrap-fonts-directory:
+# 	# Share user fonts via /usr/local
+# 	chmod -a "group:everyone deny delete" ~/Library/Fonts || echo "No ACL present"
+# 	rm -rf ~/Library/Fonts
+# 	ln -svf /usr/local/Fonts ~/Library/Fonts
 
 fonts: \
 	casks-itself
@@ -373,6 +378,7 @@ tmux: \
 	$(BREW) install tmux
 	$(BREW) install reattach-to-user-namespace
 
+# See also: https://macos-defaults.com
 defaults: \
 	defaults-Trackpad \
 	defaults-Terminal \
@@ -566,11 +572,22 @@ docker:
 
 # Here is a comprehensive guide: https://github.com/drduh/macOS-Security-and-Privacy-Guide
 # The following settings implement some basic security measures
-harder: harder-firewall
+harder: \
+	harder-common \
+	harder-firewall \
+	harder-filevault
+
+harder-common:
 	# Enable secure keyboard entry for Terminal
 	defaults write com.apple.terminal SecureKeyboardEntry -bool true
+	# Require a firmware password to change boot disk (mode full requires a firmware password on all startups)
+	# sudo firmwarepasswd -setpasswd -setmode command
 	# Enable touch id for sudo (if available)
-	sudo .bin/macos-enable-sudo-pam_tid
+	# sudo .bin/macos-enable-sudo-pam_tid
+
+harder-filevault:
+	# Enable FileVault (requires restart)
+	(fdesetup status | grep "FileVault is On") || (sudo fdesetup enable && shutdown -r +10 "Restarting in 10... FileVault setup requires a restart")
 
 harder-firewall:
 	# Enable the firewall

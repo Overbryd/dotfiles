@@ -1,68 +1,43 @@
-#!/bin/sh
-# Taken from https://serverfault.com/questions/182347/add-daemon-account-on-os-x
-# creates service account user similar to Linux adduser command
-# to view existing users and ids try:
-# dscl . -readall /Users UniqueID | sort -nk 2
+#!/usr/bin/env bash
 
-die() {
-  echo >&2 "$@"
-  exit 1
-}
+test "$(id -u)" -eq 0 || die "This script needs to run as root"
 
-echo "Usage: sudo $0 username uid realname"
-echo "NOTES: username shouldn't start with the underscore (it will be appended by the script)"
-echo "       check that the user does not exist and get the free ID number in 1000 range"
-echo "       e.g. with dscl . -readall /Users UniqueID | sort -nk 2"
-echo ""
+# obtain a username
+username="$1"
+if [[ "x" = "x$username" ]]; then
+  read -p "Enter the user name: " username
+fi
+username="$(lower $username)"
+u_username="_$(username)"
 
-# Check that we are superuser (i.e. $(id -u) is zero)
-[ `id -u` -eq 0 ] || die "This script needs to run as root"
+# check that user does not already exist
+if [[ "$username" == $(dscl . -list /Users UniqueID | awk '{print $1}' | grep -w $username) ]]; then
+  die "User already exists!"
+fi
 
-[ "$#" -eq 3 ] || die "Error: 3 arguments required: username, uid and realname"
+# generate sensible defaults
+realname=$(titleize $username)
+lastid=$(dscl . -list /Users UniqueID | awk '{print $2}' | sort -n | tail -1)
+unique_id=$((lastid + 1))
 
-username_=$1
-uid_=$2
-realname_=$3
-nfs_homedir="/var/empty"
-user_shell="/usr/bin/false"
+# like addgroup but macos
+dscl . -create /Groups/$u_username
+dscl . -create /Groups/$u_username PrimaryGroupID $unique_id
+dscl . -create /Groups/$u_username RecordName $u_username $username
+dscl . -create /Groups/$u_username RealName "$realname"
+dscl . -create /Groups/$u_username Password \*
 
-echo "Checking if the user/group exists: \c"
+# like adduser but macos
+dscl . -create /Users/$u_username
+dscl . -create /Users/$u_username UserShell /usr/bin/false
+dscl . -create /Users/$u_username RealName "$realname"
+dscl . -create /Users/$u_username UniqueID $unique_id
+dscl . -create /Users/$u_username PrimaryGroupID $unique_id
+dscl . -create /Users/$u_username NFSHomeDirectory /var/empty
+dscl . -create /Users/$u_username Password \*
+dscl . -create /Users/$u_username RecordName $u_username $username
+dscl . -delete /Users/$u_username PasswordPolicyOptions
+dscl . -delete /Users/$u_username AuthenticationAuthority
 
-check_uuid=`dscl . -search /Users UniqueID $uid_`
-check_upgid=`dscl . -search /Users PrimaryGroupID $uid_`
-check_urn=`dscl . -search /Users RecordName _$username_`
-check_grn=`dscl . -search /Groups RecordName _$username_`
-
-
-[ ${#check_uuid} = 0 ] || die "failed!\nERROR: Non-unique User UniqueID:\n\n`dscl . -read /Users/_$username_ RecordName PrimaryGroupID RealName` \n\nTo view existing users/ids run: dscl . -readall /Users UniqueID | sort -nk 2"
-[ ${#check_upgid} = 0 ] || die "failed!\nERROR: Non-unique User PrimaryGroupID\n\n`dscl . -read /Users/_$username_ RecordName PrimaryGroupID RealName` \n\nTo view existing users/ids run: dscl . -readall /Users UniqueID | sort -nk 2"
-[ ${#check_urn} = 0 ] || die "failed!\nERROR: Non-unique User RecordName\n\n`dscl . -read /Users/_$username_ RecordName PrimaryGroupID RealName` \n\nTo view existing users/ids run: dscl . -readall /Users UniqueID | sort -nk 2"
-[ ${#check_grn} = 0 ] || die "failed!\nERROR: Non-unique Group RecordName\n\n`dscl . -read /Groups/_$username_ RecordName PrimaryGroupID RealName` \n\nTo view existing users/ids run: dscl . -readall /Users UniqueID | sort -nk 2"
-
-echo "We're good to go!"
-
-# echo "Continue (y/n) ? "
-# read input_
-# [ "$input_" = "y" ] || die "as you wish..." 
-
-echo "Creating User: \c"
-
-dscl . -create /Groups/_$username_
-dscl . -create /Groups/_$username_ PrimaryGroupID $uid_
-dscl . -create /Groups/_$username_ RecordName _$username_ $username_
-dscl . -create /Groups/_$username_ RealName "$realname_"
-dscl . -create /Groups/_$username_ Password \*
-
-dscl . -create /Users/_$username_
-dscl . -create /Users/_$username_ NFSHomeDirectory $nfs_homedir
-dscl . -create /Users/_$username_ Password \*
-dscl . -create /Users/_$username_ PrimaryGroupID $uid_
-dscl . -create /Users/_$username_ RealName "$realname_"
-dscl . -create /Users/_$username_ RecordName _$username_ $username_
-dscl . -create /Users/_$username_ UniqueID $uid_
-dscl . -create /Users/_$username_ UserShell $user_shell
-dscl . -delete /Users/_$username_ PasswordPolicyOptions
-dscl . -delete /Users/_$username_ AuthenticationAuthority
-
-echo "Done!"
+echo "New system user $username ($u_username) has been created with unique ID $unique_id"
 
