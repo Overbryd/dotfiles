@@ -1,5 +1,10 @@
 #!/bin/bash
 
+if !(id -Gn $(id -un) | grep -qw admin); then
+  echo "This must be executed by an administrative user on the system."
+  exit 1
+fi
+
 # Set a hostname for the computer
 hostname="$(scutil --get ComputerName)"
 echo "Current hostname: $(scutil --get LocalHostName) and computer name: $hostname"
@@ -51,9 +56,5 @@ fi
 
 # Make this user
 export PATH="$PATH:$HOME/.bin"
-if id -Gn $(id -un) | grep -qw admin; then
-  make bootstrap-administrator
-else
-  make bootstrap
-fi
+make bootstrap-administrator
 
