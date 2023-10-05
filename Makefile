@@ -26,6 +26,8 @@ bootstrap: \
 bootstrap-administrator: \
 	bootstrap-user \
 	bootstrap-binary-user \
+	bootstrap-homebrew-folder \
+	brew \
 	defaults-administrator \
 	defaults \
 	harder
@@ -49,39 +51,11 @@ bootstrap-user:
 bootstrap-binary-user:
 	id binary || sudo .bin/macos-add-system-user binary
 
-bootstrap-homebrew-folder: \
-	$(HOMEBREW_PREFIX)/Caches \
-	$(HOMEBREW_PREFIX)/Caskroom \
-	$(HOMEBREW_PREFIX)/Cellar \
-	$(HOMEBREW_PREFIX)/Frameworks \
-	$(HOMEBREW_PREFIX)/Homebrew \
-	$(HOMEBREW_PREFIX)/Logs/Homebrew \
-	$(HOMEBREW_PREFIX)/Fonts \
-	$(HOMEBREW_PREFIX)/bin \
-	$(HOMEBREW_PREFIX)/etc \
-	$(HOMEBREW_PREFIX)/include \
-	$(HOMEBREW_PREFIX)/lib \
-	$(HOMEBREW_PREFIX)/opt \
-	$(HOMEBREW_PREFIX)/sbin \
-	$(HOMEBREW_PREFIX)/share \
-	$(HOMEBREW_PREFIX)/var \
-	$(HOMEBREW_PREFIX)/pyenv \
-	$(HOMEBREW_PREFIX)/npm
-	sudo chown -R binary:binary $(HOMEBREW_PREFIX)/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var,pyenv,npm}
-	# Set the proper ACLs on the Homebrew folders in order to inherit ACLs
-	sudo chmod -R g+w $(HOMEBREW_PREFIX)/{Fonts,Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var,pyenv,npm}
-	sudo chmod +a "group:_binary allow list,add_file,search,add_subdirectory,delete_child,readattr,writeattr,readextattr,writeextattr,readsecurity,file_inherit,directory_inherit" $(HOMEBREW_PREFIX)/{Caches,Caskroom,Cellar,Frameworks,Homebrew,Logs/Homebrew,bin,etc,include,lib,opt,sbin,share,var,pyenv,npm}
-
-$(HOMEBREW_PREFIX)/Logs/Homebrew:
-	test -d $(HOMEBREW_PREFIX)/Logs/Homebrew || sudo mkdir -p $(HOMEBREW_PREFIX)/Logs/Homebrew
-	sudo chown -R root:staff $(HOMEBREW_PREFIX)/Logs
-	sudo chmod -R g+w $(HOMEBREW_PREFIX)/Logs
-
-$(HOMEBREW_PREFIX)/%:
-	test -d $@ || sudo mkdir $@
-	sudo chown -R binary:binary $@
-	sudo chmod -R g+w $@
-	sudo chmod +a "group:_binary allow list,add_file,search,add_subdirectory,delete_child,readattr,writeattr,readextattr,writeextattr,readsecurity,file_inherit,directory_inherit" $@
+bootstrap-homebrew-folder:
+	test -d $(HOMEBREW_PREFIX) || sudo mkdir $(HOMEBREW_PREFIX)
+	sudo chown -R binary:binary $(HOMEBREW_PREFIX)
+	sudo chmod -R g+w $(HOMEBREW_PREFIX)
+	sudo chmod +a "group:_binary allow list,add_file,search,add_subdirectory,delete_child,readattr,writeattr,readextattr,writeextattr,readsecurity,file_inherit,directory_inherit" $(HOMEBREW_PREFIX)
 
 brew-itself: $(HOMEBREW_PREFIX)/bin/brew
 brew: \
