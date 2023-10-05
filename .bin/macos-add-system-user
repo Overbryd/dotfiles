@@ -9,7 +9,7 @@ if [[ "x" = "x$username" ]]; then
   read -p "Enter the user name: " username
 fi
 username="$(lower $username)"
-u_username="_$(username)"
+u_username="_$username"
 
 # check that user does not already exist
 if [[ "$username" == $(dscl . -list /Users UniqueID | awk '{print $1}' | grep -w $username) ]]; then
