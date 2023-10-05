@@ -587,7 +587,7 @@ harder-common:
 
 harder-filevault:
 	# Enable FileVault (requires restart)
-	(fdesetup status | grep "FileVault is On") || (sudo fdesetup enable && shutdown -r +10 "Restarting in 10... FileVault setup requires a restart")
+	(fdesetup status | grep "FileVault is On") || (sudo fdesetup enable && read -p "Please note down the FileVault recovery key. Ready to restart?" noop && sudo shutdown -r +10 "Restarting in 10... FileVault setup requires a restart")
 
 harder-firewall:
 	# Enable the firewall
