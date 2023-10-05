@@ -63,7 +63,7 @@ brew: \
 	brew-upgrade
 
 $(HOMEBREW_PREFIX)/bin/brew:
-	$(BREW) doctor 2>&1 >/dev/null || /bin/bash -c "$$(curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+	$(BREW) doctor 2>&1 >/dev/null || curl --proto '=https' --tlsv1.2 -fsSL https://github.com/Homebrew/brew/tarball/master | tar xz -C $(HOMEBREW_PREFIX)
 	$(BREW) analytics off
 
 brew-upgrade: brew-itself
