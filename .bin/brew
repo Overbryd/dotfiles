@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+sudo -Eubinary /bin/bash -c "cd $HOMEBREW_PREFIX; ./bin/brew $@"
+
