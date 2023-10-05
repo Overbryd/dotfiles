@@ -1,10 +1,14 @@
 # vim all the things
-export EDITOR="vim"
+export EDITOR="nvim"
 export VISUAL="$EDITOR"
 
 # utf-8 all the things
 export LC_ALL=en_US.UTF-8
 export LANG=en_US.UTF-8
+
+# make sure we know the right cpu architecture
+# used to set HOMEBRWE_PREFIX, PYENV_ROOT and other environment variables
+export ARCH="$(uname -p)"
 
 # Case-insensitive globbing (used in pathname expansion)
 shopt -s nocaseglob

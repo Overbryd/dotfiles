@@ -2,12 +2,12 @@
 # Homebrew settings
 # Note: I am using a isolated user setup, no-one except that 'binary' user can write to the
 #       Homebrew directories.
-alias brew="sudo -ubinary brew"
+alias brew="sudo -uEbinary brew"
 alias cask="/usr/local/bin/brew --cask"
+export HOMEBREW_PREFIX=/usr/local/$ARCH
 export HOMEBREW_NO_ANALYTICS=1
 export HOMEBREW_NO_INSECURE_REDIRECT=1
 export HOMEBREW_CASK_OPTS=--require-sha
-export HOMEBREW_CACHE=/usr/local/Caches
-export HOMEBREW_LOGS=/usr/local/Logs/Homebrew
-export HOMEBREW_PREFIX=/usr/local
+export HOMEBREW_CACHE=$HOMEBREW_PREFIX/Caches
+export HOMEBREW_LOGS=$HOMEBREW_PREFIX/Logs/Homebrew
 
