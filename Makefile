@@ -3,7 +3,7 @@ DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 DOT_CONFIG_FILES := $(addprefix ~/, $(wildcard .config/*))
 
 DOTFILES_ROOT = $(HOME)/dotfiles
-BREW = sudo -Eubinary brew
+BREW = sudo -Eubinary /bin/bash -c "cd $HOMEBREW_PREFIX; brew"
 
 # Execute all commands per task in one shell, allowing for environment variables to be set for
 # all following commands.
