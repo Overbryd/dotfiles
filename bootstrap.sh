@@ -44,14 +44,10 @@ fi
 if ! test -d /usr/local/dotfiles; then
   sudo mkdir /usr/local/dotfiles
   sudo chown $(id -un):admin /usr/local/dotfiles
+  git clone git@github.com:Overbryd/dotfiles.git /usr/local/dotfiles
   cd /usr/local/dotfiles
-  # Note: We need some older ways to get bare repositories working with Apples old git version.
-  #       This was tested with git version 2.39.3 (Apple Git-145).
-  git clone --bare git@github.com:Overbryd/dotfiles.git .
-  git config --local status.showUntrackedFiles no
-  git init --separate-git-dir=. $HOME
-  cd $HOME
-  git checkout --force
+  git checkout 2023-10
+  cd -
 fi
 
 # Make the administrative stuff
