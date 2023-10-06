@@ -519,7 +519,7 @@ dotfiles: \
 	$(DOT_CONFIG_FILES)
 
 ~/dotfiles:
-	git init --separate-git-dir=/usr/local/dotfiles ~/dotfiles
+	ln -s /usr/local/dotfiles ~/dotfiles
 
 ~/.ssh/config:
 	# Copy a default .ssh/config
