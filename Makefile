@@ -1,6 +1,7 @@
 EXCLUDED_DOTFILES := .git .git-crypt .gitattributes .gitignore .gitmodules .ssh
 DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 DOT_CONFIG_FILES := $(addprefix ~/, $(wildcard .config/*))
+LAUNCH_AGENTS := $(addprefix ~/Library/, $(wildcard LaunchAgents/*))
 
 DOTFILES_ROOT = $(HOME)/dotfiles
 BREW = $(HOME)/.bin/brew
@@ -50,6 +51,7 @@ bootstrap-user:
 # The normal user however can execute binaries from that PATH.
 bootstrap-binary-user:
 	id binary || sudo .bin/macos-add-system-user binary
+	sudo grep _binary /etc/sudoers || echo '_binary		ALL = NOPASSWD:SETENV: /bin/cp -pR $(HOMEBREW_PREFIX)/Caskroom/* /Applications/*,/bin/cp -pR $(HOMEBREW_PREFIX)/Caskroom/* /Library/Fonts/*,/usr/sbin/installer -pkg $(HOMEBREW_PREFIX)/Caskroom/* -target /' | EDITOR='tee -a' sudo -E visudo
 
 bootstrap-homebrew-folder:
 	test -d $(HOMEBREW_PREFIX) || sudo mkdir $(HOMEBREW_PREFIX)
@@ -104,8 +106,6 @@ brew-work: \
 	brew-nettools
 	@$(BREW) update
 	@export HOMEBREW_NO_AUTO_UPDATE=1
-	# slack is the current communication platform
-	$(BREW) install --cask slack
 	# tableplus is my preferred SQL-client
 	$(BREW) install --cask tableplus
 	# Alacritty is a better terminal emulator
@@ -133,18 +133,17 @@ brew-devops: casks-itself
 	$(BREW) tap TylerBrock/saw
 	$(BREW) install saw
 	# handle google cloud related stuff
-	$(BREW) install --cask google-cloud-sdk
+	HOME=$(HOMEBREW_PREFIX) $(BREW) install --cask google-cloud-sdk
 	# Google, you are fucking kidding me
-	gcloud config set disable_usage_reporting false
-	gcloud config set survey/disable_prompts True
+	# gcloud config set disable_usage_reporting false
+	# gcloud config set survey/disable_prompts True
 	# neat way to expose a locally running service
 	$(BREW) install cloudflare/cloudflare/cloudflared
 	# smartmontools great for monitoring disks
 	$(BREW) install smartmontools
 	# I need to control kubernetes clusters
 	$(BREW) install kubernetes-cli
-	kubectl completion bash > $$HOME/dotfiles/.completion.d/kubectl
-	$(BREW) install helm
+	kubectl completion bash > $$HOME/.completion.d/kubectl
 	# Terraform, this is what makes the money
 	$(BREW) install terraform-ls
 	# Kops is an alternative to EKS clusters (I no longer prefer)
@@ -161,8 +160,6 @@ brew-nettools: brew-itself
 	$(BREW) install websocat
 	# vegeta is an insanely great http load tester and scalable http-client
 	$(BREW) install vegeta
-	# hugo is my blogging engine
-	# $(BREW) install hugo
 
 brew-fzf: brew-itself
 	@$(BREW) update
@@ -186,6 +183,14 @@ mas-baseline: mas-itself
 	mas install 407963104
 	# Wireguard VPN Client
 	mas install 1451685025
+	# Spark E-Mail
+	mas install 1176895641
+	# 1Password password manager
+	mas install 1333542190
+
+mas-work: mas-itself
+	# Slack
+	mas install 803453959
 
 casks-itself: brew-itself
 	# tap homebrew-cask to install other osx related stuff
@@ -202,10 +207,7 @@ casks-baseline: casks-itself
 	$(BREW) install --cask spectacle
 	# vivaldi for browsing the web
 	$(BREW) install --cask vivaldi
-	# dropbox synchronised files across devices
-	$(BREW) install --cask dropbox
 	# 1password is my password manager
-	$(BREW) install --cask 1password
 	$(BREW) install --cask 1password-cli
 	# gpg-suite provide me with all gpp related things
 	$(BREW) install --cask gpg-suite
@@ -217,6 +219,8 @@ casks-baseline: casks-itself
 	$(BREW) install --cask appcleaner
 	# Carbon Copy Cloner is my backup tool of choice
 	$(BREW) install --cask carbon-copy-cloner
+	# dropbox synchronised files across devices
+	HOMEBREW_CASK_OPTS=$${HOMEBREW_CASK_OPTS#--require-sha} $(BREW) install --cask dropbox
 
 casks-work: casks-itself
 	@$(BREW) update
@@ -224,22 +228,14 @@ casks-work: casks-itself
 	# tableplus is the best graphical multi-database client
 	$(BREW) install --cask tableplus
 
-# FIXME: This was a bad idea
-#
-# bootstrap-fonts-directory:
-# 	# Share user fonts via /usr/local
-# 	chmod -a "group:everyone deny delete" ~/Library/Fonts || echo "No ACL present"
-# 	rm -rf ~/Library/Fonts
-# 	ln -svf $(HOMEBREW_PREFIX)/Fonts ~/Library/Fonts
-
 fonts: \
 	casks-itself
 	# tap homebrew-fonts to install freely available fonts
 	$(BREW) tap homebrew/cask-fonts
 	# install IBM Plex, an excellent modern font (https://www.ibm.com/plex/)
-	$(BREW) install --cask font-ibm-plex
+	$(BREW) install --fontdir /Library/Fonts --cask font-ibm-plex
 	# install Adobe Source Code Pro, an excellent mono space font for programming
-	$(BREW) install --cask font-source-code-pro
+	HOMEBREW_CASK_OPTS=$${HOMEBREW_CASK_OPTS#--require-sha} $(BREW) install --fontdir /Library/Fonts --cask font-source-code-pro
 
 bash: brew-itself
 	@$(BREW) update
@@ -353,7 +349,8 @@ defaults: \
 	defaults-Dock \
 	defaults-NSGlobalDomain \
 	defaults-Calendar \
-	defaults-Menubar
+	defaults-Menubar \
+	defaults-LaunchAgents \
 	# Show remaining battery time; hide percentage
 	defaults write com.apple.menuextra.battery ShowPercent -string "NO"
 	defaults write com.apple.menuextra.battery ShowTime -string "YES"
@@ -427,7 +424,7 @@ defaults-Dock:
 	# clean up right side (persistent)
 	-defaults delete com.apple.dock persistent-others
 	# and add these folders
-	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Dropbox", "file-data":{"_CFURLString":"file:///Users/$(USER)/Dropbox/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
+	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Dropbox", "file-data":{"_CFURLString":"file:///Users/$(USER)/Library/CloudStorage/Dropbox","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
 	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Desktop", "file-data":{"_CFURLString":"file:///Users/$(USER)/Desktop/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
 	defaults write com.apple.dock persistent-others -array-add "$$(echo '{"tile-type": "directory-tile", "tile-data": {"displayas": 0, "file-type":2, "showas":1, "file-label":"Downloads", "file-data":{"_CFURLString":"file:///Users/$(USER)/Downloads/","_CFURLStringType":15}}}' | plutil -convert xml1 - -o -)";
 	# restart dock
@@ -509,6 +506,12 @@ defaults-Menubar:
 	defaults write com.apple.menuextra.clock DateFormat -string "EEE d MMM HH:mm"
 	killall SystemUIServer
 
+defaults-LaunchAgents: \
+	$(LAUNCH_AGENTS)
+
+~/Library/LaunchAgents/%:
+	cp -v ~/LaunchAgents/$(notdir $@) $@
+
 dotfiles:
 dotfiles: \
 	~/dotfiles \
@@ -556,7 +559,7 @@ harder-common:
 
 harder-filevault:
 	# Enable FileVault (requires restart)
-	(fdesetup status | grep "FileVault is On") || (sudo fdesetup enable && read -p "Please note down the FileVault recovery key. Ready to restart?" noop && sudo shutdown -r +1 "Restarting in 1 minute... FileVault setup requires a restart")
+	(fdesetup status | grep "FileVault is On") || (sudo fdesetup enable && sudo fdeseetup add -usertoadd partenkirchen && read -p "Please note down the FileVault recovery key. Ready to restart?" noop && sudo shutdown -r +1 "Restarting in 1 minute... FileVault setup requires a restart")
 
 harder-firewall:
 	# Enable the firewall
