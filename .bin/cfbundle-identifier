@@ -1,0 +1,5 @@
+#!/usr/bin/env osascript
+
+on run argv
+  id of app (item 1 of argv)
+end run
