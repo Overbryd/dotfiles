@@ -51,7 +51,7 @@ if ! test -d /usr/local/dotfiles; then
 fi
 
 # Make the administrative stuff
-export PATH="$PATH:$HOME/.bin"
-source .profile.d/homebrew
-make bootstrap-administrator
+export PATH="$PATH:/usr/local/dotfiles/.bin"
+source /usr/local/dotfiles/.profile.d/homebrew
+make -C /usr/local/dotfiles bootstrap-administrator
 
