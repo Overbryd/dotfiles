@@ -1,16 +1,12 @@
 # local .bin
 export PATH="$HOME/.bin:$PATH"
-# add pyenv path
-export PATH="$PYENV_ROOT/bin:$PATH"
-# add brew version of curl
+# add rbenv path
+export PATH="$RBENV_ROOT/bin:$PATH"
+# add brew binaries
 export PATH="$HOMEBREW_PREFIX/bin:$PATH"
 # add brew version of curl
 export PATH="$HOMEBREW_PREFIX/opt/curl/bin:$PATH"
 # add brew /usr/local/sbin
 export PATH="$HOMEBREW_PREFIX/sbin:$PATH"
-# add brew version of OpenJDK
-export PATH="$HOMEBREW_PREFIX/opt/openjdk@11/bin:$PATH"
-# link brew version of ruby
-export PATH="$HOMEBREW_PREFIX/opt/ruby/bin:$PATH"
 # add brew version of getop
 export PATH="$HOMEBREW_PREFIX/opt/gnu-getopt/bin:$PATH"
