@@ -125,6 +125,7 @@ brew-devops: casks-itself
 	$(BREW) tap TylerBrock/saw
 	$(BREW) install saw
 	# handle google cloud related stuff
+	$(BREW) install python@3.8
 	HOME=$(HOMEBREW_PREFIX) $(BREW) install --cask google-cloud-sdk
 	# Google, you are fucking kidding me
 	# gcloud config set disable_usage_reporting false
@@ -180,6 +181,8 @@ mas-baseline: mas-itself
 mas-work: mas-itself
 	# Slack
 	mas install 803453959
+	# Apple Remote Desktop
+	mas install 409907375
 
 casks-itself: brew-itself
 	# tap homebrew-cask to install other osx related stuff
