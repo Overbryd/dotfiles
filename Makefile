@@ -157,7 +157,6 @@ brew-fzf: brew-itself
 	# fzf is a fuzzy file finder
 	$(BREW) install fzf
 	$(HOMEBREW_PREFIX)/opt/fzf/install --key-bindings --completion --no-update-rc --no-zsh --no-fish
-	$(BREW) install fzf-tmux
 
 mas-itself: brew-itself
 	$(BREW) install mas
@@ -237,38 +236,41 @@ bash: brew-itself
 	test "$$SHELL" = $(HOMEBREW_PREFIX)/bin/bash || chsh -s $(HOMEBREW_PREFIX)/bin/bash
 
 ruby: \
-	~/.rbenv \
-	~/.rbenv/plugins/ruby-build \
-	~/.rbenv/plugins/rbenv-update \
-	~/.rbenv/plugins/rbenv-readline \
-	~/.rbenv/plugins/rbenv-gemset
+	$(HOMEBREW_PREFIX)/rbenv \
+	$(HOMEBREW_PREFIX)/rbenv/plugins/ruby-build \
+	$(HOMEBREW_PREFIX)/rbenv/plugins/rbenv-update \
+	$(HOMEBREW_PREFIX)/rbenv/plugins/rbenv-readline \
+	$(HOMEBREW_PREFIX)/rbenv/plugins/rbenv-gemset
+	$(BREW) install libyaml
+	TMPDIR=/tmp sudo -Eu binary $(HOMEBREW_PREFIX)/rbenv/bin/rbenv install 3.2.2
+	TMPDIR=/tmp sudo -Eu binary $(HOMEBREW_PREFIX)/rbenv/bin/rbenv global 3.2.2
 
 # rbenv is an amazing ruby version manager, simple, straightforward, local
-~/.rbenv:
-	git clone https://github.com/rbenv/rbenv.git ~/.rbenv
-	cd ~/.rbenv && src/configure && make -C src
+$(HOMEBREW_PREFIX)/rbenv:
+	test -d $(HOMEBREW_PREFIX)/rbenv || sudo -Eu binary git clone https://github.com/rbenv/rbenv.git $(HOMEBREW_PREFIX)/rbenv
+	cd $(HOMEBREW_PREFIX)/rbenv && sudo -Eu binary git pull && sudo -Eu binary src/configure && sudo -Eu binary make -C src
 
 # ruby-build is a repository hosting all kinds of ruby versions to install
-~/.rbenv/plugins/ruby-build:
-	git clone https://github.com/rbenv/ruby-build.git ~/.rbenv/plugins/ruby-build
+$(HOMEBREW_PREFIX)/rbenv/plugins/ruby-build:
+	sudo -Eu binary git clone https://github.com/rbenv/ruby-build.git $(HOMEBREW_PREFIX)/rbenv/plugins/ruby-build
 
 # rbenv-update allows updating rbenv plugins easily
-~/.rbenv/plugins/rbenv-update:
-	git clone https://github.com/rkh/rbenv-update.git ~/.rbenv/plugins/rbenv-update
+$(HOMEBREW_PREFIX)/rbenv/plugins/rbenv-update:
+	sudo -Eu binary git clone https://github.com/rkh/rbenv-update.git $(HOMEBREW_PREFIX)/rbenv/plugins/rbenv-update
 
 # rbenv-readline does the right thing when it comes to linking a brew installed readline to ruby
-~/.rbenv/plugins/rbenv-readline:
-	git clone git://github.com/tpope/rbenv-readline.git ~/.rbenv/plugins/rbenv-readline
+$(HOMEBREW_PREFIX)/rbenv/plugins/rbenv-readline:
+	sudo -Eu binary git clone https://github.com/tpope/rbenv-readline.git $(HOMEBREW_PREFIX)/rbenv/plugins/rbenv-readline
 
 # rbenv-gemset allows managing project specific set of gems
-~/.rbenv/plugins/rbenv-gemset:
-	git clone git://github.com/jf/rbenv-gemset.git ~/.rbenv/plugins/rbenv-gemset
+$(HOMEBREW_PREFIX)/rbenv/plugins/rbenv-gemset:
+	sudo -Eu binary git clone https://github.com/jf/rbenv-gemset.git $(HOMEBREW_PREFIX)/rbenv/plugins/rbenv-gemset
 
 python:
-	sudo -Eubinary pyenv install --skip-existing 3.10.4
-	sudo -Eubinary pyenv global 3.10.4
-	sudo -Eubinary pip install --upgrade pip
-	sudo -Eubinary pip install neovim
+	TMPDIR=/tmp sudo -Eubinary pyenv install --skip-existing 3.12.0
+	TMPDIR=/tmp sudo -Eubinary pyenv global 3.12.0
+	TMPDIR=/tmp sudo -Eubinary pip install --upgrade pip
+	TMPDIR=/tmp sudo -Eubinary pip install neovim
 
 vim: \
 	vim-directories \

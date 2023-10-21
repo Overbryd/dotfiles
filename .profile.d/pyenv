@@ -1,6 +1,6 @@
 # pyenv
 export PYENV_ROOT="$HOMEBREW_PREFIX/pyenv"
-if command -v pyenv 1>/dev/null 2>&1; then
-  eval "$(pyenv init --no-rehash -)"
+if test -x "$HOMEBREW_PREFIX/bin/pyenv"; then
+  eval "$($HOMEBREW_PREFIX/bin/pyenv init --no-rehash -)"
 fi
 

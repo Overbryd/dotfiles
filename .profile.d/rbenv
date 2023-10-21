@@ -1,0 +1,6 @@
+# rbenv
+export RBENV_ROOT="$HOMEBREW_PREFIX/rbenv"
+if test -x "$HOMEBREW_PREFIX/rbenv/bin/rbenv"; then
+  eval "$($HOMEBREW_PREFIX/rbenv/bin/rbenv init - bash)"
+fi
+
