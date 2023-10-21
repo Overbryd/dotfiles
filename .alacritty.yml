@@ -28,3 +28,9 @@ font:
     y: 0
   AppleFontSmoothing: true
 
+key_bindings:
+- {key: Left, mods: Alt, chars: "\x1BB" }
+- {key: Right, mods: Alt, chars: "\x1BF" }
+- {key: H, mods: Alt, chars: "\x1BB" }
+- {key: L, mods: Alt, chars: "\x1BF" }
+
