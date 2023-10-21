@@ -1,9 +1,4 @@
-#!/bin/sh
-
-die() {
-  echo >&2 "$@"
-  exit 1
-}
+#!/usr/bin/env bash
 
 # Check that we are superuser (i.e. $(id -u) is zero)
 [ `id -u` -eq 0 ] || die "This script needs to run as root"
