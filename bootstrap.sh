@@ -50,7 +50,8 @@ if ! test -d /usr/local/dotfiles; then
   cd -
 fi
 
-# Make the administrative stuff
+# Bootstrap the administrative stuff
+make -C /usr/local/dotfiles dotfiles
 export PATH="$PATH:/usr/local/dotfiles/.bin"
 source /usr/local/dotfiles/.profile.d/homebrew
 make -C /usr/local/dotfiles bootstrap-administrator

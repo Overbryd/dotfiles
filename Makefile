@@ -4,7 +4,7 @@ DOT_CONFIG_FILES := $(addprefix ~/, $(wildcard .config/*))
 LAUNCH_AGENTS := $(addprefix ~/Library/, $(wildcard LaunchAgents/*))
 
 DOTFILES_ROOT = $(HOME)/dotfiles
-BREW = $(HOME)/.bin/brew
+BREW = $(DOTFILES_ROOT)/.bin/brew
 
 # execute all commands per task in one shell, allowing for environment variables to be set for
 # all following commands.
