@@ -6,5 +6,5 @@ test -d "$backup_folder" || mkdir -p "$backup_folder"
 
 datestamp=$(date +%Y-%m-%d)
 
-cp $HOME/.bash_history "$backup_folder/bash_history_$datestamp"
+history > "$backup_folder/bash_history_$datestamp"
 
