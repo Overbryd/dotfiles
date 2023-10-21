@@ -52,5 +52,6 @@ fi
 
 # Make the administrative stuff
 export PATH="$PATH:$HOME/.bin"
+source .profile.d/homebrew
 make bootstrap-administrator
 

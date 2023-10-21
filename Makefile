@@ -6,9 +6,25 @@ LAUNCH_AGENTS := $(addprefix ~/Library/, $(wildcard LaunchAgents/*))
 DOTFILES_ROOT = $(HOME)/dotfiles
 BREW = $(HOME)/.bin/brew
 
-# Execute all commands per task in one shell, allowing for environment variables to be set for
+# execute all commands per task in one shell, allowing for environment variables to be set for
 # all following commands.
 .ONESHELL:
+
+# bootstrap the administrative account
+bootstrap-administrator: \
+	bootstrap-user \
+	bootstrap-binary-user \
+	bootstrap-homebrew-folder \
+	brew \
+	defaults-administrator \
+	defaults \
+	harder
+
+# bootstrap after reset, this is required because files at root "/" are overwritten by macos updates
+# from time to time
+bootstrap-administrator-after-reset: \
+	bootstrap-binary-user \
+	bash
 
 # bootstrap only, add one-time bootstrap tasks here
 # setups the necessary stuff
@@ -24,34 +40,17 @@ bootstrap: \
 	~/.ssh/config \
 	defaults
 
-bootstrap-administrator: \
-	bootstrap-user \
-	bootstrap-binary-user \
-	bootstrap-homebrew-folder \
-	brew \
-	defaults-administrator \
-	defaults \
-	harder
-
-# 	bash \
-# 	tmux \
-# 	casks-baseline \
-# 	mas-baseline \
-# 	dotfiles \
-# 	vim \
-# 	docker \
-# 	harder
-
-# Bootstrap a daily driver user, low privileged that is used to run the computer with.
+# bootstrap a daily driver user, low privileged that is used to run the computer with.
 bootstrap-user:
 	id partenkirchen || sudo .bin/macos-add-user partenkirchen
 
 # Bootstrap a system user + group that is used to protect executable paths in $PATH.
 # Any directory in $PATH should not be writable by normal user.
 # The normal user however can execute binaries from that PATH.
+# Test with `$ audit-path-writable`
 bootstrap-binary-user:
 	id binary || sudo .bin/macos-add-system-user binary
-	sudo grep _binary /etc/sudoers || echo '_binary		ALL = NOPASSWD:SETENV: /bin/cp -pR $(HOMEBREW_PREFIX)/Caskroom/* /Applications/*,/bin/cp -pR $(HOMEBREW_PREFIX)/Caskroom/* /Library/Fonts/*,/usr/sbin/installer -pkg $(HOMEBREW_PREFIX)/Caskroom/* -target /' | EDITOR='tee -a' sudo -E visudo
+	sudo grep _binary /etc/sudoers || echo '_binary		ALL = NOPASSWD:SETENV: /bin/cp -pR $(HOMEBREW_PREFIX)/Caskroom/* /Applications/*,/bin/cp -pR $(HOMEBREW_PREFIX)/Caskroom/* /Library/Fonts/*,/usr/sbin/installer -pkg $(HOMEBREW_PREFIX)/Caskroom/* -target /' | EDITOR='tee -a' VISUAL=$$EDITOR sudo -E visudo
 
 bootstrap-homebrew-folder:
 	test -d $(HOMEBREW_PREFIX) || sudo mkdir $(HOMEBREW_PREFIX)
@@ -74,7 +73,6 @@ brew-upgrade: brew-itself
 
 brew-baseline: brew-itself
 	@$(BREW) update
-	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# GNU coreutils instead of outdated mac os defaults
 	-$(BREW) install coreutils moreutils
 	# newer version of git
@@ -105,7 +103,6 @@ brew-work: \
 	brew-devops \
 	brew-nettools
 	@$(BREW) update
-	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# tableplus is my preferred SQL-client
 	$(BREW) install --cask tableplus
 	# Alacritty is a better terminal emulator
@@ -113,7 +110,6 @@ brew-work: \
 
 brew-programming: brew-itself
 	@$(BREW) update
-	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# erlang programming language
 	$(BREW) install erlang
 	# elixir programming language
@@ -125,7 +121,6 @@ brew-programming: brew-itself
 
 brew-devops: casks-itself
 	@$(BREW) update
-	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# handle amazon web services related stuff
 	$(BREW) install awscli
 	$(BREW) install aws-iam-authenticator
@@ -151,7 +146,6 @@ brew-devops: casks-itself
 
 brew-nettools: brew-itself
 	@$(BREW) update
-	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# nmap is great for test and probing network related stuff
 	$(BREW) install nmap
 	# curl is a http development essential
@@ -163,7 +157,6 @@ brew-nettools: brew-itself
 
 brew-fzf: brew-itself
 	@$(BREW) update
-	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# fzf is a fuzzy file finder
 	$(BREW) install fzf
 	$(HOMEBREW_PREFIX)/opt/fzf/install --key-bindings --completion --no-update-rc --no-zsh --no-fish
@@ -179,8 +172,8 @@ mas-baseline: mas-itself
 	mas install 409203825
 	# Pages
 	mas install 409201541
-	# Pixelmator
-	mas install 407963104
+	# Pixelmator Pro
+	mas install 1289583905
 	# Wireguard VPN Client
 	mas install 1451685025
 	# Spark E-Mail
@@ -202,7 +195,8 @@ casks: \
 
 casks-baseline: casks-itself
 	@$(BREW) update
-	@export HOMEBREW_NO_AUTO_UPDATE=1
+	# phoenix is a scriptable window management/tiling system
+	$(BREW) install --cask phoenix
 	# spectacle for mac osx window management/tiling
 	$(BREW) install --cask spectacle
 	# vivaldi for browsing the web
@@ -224,7 +218,6 @@ casks-baseline: casks-itself
 
 casks-work: casks-itself
 	@$(BREW) update
-	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# tableplus is the best graphical multi-database client
 	$(BREW) install --cask tableplus
 
@@ -239,7 +232,6 @@ fonts: \
 
 bash: brew-itself
 	@$(BREW) update
-	@export HOMEBREW_NO_AUTO_UPDATE=1
 	# newer version of bash
 	$(BREW) install bash
 	$(BREW) install bash-completion
