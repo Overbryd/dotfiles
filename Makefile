@@ -34,8 +34,7 @@ bootstrap: \
 	bash \
 	tmux \
 	dotfiles \
-	vim-directories \
-	vim-plugins \
+	nvim \
 	~/.gnupg \
 	~/.ssh/config \
 	defaults
