@@ -16,6 +16,7 @@ bootstrap-administrator: \
 	bootstrap-binary-user \
 	bootstrap-homebrew-folder \
 	brew \
+	bash \
 	defaults-administrator \
 	defaults \
 	harder
@@ -31,10 +32,7 @@ bootstrap-administrator-after-reset: \
 # restore .gnupg to decrypt the secrets from this repository
 # setup ssh config (relies on decrypted repository)
 bootstrap: \
-	bash \
-	tmux \
 	dotfiles \
-	nvim \
 	~/.gnupg \
 	~/.ssh/config \
 	defaults
