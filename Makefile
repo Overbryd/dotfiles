@@ -286,11 +286,8 @@ $(HOMEBREW_PREFIX)/nodenv:
 	NODENV_ROOT=$(HOMEBREW_PREFIX)/nodenv sudo -Eubinary nodenv init - > /dev/null
 
 nvim: \
-	nvim-directories \
-	~/.config/nvim \
 	nvim-itself \
-	nvim-plugins \
-	nvim-lsp-support
+	nvim-user
 
 nvim-user: \
 	nvim-directories \
@@ -306,7 +303,7 @@ nvim-directories:
 nvim-itself:
 	$(BREW) install nvim
 
-nvim-lsp-support: nvim-plugins
+nvim-coc-install: nvim-plugins
 	nvim -c 'CocInstall -sync coc-just-complete coc-pairs coc-tsserver coc-json coc-html coc-css coc-pyright coc-docker coc-erlang_ls coc-fzf-preview coc-go coc-html coc-svelte coc-yaml coc-elixir coc-terraform coc-snippets | qa'
 
 nvim-plugins:
@@ -507,7 +504,7 @@ dotfiles: \
 	cp -v $$gnupg_source ~/.gnupg
 
 ~/.config/%: ~/.config
-	cd ~ && ln -svf $(DOTFILES_ROOT)/.config/$(notdir $@) .config/$(notdir $@)
+	cd ~ && test -h $(DOTFILES_ROOT) || ln -svf $(DOTFILES_ROOT)/.config/$(notdir $@) .config/$(notdir $@)
 
 ~/.config:
 	mkdir ~/.config
