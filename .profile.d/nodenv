@@ -1,0 +1,6 @@
+# nodenv
+export NODENV_ROOT="$HOMEBREW_PREFIX/nodenv"
+if test -x "$HOMEBREW_PREFIX/bin/nodenv"; then
+  eval "$($HOMEBREW_PREFIX/bin/nodenv init -)"
+fi
+

@@ -275,6 +275,16 @@ python:
 	TMPDIR=/tmp sudo -Eubinary pip install --upgrade pip
 	TMPDIR=/tmp sudo -Eubinary pip install neovim
 
+node: \
+	$(HOMEBREW_PREFIX)/nodenv
+	cd $(HOMEBREW_PREFIX)
+	TMPDIR=/tmp NODENV_ROOT=$(HOMEBREW_PREFIX)/nodenv sudo -Eubinary nodenv install 20.8.1
+	TMPDIR=/tmp NODENV_ROOT=$(HOMEBREW_PREFIX)/nodenv sudo -Eubinary nodenv global 20.8.1
+
+$(HOMEBREW_PREFIX)/nodenv:
+	$(BREW) install nodenv node-build
+	NODENV_ROOT=$(HOMEBREW_PREFIX)/nodenv sudo -Eubinary nodenv init - > /dev/null
+
 vim: \
 	vim-directories \
 	vim-itself \
