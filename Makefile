@@ -285,34 +285,6 @@ $(HOMEBREW_PREFIX)/nodenv:
 	$(BREW) install nodenv node-build
 	NODENV_ROOT=$(HOMEBREW_PREFIX)/nodenv sudo -Eubinary nodenv init - > /dev/null
 
-vim: \
-	vim-directories \
-	vim-itself \
-	vim-plugins
-
-vim-directories:
-	# create vim directories
-	mkdir -p ~/.vim/tmp/{backup,swap,undo}
-	chmod go= ~/.vim/tmp{,/*}
-
-vim-itself: brew-itself
-	# newer version of vim
-	$(BREW) install vim
-
-vim-plugins: \
-	~/.vim/bundle/Vundle.vim
-	# disable colorscheme for installing plugins to a temporary .vimrc
-	sed 's/colorscheme/"colorscheme/' .vimrc > /tmp/.vimrc
-	# install plugins with temporary vimrc
-	vim -u /tmp/.vimrc +PluginInstall +qall
-	-rm /tmp/.vimrc
-	# post installation steps of command-t (use the ruby that ships with vim)
-	cd ~/.vim/bundle/command-t/ruby/command-t/ext/command-t && make clean && export PATH="$(HOMEBREW_PREFIX)/opt/ruby/bin:$$PATH" && ruby extconf.rb && make
-
-# install vundle, a vim package manager
-~/.vim/bundle/Vundle.vim:
-	git clone https://github.com/gmarik/Vundle.vim.git ~/.vim/bundle/Vundle.vim
-
 nvim: \
 	nvim-directories \
 	~/.config/nvim \
