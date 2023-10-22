@@ -1,7 +1,3 @@
-# local .bin
-export PATH="$HOME/.bin:$PATH"
-# add rbenv path
-export PATH="$RBENV_ROOT/bin:$PATH"
 # add brew binaries
 export PATH="$HOMEBREW_PREFIX/bin:$PATH"
 # add brew version of curl
@@ -10,3 +6,6 @@ export PATH="$HOMEBREW_PREFIX/opt/curl/bin:$PATH"
 export PATH="$HOMEBREW_PREFIX/sbin:$PATH"
 # add brew version of getop
 export PATH="$HOMEBREW_PREFIX/opt/gnu-getopt/bin:$PATH"
+# keep this last
+# local ~/.bin to overwrite anything on the machine
+export PATH="$HOME/.bin:$PATH"

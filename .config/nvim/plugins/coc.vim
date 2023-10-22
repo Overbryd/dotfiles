@@ -3,8 +3,8 @@ set signcolumn=number
 set completeopt+=menuone
 
 " trigger completion on CTRL-N and CTRL-P
-inoremap <silent><expr> <c-n> coc#refresh()
-inoremap <silent><expr> <c-p> coc#refresh()
+" inoremap <silent><expr> <c-n> coc#refresh()
+" inoremap <silent><expr> <c-p> coc#refresh()
 
 " gd - go to definition of word under cursor
 nmap <silent> gd <Plug>(coc-definition)

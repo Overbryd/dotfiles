@@ -2,5 +2,7 @@
 export RBENV_ROOT="$HOMEBREW_PREFIX/rbenv"
 if test -x "$HOMEBREW_PREFIX/rbenv/bin/rbenv"; then
   eval "$($HOMEBREW_PREFIX/rbenv/bin/rbenv init - bash)"
+  # add rbenv path
+  export PATH="$RBENV_ROOT/bin:$PATH"
 fi
 

@@ -1,0 +1,4 @@
+# tfenv
+export TFENV_AUTO_INSTALL=false
+export TFENV_INSTALL_DIR=$HOMEBREW_PREFIX/tfenv
+export PATH="$PATH:$TFENV_INSTALL_DIR/bin"

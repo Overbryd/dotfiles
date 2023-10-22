@@ -285,6 +285,15 @@ $(HOMEBREW_PREFIX)/nodenv:
 	$(BREW) install nodenv node-build
 	NODENV_ROOT=$(HOMEBREW_PREFIX)/nodenv sudo -Eubinary nodenv init - > /dev/null
 
+terraform: \
+	$(HOMEBREW_PREFIX)/tfenv
+	sudo -Eubinary $(HOMEBREW_PREFIX)/bin/tfenv install latest
+	sudo -Eubinary $(HOMEBREW_PREFIX)/bin/tfenv use latest
+
+$(HOMEBREW_PREFIX)/tfenv:
+	$(BREW) install tfenv
+	sudo -Eubinary mkdir $(HOMEBREW_PREFIX)/tfenv
+
 nvim: \
 	nvim-itself \
 	nvim-user
