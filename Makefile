@@ -131,7 +131,7 @@ brew-devops: casks-itself
 	# gcloud config set disable_usage_reporting false
 	# gcloud config set survey/disable_prompts True
 	# neat way to expose a locally running service
-	$(BREW) install cloudflare/cloudflare/cloudflared
+	$(BREW) install cloudflared
 	# smartmontools great for monitoring disks
 	$(BREW) install smartmontools
 	# I need to control kubernetes clusters
@@ -152,6 +152,8 @@ brew-nettools: brew-itself
 	$(BREW) install websocat
 	# vegeta is an insanely great http load tester and scalable http-client
 	$(BREW) install vegeta
+	# caddy is an outstanding web server
+	$(BREW) install caddy
 
 brew-fzf: brew-itself
 	@$(BREW) update
@@ -270,8 +272,8 @@ $(HOMEBREW_PREFIX)/rbenv/plugins/rbenv-gemset:
 	sudo -Eu binary git clone https://github.com/jf/rbenv-gemset.git $(HOMEBREW_PREFIX)/rbenv/plugins/rbenv-gemset
 
 python:
-	TMPDIR=/tmp sudo -Eubinary pyenv install --skip-existing 3.12.0
-	TMPDIR=/tmp sudo -Eubinary pyenv global 3.12.0
+	TMPDIR=/tmp sudo -Eubinary pyenv install --skip-existing 3.11.6
+	TMPDIR=/tmp sudo -Eubinary pyenv global 3.11.6
 	TMPDIR=/tmp sudo -Eubinary pip install --upgrade pip
 	TMPDIR=/tmp sudo -Eubinary pip install neovim
 
@@ -309,8 +311,9 @@ nvim-directories:
 	mkdir -p ~/.nvim/tmp/{backup,swap,undo}
 	chmod go= ~/.nvim/tmp{,/*}
 
-nvim-itself:
+nvim-itself: python
 	$(BREW) install nvim
+	TMPDIR=/tmp sudo -Eubinary pip install pynvim
 
 nvim-coc-install: nvim-plugins
 	nvim -c 'CocInstall -sync coc-just-complete coc-pairs coc-tsserver coc-json coc-html coc-css coc-pyright coc-docker coc-erlang_ls coc-fzf-preview coc-go coc-html coc-svelte coc-yaml coc-elixir coc-terraform coc-snippets | qa'
