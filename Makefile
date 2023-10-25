@@ -138,7 +138,7 @@ brew-devops: casks-itself
 	$(BREW) install kubernetes-cli
 	kubectl completion bash > $$HOME/.completion.d/kubectl
 	# Terraform, this is what makes the money
-	$(BREW) install terraform-ls
+	$(BREW) install terraform-ls terraform-docs
 	# Kops is an alternative to EKS clusters (I no longer prefer)
 	$(BREW) install kops
 
@@ -524,8 +524,13 @@ dotfiles: \
 ~/.%:
 	cd ~ && ln -svf $(DOTFILES_ROOT)/$(notdir $@) $@
 
-# docker:
-# 	$(BREW) install --cask docker
+docker:
+	# Run colima as administrator after install to setup the network.
+	# Works for low privileged users afterwards.
+	# $ colima start --cpu 4 --memory 4 --disk 50 --mount-type=virtiofs --network-address
+	# $ colima stop
+	$(BREW) install colima
+	$(BREW) install docker docker-completion
 
 # Here is a comprehensive guide: https://github.com/drduh/macOS-Security-and-Privacy-Guide
 # The following settings implement some basic security measures
