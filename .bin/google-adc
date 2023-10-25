@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+test -z "$GOOGLE_APPLICATION_CREDENTIALS" && (
+  echo "Missing environment variable GOOGLE_APPLICATION_CREDENTIALS" >&2; exit 1
+)
+
+gcloud auth application-default login \
+&& mv ~/.config/gcloud/application_default_credentials.json $GOOGLE_APPLICATION_CREDENTIALS
+
