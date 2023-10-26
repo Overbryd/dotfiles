@@ -154,6 +154,8 @@ brew-nettools: brew-itself
 	$(BREW) install vegeta
 	# caddy is an outstanding web server
 	$(BREW) install caddy
+	# ipcalc helps with network planning
+	$(BREW) install ipcalc
 
 brew-fzf: brew-itself
 	@$(BREW) update
