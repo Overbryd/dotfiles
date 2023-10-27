@@ -94,6 +94,8 @@ brew-baseline: brew-itself
 	$(BREW) install gnu-sed
 	# handle json on the command line
 	$(BREW) install jq --HEAD
+	# fswatch allows you to stream file changes to a unix pipe, handy for rerunning tests
+	$(BREW) install fswatch
 
 brew-work: \
 	brew-programming \
@@ -115,6 +117,8 @@ brew-programming: brew-itself
 	$(BREW) install ruby-install
 	# install pyenv to manage python versions
 	$(BREW) install pyenv
+	# gum is helpful for scripting https://github.com/charmbracelet/gum
+	$(BREW) install gum
 
 brew-devops: casks-itself
 	@$(BREW) update
