@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+colima start --vm-type vz --mount-type virtiofs --cpu 4 --memory 8
+

@@ -1,0 +1,42 @@
+#!/usr/bin/env ruby -rhttpx -rjson -rruby2d
+
+OPENAI_ORGANIZATION_KEY = ENV.fetch("OPENAI_ORGANIZATION_KEY")
+OPENAI_API_KEY = ENV.fetch("OPENAI_API_KEY")
+OPENAI_SYSTEM = ENV.fetch("OPENAI_SYSTEM", "You are a helpful assistant.")
+OPENAI_MAX_TOKENS = ENV.fetch("OPENAI_MAX_TOKENS", "2048").to_i
+
+CLICK = Sound.new(File.expand_path("~/Music/click4.wav"))
+
+HTTP = HTTPX
+  .plugin(:stream)
+  .with(headers: {"Authorization" => "Bearer #{OPENAI_API_KEY}"})
+
+def query(content)
+  response = HTTP.post("https://api.openai.com/v1/chat/completions", json: {
+    "model" => "gpt-3.5-turbo",
+    "messages" => [
+      { role: "system", content: "You are a helpful assistant." },
+      { role: "user", content: content },
+    ],
+    stream: true,
+    max_tokens: 2048,
+  }, stream: true)
+  block_given? ? response.each { |chunk| yield chunk } : response
+end
+
+content = if ARGV.any?
+  ARGV.join(" ").to_s
+elsif STDIN.tty?
+  STDIN.read
+end
+STDOUT.sync = true
+query(content) do |chunk|
+  content = JSON.parse(
+    chunk.split("data: ").last
+  )["choices"][0]["delta"]["content"] rescue nil
+  if content
+    print(content)
+    CLICK.play
+  end
+end
+

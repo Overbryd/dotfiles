@@ -1,0 +1,37 @@
+#!/usr/bin/env bash -e
+
+OPENAI_ORGANIZATION_KEY="$OPENAI_ORGANIZATION_KEY"
+OPENAI_API_KEY="$OPENAI_API_KEY"
+OPENAI_SYSTEM="${OPENAI_SYSTEM:=You are a helpful assistant.}"
+OPENAI_MAX_TOKENS="${OPENAI_MAX_TOKENS:=2048}"
+
+if [[ "$1" = "-" ]]; then
+  content="$(cat)"
+elif test "$#" -gt 0; then
+  content="$@"
+else
+  content="$(gum input --placeholder 'Write a query')"
+fi
+
+echo "$content"
+curl -XPOST  "https://api.openai.com/v1/chat/completions" \
+  --silent \
+  --fail \
+  --no-buffer \
+  -H"Content-Type: application/json" \
+  -H"Authorization: Bearer $OPENAI_API_KEY" \
+  -d"$(
+    jq --null-input \
+      --arg model "gpt-3.5-turbo" \
+      --arg content "$content" \
+      --arg system "$OPENAI_SYSTEM" \
+      --arg max_tokens "$OPENAI_MAX_TOKENS" \
+      '{"model": $model, "messages": [
+        {"role": "system", "content": $system},
+        {"role": "user", "content": $content}
+      ], "stream": true, "max_tokens": $max_tokens | tonumber}'
+  )" \
+| sed -e 's/^data: //' -e 's/^\[DONE\]/{}/' \
+| jq --join-output --unbuffered '.choices[0].delta.content | select(.)'
+
+

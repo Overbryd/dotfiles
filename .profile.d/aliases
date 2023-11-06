@@ -1,8 +1,9 @@
 # nice directory listing
 alias l="ls -lah"
 
-# nice directory tree listing, but just 2 levels
+# nice directory tree listing, but just 2-3 levels
 alias tree2="tree -L 2 --dirsfirst"
+alias tree3="tree -L 3 --dirsfirst"
 
 # I use git so often that aliasing it saves a lot
 alias g="git"
@@ -12,7 +13,4 @@ alias gs="git status"
 # Prefer neovim over vim
 alias vim="nvim"
 alias vi="nvim"
-
-# openai_pipe
-alias ai="openai_pipe"
 
