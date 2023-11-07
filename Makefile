@@ -164,6 +164,8 @@ brew-nettools: brew-itself
 
 brew-fzf: brew-itself
 	@$(BREW) update
+	# fd is a alternative find command
+	$(BREW) install fd
 	# fzf is a fuzzy file finder
 	$(BREW) install fzf
 	$(HOMEBREW_PREFIX)/opt/fzf/install --key-bindings --completion --no-update-rc --no-zsh --no-fish
