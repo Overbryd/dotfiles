@@ -18,6 +18,9 @@ autocmd! FileType fzf
 autocmd  FileType fzf set laststatus=0 noshowmode noruler
   \| autocmd BufLeave <buffer> set laststatus=2 showmode ruler
 
+" close fzf window with <ESC>
+autocmd FileType fzf tnoremap <buffer> <ESC> <C-\><C-n>:q<CR>
+
 let g:fzf_action = {
   \ 'ctrl-m': 'tabedit',
   \ 'ctrl-o': 'e',
