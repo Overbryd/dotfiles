@@ -11,6 +11,8 @@ require('nvim-treesitter.configs').setup {
     "lua",
     "css",
     "html",
+    "terraform",
+    "zig",
   },
   highlight = {
     enable = true,
