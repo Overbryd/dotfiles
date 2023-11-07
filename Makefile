@@ -47,7 +47,8 @@ bootstrap-user:
 # Test with `$ audit-path-writable`
 bootstrap-binary-user:
 	id binary || sudo .bin/macos-add-system-user binary
-	sudo grep _binary /etc/sudoers || echo '_binary		ALL = NOPASSWD:SETENV: /bin/cp -pR $(HOMEBREW_PREFIX)/Caskroom/* /Applications/*,/bin/cp -pR $(HOMEBREW_PREFIX)/Caskroom/* /Library/Fonts/*,/usr/sbin/installer -pkg $(HOMEBREW_PREFIX)/Caskroom/* -target /' | EDITOR='tee -a' VISUAL=$$EDITOR sudo -E visudo
+	sudo grep '_binary		ALL = NOPASSWD:SETENV' /etc/sudoers || echo '_binary		ALL = NOPASSWD:SETENV: /bin/cp -pR $(HOMEBREW_PREFIX)/Caskroom/* /Applications/*,/bin/cp -pR $(HOMEBREW_PREFIX)/Caskroom/* /Library/Fonts/*,/usr/sbin/installer -pkg $(HOMEBREW_PREFIX)/Caskroom/* -target /' | EDITOR='tee -a' VISUAL=$$EDITOR sudo -E visudo
+	sudo grep '_binary		ALL = (_binary) NOPASSWD:SETENV: ALL' /etc/sudoers || echo '_binary		ALL = (_binary) NOPASSWD:SETENV: ALL' | EDITOR='tee -a' VISUAL=$$EDITOR sudo -E visudo
 
 bootstrap-homebrew-folder:
 	test -d $(HOMEBREW_PREFIX) || sudo mkdir $(HOMEBREW_PREFIX)
@@ -241,7 +242,7 @@ bash: brew-itself
 	@$(BREW) update
 	# newer version of bash
 	$(BREW) install bash
-	$(BREW) install bash-completion
+	$(BREW) install bash-completioudo
 	# change shell to homebrew bash
 	grep $(HOMEBREW_PREFIX)/bin/bash /etc/shells || (echo "$(HOMEBREW_PREFIX)/bin/bash" | sudo tee -a /etc/shells)
 	test "$$SHELL" = $(HOMEBREW_PREFIX)/bin/bash || chsh -s $(HOMEBREW_PREFIX)/bin/bash
