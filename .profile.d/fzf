@@ -10,7 +10,7 @@ fi
 source "$HOMEBREW_PREFIX/opt/fzf/shell/key-bindings.bash"
 
 # Configuration
-export FZF_DFEAULT_COMMAND="fd --type file --exclude .git"
+export FZF_DEFAULT_COMMAND="fd --hidden --type file --exclude .git"
 export FZF_DEFAULT_OPTS="--layout=reverse"
 export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
 
