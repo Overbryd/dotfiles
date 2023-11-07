@@ -13,3 +13,5 @@ export HOMEBREW_CASK_OPTS=--require-sha
 export HOMEBREW_CACHE=$HOMEBREW_PREFIX/Caches
 export HOMEBREW_LOGS=$HOMEBREW_PREFIX/Logs/Homebrew
 export HOMEBREW_NO_AUTO_UPDATE=1
+
+source "$HOMEBREW_PREFIX/etc/bash_completion"

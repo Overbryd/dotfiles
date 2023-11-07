@@ -38,7 +38,3 @@ source ~/.profile.d/direnv
 source ~/.profile.d/google-cloud-sdk
 source ~/.profile.d/fzf
 
-source ~/.completion.d/homebrew_bash_completion
-source ~/.completion.d/serverless
-source ~/.completion.d/kubectl
-
