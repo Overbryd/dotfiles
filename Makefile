@@ -244,7 +244,7 @@ bash: brew-itself
 	@$(BREW) update
 	# newer version of bash
 	$(BREW) install bash
-	$(BREW) install bash-completioudo
+	$(BREW) install bash-completion
 	# change shell to homebrew bash
 	grep $(HOMEBREW_PREFIX)/bin/bash /etc/shells || (echo "$(HOMEBREW_PREFIX)/bin/bash" | sudo tee -a /etc/shells)
 	test "$$SHELL" = $(HOMEBREW_PREFIX)/bin/bash || chsh -s $(HOMEBREW_PREFIX)/bin/bash
