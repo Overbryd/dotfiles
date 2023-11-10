@@ -61,3 +61,7 @@ noremap <leader>b :Buffers<CR>
 " then hight <leader>s to enter replace mode
 noremap <leader>s :%s///g<left><left>
 
+" prepare commant to the current file, confirm with <CR>
+noremap <leader>rm :!rm %
+noremap <leader>grm :!git rm %
+
