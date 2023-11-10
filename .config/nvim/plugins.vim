@@ -49,5 +49,8 @@ Plug 'honza/vim-snippets'
 " Rename current buffer and file on disk
 Plug 'danro/rename.vim'
 
+" Terminal manager, used to toggle ollama sessions
+Plug 'akinsho/toggleterm.nvim', {'tag' : '2.8.0'}
+
 call plug#end()
 
