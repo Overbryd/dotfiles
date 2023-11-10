@@ -47,6 +47,11 @@ set convert-meta off
 # Use Alt/Meta + Delete to delete the preceding word
 "\e[3;3~": kill-word
 
+# stop at slashes and spaces instead of only spaces
+set bind-tty-special-chars off
+# delete last word until slashes and spaces
+Control-w: unix-filename-rubout
+
 # Use menu-complete
 TAB: menu-complete
 
