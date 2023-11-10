@@ -336,6 +336,10 @@ tmux: \
 	$(BREW) install tmux
 	$(BREW) install reattach-to-user-namespace
 
+imagemagick:
+	# build imagemagic from source, also to support things like HEIC image formats
+	$(BREW) install imagemagic --build-from-source
+
 # See also: https://macos-defaults.com
 defaults: \
 	defaults-Trackpad \
