@@ -10,6 +10,9 @@ let g:loaded_perl_provider = 0
 " disable node provider
 let g:loaded_node_provider = 0
 
+" setup python provider
+let g:python3_host_prog = $PYENV_ROOT . '/versions/' . $PYENV_GLOBAL . '/bin/python'
+
 " common settings
 filetype plugin indent on
 set number
