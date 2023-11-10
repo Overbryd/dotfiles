@@ -8,3 +8,5 @@ source ~/.config/nvim/plugins/ultisnips.vim
 source ~/.config/nvim/config.vim
 source ~/.config/nvim/treesitter.vim
 source ~/.config/nvim/commands.vim
+source ~/.config/nvim/vimenter.vim
+
