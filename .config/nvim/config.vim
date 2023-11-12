@@ -28,10 +28,22 @@ set clipboard+=unnamedplus
 syntax on
 
 " colorschema and color customisations
-colorscheme paramount
-highlight TabLineFill ctermfg=white ctermbg=DarkGrey
-highlight TabLine ctermfg=white ctermbg=DarkGrey
-highlight TabLineSel ctermfg=Black ctermbg=LightMagenta
+" reduce colors
+let g:yowish = {}
+let g:yowish.colors = {
+  \ 'green': ['#ffbe3c', '215'],
+  \ 'lightGreen': ['#ffcc66', '222'],
+  \ 'lightBlue': ['#ffcc66', '222'],
+  \ 'lightViolet': ['#bebebe', '249'],
+  \ 'selected': ['#0e0e0e', '232'],
+  \ }
+colorscheme yowish
+" colorscheme yowish
+" let g:yowish.colors['red'] = ['#ffcc66', '222']
+" let g:yowish.colors['lightRed'] = ['#ffcc66', '222']
+" highlight TabLineFill ctermfg=white ctermbg=DarkGrey
+" highlight TabLine ctermfg=white ctermbg=DarkGrey
+" highlight TabLineSel ctermfg=Black ctermbg=LightMagenta
 
 " turn off modeline
 set modelines=0

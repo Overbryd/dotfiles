@@ -1,6 +1,7 @@
 call plug#begin("~/.nvim/plugged")
 
 " colorscheme
+Plug 'KabbAmine/yowish.vim'
 Plug 'owickstrom/vim-colors-paramount'
 
 " treesitter
