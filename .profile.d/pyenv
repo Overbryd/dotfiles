@@ -3,5 +3,5 @@ export PYENV_ROOT="$HOMEBREW_PREFIX/pyenv"
 if test -x "$HOMEBREW_PREFIX/bin/pyenv"; then
   eval "$($HOMEBREW_PREFIX/bin/pyenv init --no-rehash -)"
 fi
-export PYENV_GLOBAL="$(pyenv global)"
+export PYENV_GLOBAL="$($HOMEBREW_PREFIX/bin/pyenv global)"
 
