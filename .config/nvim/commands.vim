@@ -52,6 +52,7 @@ noremap <Right> <NOP>
 
 " search with <leader>t
 noremap <leader>t :Files<CR>
+" serach files in git with <leader>g
 noremap <leader>g :GFiles<CR>
 " search buffers with <leader>b
 noremap <leader>b :Buffers<CR>
@@ -61,7 +62,11 @@ noremap <leader>b :Buffers<CR>
 " then hight <leader>s to enter replace mode
 noremap <leader>s :%s///g<left><left>
 
-" prepare commant to the current file, confirm with <CR>
+" prepare command to the current file, confirm with <CR>
 noremap <leader>rm :!rm %
 noremap <leader>grm :!git rm %
+
+" Edit ultisnips for current filetype using <leader>U
+noremap <leader>U :UltiSnipsEdit<CR>
+
 
