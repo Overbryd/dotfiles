@@ -13,27 +13,27 @@ HTTP = HTTPX
 
 def query(content)
   response = HTTP.post("https://api.openai.com/v1/chat/completions", json: {
-    "model" => "gpt-3.5-turbo",
+    # "model" => "gpt-3.5-turbo",
+    "model" => "gpt-4-1106-preview",
     "messages" => [
       { role: "system", content: "You are a helpful assistant." },
       { role: "user", content: content },
     ],
     stream: true,
-    max_tokens: 2048,
+    max_tokens: OPENAI_MAX_TOKENS,
   }, stream: true)
   block_given? ? response.each { |chunk| yield chunk } : response
 end
 
-content = if ARGV.any?
+prompt = if ARGV.any?
   ARGV.join(" ").to_s
 elsif STDIN.tty?
   STDIN.read
 end
 STDOUT.sync = true
-query(content) do |chunk|
-  content = JSON.parse(
-    chunk.split("data: ").last
-  )["choices"][0]["delta"]["content"] rescue nil
+query(prompt) do |chunk|
+  json = JSON.parse(chunk.split("data: ").last) rescue "null"
+  content = json["choices"][0]["delta"]["content"] rescue nil
   if content
     print(content)
     CLICK.play
