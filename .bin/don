@@ -1,0 +1,9 @@
+#!/bin/sh
+
+exit_status="$?"
+echo "done $exit_status" \
+| tee \
+| say
+
+exit $exit_status
+
