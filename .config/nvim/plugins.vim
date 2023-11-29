@@ -53,5 +53,8 @@ Plug 'danro/rename.vim'
 " Terminal manager, used to toggle ollama sessions
 Plug 'akinsho/toggleterm.nvim', {'tag' : '2.8.0'}
 
+" Undotree
+Plug 'mbbill/undotree'
+
 call plug#end()
 
