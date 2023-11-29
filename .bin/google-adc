@@ -5,6 +5,7 @@ if test -z "$GOOGLE_APPLICATION_CREDENTIALS"; then
   exit 1
 fi
 
-gcloud auth application-default login \
+gcloud auth login $@ \
+&& gcloud auth application-default login $@ \
 && mv ~/.config/gcloud/application_default_credentials.json $GOOGLE_APPLICATION_CREDENTIALS
 
