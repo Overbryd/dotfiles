@@ -45,10 +45,10 @@ cnoremap <C-a> <Home>
 nnoremap <Enter> :nohlsearch<CR>
 
 " disable arrow keys
-noremap <Up> <NOP>
-noremap <Down> <NOP>
-noremap <Left> <NOP>
-noremap <Right> <NOP>
+map <Up> <NOP>
+map <Down> <NOP>
+map <Left> <NOP>
+map <Right> <NOP>
 
 " search with <leader>t
 noremap <leader>t :Files<CR>

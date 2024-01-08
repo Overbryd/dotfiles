@@ -56,5 +56,8 @@ Plug 'akinsho/toggleterm.nvim', {'tag' : '2.8.0'}
 " Undotree
 Plug 'mbbill/undotree'
 
+" Copilot
+Plug 'zbirenbaum/copilot.lua'
+
 call plug#end()
 
