@@ -13,6 +13,8 @@ require("copilot").setup({
       html = true,
       css = true,
       markdown = true,
+      vimscript = true,
+      lua = true,
       ["*"] = false,
     },
     keymap = {
