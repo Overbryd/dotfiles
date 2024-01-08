@@ -54,3 +54,5 @@
 	submoduleSummary = true
 [pull]
 	ff = only
+[safe]
+	directory = /usr/local/dotfiles
