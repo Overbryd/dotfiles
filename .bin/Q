@@ -13,7 +13,7 @@ else
   content="$(gum input --placeholder 'Write a query')"
 fi
 
-echo "$content"
+echo "$content" >&2
 curl -XPOST  "https://api.openai.com/v1/chat/completions" \
   --silent \
   --fail \
