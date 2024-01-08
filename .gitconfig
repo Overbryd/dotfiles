@@ -40,6 +40,9 @@
 [alias]
 	s = status
 	co = checkout
+  com = commit
+  coma = "commit -a"
+  acom = "aicommit -a"
 	history = "log -p"
 	shallow-clone = "clone --depth=1"
   tree = "log --graph --oneline --all --decorate=full"

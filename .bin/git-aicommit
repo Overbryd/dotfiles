@@ -1,4 +1,5 @@
 #!/bin/sh
 
 Q "Write a commit message for the following changeset:\n\`\`\`$(git staged)\`\`\`" \
-| git commit --file=- --edit
+| git commit --file=- --edit $@
+
