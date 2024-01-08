@@ -11,4 +11,5 @@ source ~/.config/nvim/config.vim
 source ~/.config/nvim/treesitter.vim
 source ~/.config/nvim/commands.vim
 source ~/.config/nvim/vimenter.vim
+source  ~/.config/nvim/copilot.lua
 " source ~/.config/nvim/startscreen.vim
