@@ -1,5 +1,6 @@
 #!/bin/sh
 
+export OPENAI_MAX_TOKENS=4096
 Q "Write a commit message for the following changeset:\n\`\`\`$(git staged)\`\`\`" \
 | git commit --file=- --edit $@
 
