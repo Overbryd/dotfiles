@@ -59,3 +59,5 @@
 	ff = only
 [safe]
 	directory = /usr/local/dotfiles
+[init]
+	defaultBranch = main
