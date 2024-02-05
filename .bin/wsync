@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+if [[ "$(hostname)" == "mba1" ]]; then
+  from="10.10.10.4"
+elif [[ "$(hostname)" == "ms1" ]]; then
+  from="10.10.10.5"
+else
+  die "Unknown host: $(hostname)"
+fi
+
+rsync \
+  --archive \
+  --verbose \
+  --checksum \
+  --compress \
+  --cache \
+  --timeout=120 \
+  --partial-dir=/tmp/rsync-$(date +%Y-%m-%d) \
+  --progress \
+  --exclude='*/.terraform' \
+  --exclude='*/.direnv' \
+  $from:$(pwd)/ $(pwd)/
+
