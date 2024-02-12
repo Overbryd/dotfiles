@@ -146,6 +146,8 @@ brew-devops: casks-itself
 	$(BREW) install terraform-ls terraform-docs
 	# Kops is an alternative to EKS clusters (I no longer prefer)
 	$(BREW) install kops
+	# Helm is this crappy tool to template yaml files for Kubernetes (I no longer like)
+	$(BREW) install helm
 
 brew-nettools: brew-itself
 	@$(BREW) update
