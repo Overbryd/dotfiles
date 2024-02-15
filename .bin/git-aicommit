@@ -1,6 +1,7 @@
 #!/bin/sh
 
 export OPENAI_MAX_TOKENS=4096
+export OPENAI_SYSTEM="You are a helpful assistant, answer short, concise and just provide text of the commit message, nothing else, no explanations."
 Q "Write a commit message for the following changeset:\n\`\`\`$(git staged)\`\`\`" \
 | git commit --file=- --edit $@
 
