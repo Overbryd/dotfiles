@@ -46,7 +46,7 @@ if ! test -d /usr/local/dotfiles; then
   sudo chown $(id -un):admin /usr/local/dotfiles
   git clone git@github.com:Overbryd/dotfiles.git /usr/local/dotfiles
   cd /usr/local/dotfiles
-  git checkout 2023-10
+  git checkout main
   cd -
 fi
 
