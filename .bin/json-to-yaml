@@ -1,0 +1,3 @@
+#!/usr/bin/env ruby -ryaml -rjson
+
+puts JSON.parse(STDIN.read).to_yaml
