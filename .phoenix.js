@@ -16,6 +16,7 @@ const IGNORE_APPS = [
   new RegExp('^Loopback'),
   new RegExp('^LaunchBar'),
   new RegExp('^Temp Monitor'),
+  new RegExp('^Pixelmator Pro'),
 ];
 const IGNORE_WINDOWS = [
   // ignore windows that have no title
@@ -101,7 +102,10 @@ class WindowContainer {
     opts = opts || {}
     if (this.has(window))
       return;
-    this.stack.push(window);
+    if (window.isMinimized())
+      this.minimized.push(window);
+    else
+      this.stack.push(window);
     if (opts.render !== false)
       this.render();
   }
