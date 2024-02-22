@@ -506,7 +506,8 @@ defaults-LaunchAgents: \
 	$(LAUNCH_AGENTS)
 
 ~/Library/LaunchAgents/%:
-	cp -v ~/LaunchAgents/$(notdir $@) $@
+	cp -v ~/dotfiles/LaunchAgents/$(notdir $@) $@
+	launchctl load -w $@
 
 dotfiles:
 dotfiles: \

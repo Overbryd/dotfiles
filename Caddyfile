@@ -1,0 +1,11 @@
+{
+	admin off
+	persist_config off
+}
+
+:5743 {
+	file_server {
+		root /Users/partenkirchen/dotfiles/.witchcraft
+	}
+}
+
