@@ -10,7 +10,8 @@ fun! startscreen#start()
     return
   endif
 
-  :Files
+  " Open the fuzzy file finder
+  :Files!
 
 endfun
 
