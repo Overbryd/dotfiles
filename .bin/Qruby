@@ -1,7 +1,8 @@
-#!/usr/bin/env ruby -rhttpx -rjson -rruby2d
+#!/opt/homebrew/rbenv/versions/3.2.2/bin/ruby -rhttpx -rjson -rruby2d
 
 OPENAI_ORGANIZATION_KEY = ENV.fetch("OPENAI_ORGANIZATION_KEY")
 OPENAI_API_KEY = ENV.fetch("OPENAI_API_KEY")
+OPENAI_MODEL = ENV.fetch("OPENAI_MODEL", "gpt-4-1106-preview")
 OPENAI_SYSTEM = ENV.fetch("OPENAI_SYSTEM", "You are a helpful assistant.")
 OPENAI_MAX_TOKENS = ENV.fetch("OPENAI_MAX_TOKENS", "2048").to_i
 
@@ -11,13 +12,13 @@ HTTP = HTTPX
   .plugin(:stream)
   .with(headers: {"Authorization" => "Bearer #{OPENAI_API_KEY}"})
 
-def query(content)
+def query(prompt, system: OPENAI_SYSTEM, history: [])
   response = HTTP.post("https://api.openai.com/v1/chat/completions", json: {
-    # "model" => "gpt-3.5-turbo",
-    "model" => "gpt-4-1106-preview",
+    "model" => OPENAI_MODEL,
     "messages" => [
-      { role: "system", content: "You are a helpful assistant." },
-      { role: "user", content: content },
+      { role: "system", content: system },
+      *history,
+      { role: "user", content: prompt },
     ],
     stream: true,
     max_tokens: OPENAI_MAX_TOKENS,
@@ -25,18 +26,24 @@ def query(content)
   block_given? ? response.each { |chunk| yield chunk } : response
 end
 
-prompt = if ARGV.any?
-  ARGV.join(" ").to_s
-elsif STDIN.tty?
-  STDIN.read
-end
-STDOUT.sync = true
-query(prompt) do |chunk|
-  json = JSON.parse(chunk.split("data: ").last) rescue "null"
-  content = json["choices"][0]["delta"]["content"] rescue nil
-  if content
-    print(content)
-    CLICK.play
+def main
+  prompt = if ARGV.any?
+    ARGV.join(" ").to_s
+  else
+    io, _ = select([STDIN], [], [], 0)
+    io[0].read if io
+  end
+  exit unless prompt
+  STDOUT.sync = true
+  query(prompt, system: OPENAI_SYSTEM) do |chunk|
+    chunk.split(/data:\s*/).each do |data|
+      json = JSON.parse(data) rescue next
+      content = json["choices"][0]["delta"]["content"] rescue next
+      print(content)
+      CLICK.play
+    end
   end
 end
+
+main if __FILE__ == $0
 
