@@ -2,6 +2,17 @@
 
 export OPENAI_MAX_TOKENS=4096
 export OPENAI_SYSTEM="You are a helpful assistant, provide a short first sentence, followed by two newlines with an optional description of the changes. Just provide the text of the commit message, nothing else, no explanations."
-Q "Write a commit message for the following changeset:\n\`\`\`$(git staged)\`\`\`" \
-| git commit --file=- --edit $@
 
+export CHANGESET="$(git staged)"
+for arg in "$@"; do
+  case "$arg" in
+    -a|--all)
+      export CHANGESET="$(git diff)"
+      break
+      ;;
+  esac
+done
+test -z "$CHANGESET" && die "No changes to commit"
+
+Q "Write a commit message for the following changeset:\n\`\`\`$CHANGESET\`\`\`" \
+| git commit --file=- --edit $@
