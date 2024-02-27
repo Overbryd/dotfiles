@@ -40,17 +40,20 @@
 [alias]
 	s = status
 	co = checkout
-  com = commit
-  coma = "commit -a"
-  acom = "aicommit -a"
+	com = commit
+	coma = "commit -a"
+	acom = "aicommit"
+	acoma = "aicommit -a"
 	history = "log -p"
 	shallow-clone = "clone --depth=1"
-  tree = "log --graph --oneline --all --decorate=full"
+	tree = "log --graph --oneline --all --decorate=full"
 	pick = "cherry-pick"
-  contributors = "shortlog -n -s --no-merges"
-  amend = "commit -a --amend"
-  amen = "commit --amend --no-edit"
-  staged = "diff --staged"
+	contributors = "shortlog -n -s --no-merges"
+	amend = "commit -a --amend"
+	amenda = "commit -a --amend"
+	amen = "commit --amend --no-edit"
+	amena = "commit -a --amend --no-edit"
+	staged = "diff --staged"
 [push]
 	default = upstream
 [status]
