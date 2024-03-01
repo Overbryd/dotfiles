@@ -41,6 +41,9 @@ Plug 'mbbill/undotree'
 " Copilot
 Plug 'zbirenbaum/copilot.lua'
 
+"Generative AI
+Plug 'David-Kunz/gen.nvim'
+
 " auto completion
 Plug 'hrsh7th/cmp-nvim-lsp'
 Plug 'hrsh7th/cmp-buffer'

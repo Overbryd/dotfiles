@@ -14,5 +14,6 @@ source ~/.config/nvim/treesitter.vim
 source ~/.config/nvim/commands.vim
 source ~/.config/nvim/startscreen.vim
 source ~/.config/nvim/copilot.lua
+source ~/.config/nvim/gen.lua
 source ~/.config/nvim/lspconfig.lua
 
