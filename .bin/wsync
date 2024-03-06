@@ -17,8 +17,8 @@ rsync \
   --timeout=120 \
   --partial-dir=/tmp/rsync-$(date +%Y-%m-%d) \
   --progress \
-  --exclude='*/.terraform' \
-  --exclude='*/.direnv' \
-  --exclude='*/__pycache__' \
+  --exclude='.terraform/' \
+  --exclude='.direnv/' \
+  --exclude='__pycache__/' \
   $from:$(pwd)/ $(pwd)/
 
