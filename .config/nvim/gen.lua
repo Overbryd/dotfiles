@@ -7,8 +7,12 @@ gen.setup({
 
 vim.keymap.set({ 'n', 'v' }, '<leader>ai', ':Gen<CR>')
 
--- gen.prompts['Prompt_Name'] = {
---   'prompt' = "Do something nice with this text:\n$text",
---   replace = true
--- }
+-- Note: available replacements
+-- $text
+--
+
+gen.prompts['UltiSnips'] = {
+  prompt = "Write a UltiSnips snippet, generalizing the necessary parts in the following code:\n$text",
+  replace = false,
+}
 

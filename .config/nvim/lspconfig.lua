@@ -30,3 +30,8 @@ lsp.terraformls.setup{
   capabilities=cmp_capabilities,
 }
 
+-- elixirls
+lsp.elixirls.setup{
+  capabilities=cmp_capabilities,
+}
+
