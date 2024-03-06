@@ -8,22 +8,6 @@ function tms {
   fi
 }
 
-# Mirror a complete website
-function mirror-website() {
-  local url=$@
-  local domain=`expr "$url" : '^http[s]*://\([^/?]*\)'`
-  wget \
-    --recursive \
-    --no-clobber \
-    --page-requisites \
-    --html-extension \
-    --convert-links \
-    --restrict-file-names=windows \
-    --domains $domain \
-    --no-parent \
-    $url
-}
-
 # Open conflicts at once, setting the search pattern to <<<<<<< in order to cycle through them pressing 'n'
 function editconflicts() { 
   vim +/"<<<<<<<" `git diff --name-only --diff-filter=U | xargs`
