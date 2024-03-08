@@ -54,6 +54,7 @@
 	amen = "commit --amend --no-edit"
 	amena = "commit -a --amend --no-edit"
 	staged = "diff --staged"
+	bush = "push --set-upstream $(git remote) HEAD"
 [push]
 	default = upstream
 [status]
