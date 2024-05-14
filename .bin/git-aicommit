@@ -1,7 +1,7 @@
 #!/bin/sh
 
 export OPENAI_MAX_TOKENS=4096
-export OPENAI_SYSTEM="You are a helpful assistant, provide a short first sentence, followed by two newlines with an optional description of the changes. Just provide the text of the commit message, nothing else, no explanations."
+export OPENAI_SYSTEM="You are a helpful assistant, do your best to write a good commit message based on a given git diff. Provide a short first sentence, followed by two newlines with an optional description of the changes as bullet points. Just provide the text of the commit message, nothing else, no explanations."
 
 export CHANGESET="$(git staged)"
 for arg in "$@"; do
