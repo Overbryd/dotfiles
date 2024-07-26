@@ -32,6 +32,11 @@ lsp.terraformls.setup{
 
 -- elixirls
 lsp.elixirls.setup{
+  cmd = { "elixir-ls" },
   capabilities=cmp_capabilities,
+  elixirLS = {
+    dialyzerEnabled = false,
+    fetchDeps = false
+  },
 }
 

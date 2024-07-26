@@ -113,7 +113,7 @@ brew-programming: brew-itself
 	# erlang programming language
 	$(BREW) install erlang
 	# elixir programming language
-	$(BREW) install elixir
+	$(BREW) install elixir elixir-ls
 	# install and manage ruby versions
 	$(BREW) install ruby-install
 	# install pyenv to manage python versions
