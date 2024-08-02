@@ -39,7 +39,8 @@ Plug 'akinsho/toggleterm.nvim'
 Plug 'mbbill/undotree'
 
 " Copilot
-Plug 'zbirenbaum/copilot.lua'
+" Disabled for now.
+" Plug 'zbirenbaum/copilot.lua'
 
 "Generative AI
 Plug 'David-Kunz/gen.nvim'
