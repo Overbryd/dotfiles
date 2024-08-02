@@ -314,8 +314,7 @@ nvim: \
 nvim-user: \
 	nvim-directories \
 	~/.config/nvim \
-	nvim-plugins \
-	nvim-coc-install
+	nvim-plugins
 
 nvim-directories:
 	# create nvim directories
