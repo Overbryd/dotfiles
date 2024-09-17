@@ -42,6 +42,9 @@ Plug 'mbbill/undotree'
 " Disabled for now.
 " Plug 'zbirenbaum/copilot.lua'
 
+" Supermaven
+Plug 'supermaven-inc/supermaven-nvim'
+
 "Generative AI
 Plug 'David-Kunz/gen.nvim'
 

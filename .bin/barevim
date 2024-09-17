@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# This is useful for debugging vimrc files or an otherwise broken vim configuration
+
+vim -u NONE -U NONE -N -i NONE $@
+

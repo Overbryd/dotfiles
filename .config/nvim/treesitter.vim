@@ -5,6 +5,8 @@ require('nvim-treesitter.configs').setup {
     "json",
     "rust",
     "elixir",
+    "eex",
+    "heex",
     "python",
     "javascript",
     "vim",

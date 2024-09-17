@@ -40,3 +40,14 @@ lsp.elixirls.setup{
   },
 }
 
+-- tailwindcss
+lsp.tailwindcss.setup({
+  init_options = {
+    userLanguages = {
+      elixir = "html-eex",
+      eelixir = "html-eex",
+      heex = "html-eex",
+    }
+  }
+})
+
