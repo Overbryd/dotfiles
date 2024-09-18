@@ -326,9 +326,8 @@ class SpaceManager {
   }
 
   setup() {
-    const windows = this.space.windows();
     const affinityRules = [
-      (window) => { return window.hash() == Window.focused().hash() ? 'main' : null}
+      (window) => { return window?.hash() == Window.focused().hash() ? 'main' : null}
     ];
 
     for (const containerSpec of this.containerSpec.values()) {
