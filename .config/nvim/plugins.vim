@@ -75,6 +75,8 @@ Plug 'andersevenrud/cmp-tmux'
 " Plug 'prabirshrestha/vim-lsp'
 " Plug 'ncm2/ncm2-vim-lsp'
 
+" TailwindCSS support
+Plug 'luckasRanarison/tailwind-tools.nvim'
 
 call plug#end()
 

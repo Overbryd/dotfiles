@@ -32,8 +32,8 @@ lsp.terraformls.setup{
 
 -- elixirls
 lsp.elixirls.setup{
-  cmd = { "elixir-ls" },
   capabilities=cmp_capabilities,
+  cmd = { "elixir-ls" },
   elixirLS = {
     dialyzerEnabled = false,
     fetchDeps = false
@@ -42,11 +42,35 @@ lsp.elixirls.setup{
 
 -- tailwindcss
 lsp.tailwindcss.setup({
+  capabilities=cmp_capabilities,
+  root_dir = lsp.util.root_pattern(
+    "tailwind.config.js",
+    "tailwind.config.js",
+    "package.json",
+    "mix.exs",
+    ".git"
+  ),
+  filetypes = {
+    "html",
+    "elixir",
+    "eelixir",
+    "heex",
+  },
   init_options = {
     userLanguages = {
       elixir = "html-eex",
       eelixir = "html-eex",
       heex = "html-eex",
+    }
+  },
+  settings = {
+    tailwindCSS = {
+      experimental = {
+        classRegex = {
+          -- add Elixir classRegex
+          'class[:]\\s*"([^"]*)"',
+        }
+      }
     }
   }
 })
