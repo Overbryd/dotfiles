@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# This is useful for adding a Python dependency to a project.
+
+pip install "$1"
+grep "$1" requirements.txt 2>/dev/null \
+|| pip freeze | grep "$1" >> requirements.txt
+
