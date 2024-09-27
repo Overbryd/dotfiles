@@ -1,0 +1,42 @@
+#!/usr/bin/env bash -e
+
+EXA_BASE_URL="${EXA_BASE_URL:=https://api.exa.ai}"
+EXA_API_KEY="$EXA_API_KEY"
+# See also: https://docs.exa.ai/reference/search
+EXA_CATEGORY="${EXA_CATEGORY:=news}"
+
+if [[ "$1" = "-" ]]; then
+  query="$(cat)"
+elif [[ "$#" -gt 0 ]]; then
+  if [[ "$#" -eq 1 ]]; then
+    query="$1"
+  elif [[ "$#" -eq 2 ]]; then
+    EXA_CATEGORY="$1"
+    query="$2"
+  else
+    query="$@"
+  fi
+else
+  EXA_CATEGORY="$(gum choose 'news' 'company' 'research paper' 'github' 'tweet' 'movie' 'song' 'personal site' 'pdf')"
+  query="$(gum input --placeholder 'Write a query')"
+fi
+
+curl -XPOST  "${EXA_BASE_URL}/search" \
+  --silent \
+  --fail \
+  --no-buffer \
+  -H"accept: application/json" \
+  -H"content-type: application/json" \
+  -H"x-api-key: $EXA_API_KEY" \
+  -d"$(
+    jq --null-input \
+      --arg category "$EXA_CATEGORY" \
+      --arg query "$query" \
+      '{
+        "useAutoprompt": true,
+        "category": $category,
+        "query": $query
+      }'
+  )" \
+| jq '.results[]'
+
