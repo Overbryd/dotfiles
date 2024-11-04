@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+project_id="$1"
+job_id="$2"
+
+if [[ -z "$project_id" || -z "$job_id" ]]; then
+  die "Usage: bq-cancel-job <project_id> <job_id>"
+fi
+
+curl -XPOST -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  https://bigquery.googleapis.com/bigquery/v2/projects/$project_id/jobs/$job_id/cancel
+
