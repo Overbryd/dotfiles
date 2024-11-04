@@ -1,0 +1,4 @@
+# Various environment variables to disable tracking
+export DO_NOT_TRACK=1
+export MONGODB_ATLAS_TELEMETRY_ENABLED=false
+

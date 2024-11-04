@@ -37,4 +37,5 @@ source ~/.profile.d/path
 source ~/.profile.d/direnv
 source ~/.profile.d/google-cloud-sdk
 source ~/.profile.d/fzf
+source ~/.profile.d/do_not_track
 
