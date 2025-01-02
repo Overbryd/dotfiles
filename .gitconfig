@@ -57,6 +57,7 @@
 	bush = "push --set-upstream $(git remote) HEAD"
 [push]
 	default = upstream
+	autoSetupRemote = true
 [status]
 	submoduleSummary = true
 [pull]
