@@ -38,6 +38,7 @@ lsp.elixirls.setup{
     dialyzerEnabled = false,
     fetchDeps = false
   },
+  on_attach = require("lsp-format").on_attach,
 }
 
 -- tailwindcss

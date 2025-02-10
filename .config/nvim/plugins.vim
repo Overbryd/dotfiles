@@ -19,6 +19,8 @@ Plug 'tpope/vim-repeat'
 
 " lsp integration
 Plug 'neovim/nvim-lspconfig'
+" format on save, async via lsp
+Plug 'lukas-reineke/lsp-format.nvim'
 
 " File search
 Plug 'junegunn/fzf'
