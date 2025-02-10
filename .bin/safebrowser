@@ -1,0 +1,7 @@
+#!/usr/bin/osascript
+
+on run argv
+  set remoteMachine to first item of (read (POSIX path of (path to home folder as string) & ".config/vm1.local/eppc") using delimiter "\n")
+  tell application "Finder" of machine remoteMachine to open location (item 1 of argv)
+end run
+
