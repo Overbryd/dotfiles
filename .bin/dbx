@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+# dbx: iex debug
+
+exec iex --dbg pry -S $@
+
