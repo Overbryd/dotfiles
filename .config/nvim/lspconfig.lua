@@ -1,6 +1,9 @@
 local lsp = require('lspconfig')
 local cmp_capabilities = require('cmp_nvim_lsp').default_capabilities()
 
+-- tame lsp logging when not debugging
+vim.lsp.set_log_level("error")
+
 -- yamlls
 lsp.yamlls.setup{
   capabilities=cmp_capabilities,
@@ -74,5 +77,11 @@ lsp.tailwindcss.setup({
       }
     }
   }
+})
+
+-- html
+lsp.html.setup({
+  capabilities=cmp_capabilities,
+  filetypes = { "html", "heex" }
 })
 

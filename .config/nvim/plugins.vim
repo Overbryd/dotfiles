@@ -80,5 +80,9 @@ Plug 'andersevenrud/cmp-tmux'
 " TailwindCSS support
 Plug 'luckasRanarison/tailwind-tools.nvim'
 
+" Golang support
+Plug 'fatih/vim-go'
+Plug 'sebdah/vim-delve'
+
 call plug#end()
 

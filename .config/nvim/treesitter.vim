@@ -15,6 +15,7 @@ require('nvim-treesitter.configs').setup {
     "html",
     "terraform",
     "zig",
+    "swift",
   },
   highlight = {
     enable = true,
