@@ -33,6 +33,7 @@ source ~/.profile.d/pyenv
 source ~/.profile.d/rbenv
 source ~/.profile.d/nodenv
 source ~/.profile.d/tfenv
+source ~/.profile.d/golang
 source ~/.profile.d/path
 source ~/.profile.d/direnv
 source ~/.profile.d/google-cloud-sdk
