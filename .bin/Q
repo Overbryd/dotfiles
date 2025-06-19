@@ -15,8 +15,7 @@ else
   content="$(gum input --placeholder 'Write a query')"
 fi
 
-# echo "$content" >&2
-curl -XPOST  "${OPENAI_BASE_URL}/v1/chat/completions" \
+curl -XPOST  "${OPENAI_BASE_URL}/v1/responses" \
   --silent \
   --fail \
   --no-buffer \
@@ -30,15 +29,14 @@ curl -XPOST  "${OPENAI_BASE_URL}/v1/chat/completions" \
       --arg max_tokens "$OPENAI_MAX_TOKENS" \
       '{
           "model": $model,
-          "messages": [
-            {"role": "system", "content": $system},
-            {"role": "user", "content": $content}
-          ],
+          "instructions": $system,
+          "input": $content,
+          "store": false,
           "stream": true,
-          "max_tokens": $max_tokens | tonumber
+          "max_output_tokens": $max_tokens | tonumber
       }'
   )" \
-| sed -e 's/^data: //' -e 's/^\[DONE\]/{}/' \
-| jq --join-output --unbuffered '.choices[0].delta.content | select(.)'
-
+| grep -A2 'event: response.output_text.delta' \
+| sed -e '/^event/d' -e 's/^data: //' \
+| jq --join-output --unbuffered '.delta'
 
