@@ -15,6 +15,7 @@ let g:python3_host_prog = $PYENV_ROOT . '/versions/' . $PYENV_GLOBAL . '/bin/pyt
 
 " common settings
 filetype plugin indent on
+set signcolumn=yes
 set number
 set ruler
 set encoding=utf-8
