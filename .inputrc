@@ -55,3 +55,11 @@ Control-w: unix-filename-rubout
 # Use menu-complete
 TAB: menu-complete
 
+# Word by word movement
+# Alt + Left/Right: Move word one word to the left/right
+"\e[1;3D": backward-word
+"\e[1;3C": forward-word
+# Alt + H/L: Move to the left/right end of the current word
+"˙": backward-word
+"¬": forward-word
+
