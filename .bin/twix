@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# twix - run mix tests on a watch
+
+set -e
+
+fswatch lib test apps/*/{lib,test} \
+| mix test --listen-on-stdin
+
