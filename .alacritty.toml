@@ -1,0 +1,27 @@
+[general]
+live_config_reload = true
+
+[window]
+dimensions = { columns = 237, lines = 55 }
+decorations = "None"
+opacity = 0.75
+blur = false
+startup_mode = "Maximized"
+padding = { x = 5, y = 2 }
+
+[font]
+normal = { family = "IBM Plex Mono", style = "Text" }
+bold = { family = "IBM Plex Mono", style = "Medium" }
+italic = { family = "IBM Plex Mono", style = "Text Italic" }
+bold_italic = { family = "IBM Plex Mono", style = "Medium Italic" }
+size = 14.0
+offset = { x = 0, y = 0 }
+
+[keyboard]
+bindings = [
+  { key = "Left", mods = "Alt", chars = "\\x1BB" },
+  { key = "Right", mods = "Alt", chars = "\\x1BF" },
+  { key = "H", mods = "Alt", chars = "\\x1BB" },
+  { key = "L", mods = "Alt", chars = "\\x1BF" },
+]
+
