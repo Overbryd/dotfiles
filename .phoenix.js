@@ -17,6 +17,7 @@ const IGNORE_APPS = [
   new RegExp('^LaunchBar'),
   new RegExp('^Temp Monitor'),
   new RegExp('^Pixelmator Pro'),
+  new RegExp('^BetterDisplay'),
 ];
 const IGNORE_WINDOWS = [
   // ignore windows that have no title
