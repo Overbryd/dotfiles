@@ -20,5 +20,6 @@ rsync \
   --exclude='.terraform/' \
   --exclude='.direnv/' \
   --exclude='__pycache__/' \
+  --exclude='_build/' \
   $from:$(pwd)/ $(pwd)/
 
