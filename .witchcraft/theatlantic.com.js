@@ -1,2 +1,2 @@
-// @include redirect-to-12ft-io.js
+// @include redirect-to-archive-is.js
 
