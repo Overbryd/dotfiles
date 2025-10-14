@@ -8,4 +8,5 @@ supermaven.setup({
   condition = function()
     return string.match(vim.fn.expand("%:t"), ".envrc")
   end,
+  log_level = "warning",
 })
