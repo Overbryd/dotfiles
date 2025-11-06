@@ -44,6 +44,7 @@ fi
 if ! test -d /usr/local/dotfiles; then
   sudo mkdir /usr/local/dotfiles
   sudo chown $(id -un):admin /usr/local/dotfiles
+  ssh-keyscan github.com >> ~/.ssh/known_hosts
   git clone git@github.com:Overbryd/dotfiles.git /usr/local/dotfiles
   cd /usr/local/dotfiles
   git checkout main
