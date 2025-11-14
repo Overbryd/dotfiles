@@ -10,10 +10,19 @@ fi
 source "$HOMEBREW_PREFIX/opt/fzf/shell/key-bindings.bash"
 
 # Configuration
-export FZF_DEFAULT_COMMAND="fd --hidden --type file --exclude .git --exclude .direnv --exclude node_modules --exclude .terraform"
-export FZF_DEFAULT_OPTS="--layout=reverse"
-export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+export FZF_DEFAULT_OPTS="--walker-skip=.git,node_modules,.terraform,.direnv"
 
+# CTRL-R to search history using fzf
+#
+#   * sort may take up all the height
+#   * chronological order,
+#   * exact search
+#   * preview command by pressing ?
+#
+export FZF_CTRL_R_OPTS="--height ~100% --no-sort --exact --preview 'echo {}' --preview-window down:3:hidden:wrap --bind '?:toggle-preview'"
 
-# bind "$(bind -s | grep '^"\\C-r"' | sed 's/"/"\\C-x/' | sed 's/"$/\\C-m"/')"
-
+# ALT-C to switch directories
+#
+# * preview a directory tree
+#
+export FZF_ALT_C_OPTS="--preview 'tree -C {}'"

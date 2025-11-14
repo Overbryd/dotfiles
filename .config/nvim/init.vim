@@ -18,3 +18,5 @@ source ~/.config/nvim/commands.vim
 source ~/.config/nvim/startscreen.vim
 source ~/.config/nvim/gen.lua
 source ~/.config/nvim/lspconfig.lua
+source ~/.config/nvim/leader.vim
+
