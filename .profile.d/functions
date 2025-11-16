@@ -1,11 +1,23 @@
 # tmux, be there and be named well
+function session-name-from-pwd {
+  basename $PWD \
+  | sed -e s/\[^a-zA-Z0-9\\\//\$]/-/g -e s/--*/-/g
+}
+
+# Start a new session
+function tmn {
+  local tmux="tmux -u"
+  local session_name="$(session-name-from-pwd)$(tmux ls -F '#{session_name}' | grep --count $name)"
+
+  $tmux new -s $session_name
+}
+
+# Start a new session or join the first one in this folder
 function tms {
-  local name=$(basename $PWD | sed -e s/\[^a-zA-Z0-9\\\//\$]/-/g -e s/--*/-/g)
-  if [ -z "$TMUX" ]; then
-    tmux new -s $name || tmux attach-session -t $name
-  else
-    tmux new-session -d -s $name -c $name && tmux switch-client -t $name
-  fi
+  local tmux="tmux -u"
+  local session_name="$(session-name-from-pwd)0"
+
+  $tmux new -A -s $session_name
 }
 
 # Open conflicts at once, setting the search pattern to <<<<<<< in order to cycle through them pressing 'n'
@@ -40,19 +52,11 @@ randomize-mac() {
   openssl rand -hex 6 | sed  's/\(..\)/\1:/g; s/.$//' | sudo xargs ifconfig en0 ether
 }
 
-# Switch to a work project
+# Switch to a work or project directory
 cdw() {
-  local directory="$(fd --max-depth 2 --type d --base-directory ~/Work --glob '*' | fzf)"
+  local directory="$(fd --max-depth 2 --type d --base-directory ~/ --search-path Work --search-path Projects --glob '*' | fzf)"
   if [ $? -eq 0 ]; then
-    cd ~/Work/$directory
-  fi
-}
-
-# Switch to a project
-cdp() {
-  local directory="$(fd --max-depth 2 --type d --base-directory ~/Projects --glob '*' | fzf)"
-  if [ $? -eq 0 ]; then
-    cd ~/Projects/$directory
+    cd ~/$directory
   fi
 }
 
