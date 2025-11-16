@@ -18,5 +18,5 @@ noremap <leader>grm :!git rm %
 noremap <leader>U :UltiSnipsEdit<CR>
 
 " close all other buffers (buffer only)
-nnoremap <leader>bo :w \| %bd \| e# \| bd# <CR>
+nnoremap <leader>co :w \| %bd \| e# \| bd# <CR>
 

@@ -1,6 +1,6 @@
 
 command! -bang -nargs=? -complete=dir Files
-    \ call fzf#vim#files(<q-args>, {'options': ['--layout=reverse', '--info=inline', '--preview', 'head {}']}, <bang>0)
+    \ call fzf#vim#files(<q-args>, {'options': ['--layout=reverse', '--info=inline', '--preview', 'head -n 120 {}']}, <bang>0)
 
 " fzf window anchored to the buttom
 let g:fzf_layout = {
@@ -22,7 +22,7 @@ autocmd  FileType fzf set laststatus=0 noshowmode noruler
 autocmd FileType fzf tnoremap <buffer> <ESC> <C-\><C-n>:q<CR>
 
 let g:fzf_action = {
-  \ 'ctrl-m': 'tabedit',
+  \ 'ctrl-m': 'e',
   \ 'ctrl-o': 'e',
   \ 'ctrl-t': 'tabedit',
   \ 'ctrl-h':  'botright split',
