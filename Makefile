@@ -47,8 +47,8 @@ bootstrap-user:
 # Test with `$ audit-path-writable`
 bootstrap-binary-user:
 	id binary || sudo .bin/macos-add-system-user binary
-	sudo grep '_binary		ALL = NOPASSWD:SETENV' /etc/sudoers || echo '_binary		ALL = NOPASSWD:SETENV: /bin/cp -pR $(HOMEBREW_PREFIX)/Caskroom/* /Applications/*,/bin/cp -pR $(HOMEBREW_PREFIX)/Caskroom/* /Library/Fonts/*,/usr/sbin/installer -pkg $(HOMEBREW_PREFIX)/Caskroom/* -target /,/bin/rm -f -- /Library/Fonts/*' | EDITOR='tee -a' VISUAL=$$EDITOR sudo -E visudo
-	sudo grep '_binary		ALL = (_binary) NOPASSWD:SETENV: ALL' /etc/sudoers || echo '_binary		ALL = (_binary) NOPASSWD:SETENV: ALL' | EDITOR='tee -a' VISUAL=$$EDITOR sudo -E visudo
+	sudo grep '_binary		ALL = NOPASSWD:SETENV' /etc/sudoers || echo "_binary		ALL = NOPASSWD:SETENV: /bin/cp -pR $(HOMEBREW_PREFIX)/Caskroom/* /Applications/*,/bin/cp -pR $(HOMEBREW_PREFIX)/Caskroom/* /Library/Fonts/*,/usr/sbin/installer -pkg $(HOMEBREW_PREFIX)/Caskroom/* -target /,/bin/rm -f -- /Library/Fonts/*" | EDITOR='tee -a' VISUAL=$$EDITOR sudo -E visudo
+	sudo grep '_binary		ALL = (_binary) NOPASSWD:SETENV: ALL' /etc/sudoers || echo "_binary		ALL = (_binary) NOPASSWD:SETENV: ALL" | EDITOR='tee -a' VISUAL=$$EDITOR sudo -E visudo
 
 bootstrap-homebrew-folder:
 	test -d $(HOMEBREW_PREFIX) || sudo mkdir $(HOMEBREW_PREFIX)
