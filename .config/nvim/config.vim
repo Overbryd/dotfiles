@@ -113,12 +113,11 @@ set scrolloff=10
 " Prescribe Vim to switch to an existing tab page if it contains a window displaying
 " the target buffer, otherwise open a new tab.
 " https://stackoverflow.com/a/6853779
-" set switchbuf+=usetab,newtab
+set switchbuf+=useopen,split
 
 " Configure the quickfix buffer (also works in location lists).
-" Open file using <Enter> in a new tab.
-" https://vi.stackexchange.com/a/6999
-" autocmd FileType qf nnoremap <buffer> <Enter> <C-W><Enter><C-W>T
+" Open file using <Enter> in a new buffer.
+autocmd FileType qf nnoremap <buffer> <Enter> <C-W>gf
 
 " Allow editing crontabs
 " http://stackoverflow.com/questions/15395479/why-ive-got-no-crontab-entry-on-os-x-when-using-vim
