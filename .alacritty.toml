@@ -4,7 +4,7 @@ live_config_reload = true
 [window]
 dimensions = { columns = 237, lines = 55 }
 decorations = "None"
-opacity = 0.75
+opacity = 0.95
 blur = false
 startup_mode = "Maximized"
 padding = { x = 5, y = 2 }
