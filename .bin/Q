@@ -2,10 +2,11 @@
 
 OPENAI_BASE_URL="${OPENAI_BASE_URL:=https://api.openai.com}"
 OPENAI_ORGANIZATION_KEY="$OPENAI_ORGANIZATION_KEY"
-OPENAI_MODEL="${OPENAI_MODEL:=gpt-5.1}"
+OPENAI_MODEL="${OPENAI_MODEL:=gpt-5.2}"
 OPENAI_API_KEY="$OPENAI_API_KEY"
 OPENAI_SYSTEM="${OPENAI_SYSTEM:=You are a helpful assistant.}"
 OPENAI_MAX_TOKENS="${OPENAI_MAX_TOKENS:=2048}"
+OPENAI_REASONING_EFFORT="${OPENAI_REASONING_EFFORT}"
 
 if [[ "$1" = "-" ]]; then
   content="$(cat)"
@@ -27,6 +28,7 @@ curl -XPOST  "${OPENAI_BASE_URL}/v1/responses" \
       --arg content "$content" \
       --arg system "$OPENAI_SYSTEM" \
       --arg max_tokens "$OPENAI_MAX_TOKENS" \
+      --arg reasoning_effort "$OPENAI_REASONING_EFFORT" \
       '{
           "model": $model,
           "instructions": $system,
@@ -34,7 +36,9 @@ curl -XPOST  "${OPENAI_BASE_URL}/v1/responses" \
           "store": false,
           "stream": true,
           "max_output_tokens": $max_tokens | tonumber
-      }'
+      }
+      + (if $reasoning_effort != "" then { "reasoning": { "effort": $reasoning_effort } } else {} end)
+    '
   )" \
 | grep -A2 'event: response.output_text.delta' \
 | sed -e '/^event/d' -e 's/^data: //' \
