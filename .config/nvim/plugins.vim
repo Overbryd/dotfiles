@@ -45,10 +45,14 @@ Plug 'mbbill/undotree'
 " Plug 'zbirenbaum/copilot.lua'
 
 " Supermaven
-Plug 'supermaven-inc/supermaven-nvim'
+" Plug 'supermaven-inc/supermaven-nvim'
 
-"Generative AI
-Plug 'David-Kunz/gen.nvim'
+" Generative AI
+" Plug 'David-Kunz/gen.nvim'
+
+" minuet + local ai
+Plug 'nvim-lua/plenary.nvim'
+Plug 'milanglacier/minuet-ai.nvim'
 
 " auto completion
 Plug 'hrsh7th/cmp-nvim-lsp'
