@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+# sshwait — wait until SSH becomes reachable
+# Usage:
+#   sshwait user@host
+#   sshwait user@host -p 2222
+#   sshwait user@host -i key.pem -p 2222
+
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: sshwait user@host [ssh options]" >&2
+  exit 1
+fi
+
+# TARGET="$1"
+# shift || true
+
+while true; do
+  if ssh \
+      -o BatchMode=yes \
+      -o ConnectTimeout=5 \
+      -o StrictHostKeyChecking=no \
+      -o UserKnownHostsFile=/dev/null \
+      $@ -- exit >/dev/null 2>&1; then
+    echo
+    exec ssh $@
+  else
+    printf "."
+    sleep 1
+  fi
+done
+

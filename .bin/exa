@@ -38,5 +38,5 @@ curl -XPOST  "${EXA_BASE_URL}/search" \
         "query": $query
       }'
   )" \
-| jq '.results[]'
+| jq -r '.results[] | .url'
 
