@@ -527,7 +527,7 @@ dotfiles: \
 	cp -v $$gnupg_source ~/.gnupg
 
 ~/.config/%: ~/.config
-	cd ~ && test -h $(DOTFILES_ROOT)/.config$(notdir $@) || ln -svf $(DOTFILES_ROOT)/.config/$(notdir $@) .config/$(notdir $@)
+	cd ~ && test -h ~/.config/$(notdir $@) || ln -svf $(DOTFILES_ROOT)/.config/$(notdir $@) .config/$(notdir $@)
 
 ~/.config:
 	mkdir ~/.config
