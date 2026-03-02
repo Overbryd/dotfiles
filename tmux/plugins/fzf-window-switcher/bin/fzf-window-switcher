@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TMUX_CMD=${TMUX_CMD:-tmux}
+FZF_BIN=${FZF_BIN:-fzf}
+PROMPT=${TMUX_FZF_SWITCHER_PROMPT:-"switch> "}
+FZF_OPTS=${TMUX_FZF_SWITCHER_OPTS:-"--height 100% --reverse"}
+TAB=$'\t'
+
+if ! command -v "$FZF_BIN" >/dev/null 2>&1; then
+  "$TMUX_CMD" display-message "tmux-fzf-switcher: fzf is not installed"
+  exit 0
+fi
+
+entries=()
+
+while IFS='|' read -r target marker name; do
+  [[ -z "$target" ]] && continue
+  label=${name:-"(unnamed)"}
+  display=$(printf '[W] %s %-12s %s' "${marker:- }" "$target" "$label")
+  entries+=("window${TAB}${target}${TAB}${display}")
+done < <("$TMUX_CMD" list-windows -a -F '#{session_name}:#{window_index}|#{?window_active,*, }|#{window_name}')
+
+while IFS='|' read -r target marker command cwd; do
+  [[ -z "$target" ]] && continue
+  readable_cwd=${cwd/#$HOME/~}
+  base_command=${command:-shell}
+  if [[ -n "$readable_cwd" ]]; then
+    display=$(printf '[P] %s %-12s %-15s @ %s' "${marker:- }" "$target" "$base_command" "$readable_cwd")
+  else
+    display=$(printf '[P] %s %-12s %s' "${marker:- }" "$target" "$base_command")
+  fi
+  entries+=("pane${TAB}${target}${TAB}${display}")
+done < <("$TMUX_CMD" list-panes -a -F '#{session_name}:#{window_index}.#{pane_index}|#{?pane_active,*, }|#{pane_current_command}|#{pane_current_path}')
+
+if [[ ${#entries[@]} -eq 0 ]]; then
+  "$TMUX_CMD" display-message "tmux-fzf-switcher: nothing to select"
+  exit 0
+fi
+
+choice=$(printf '%s\n' "${entries[@]}" | "$FZF_BIN" --prompt "$PROMPT" --delimiter '\t' --with-nth=3.. $FZF_OPTS)
+
+if [[ -z "${choice:-}" ]]; then
+  exit 0
+fi
+
+choice_type=${choice%%$'\t'*}
+choice_rest=${choice#*$'\t'}
+target=${choice_rest%%$'\t'*}
+session=${target%%:*}
+
+case "$choice_type" in
+  window)
+    "$TMUX_CMD" switch-client -t "$session"
+    "$TMUX_CMD" select-window -t "$target"
+    ;;
+  pane)
+    window_target=${target%.*}
+    "$TMUX_CMD" switch-client -t "$session"
+    "$TMUX_CMD" select-window -t "$window_target"
+    "$TMUX_CMD" select-pane -t "$target"
+    ;;
+  *)
+    ;; # ignore unexpected selections
+esac
