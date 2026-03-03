@@ -1,0 +1,256 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: saynice [options] [text ...]
+
+Options (compatible with the classic `say` CLI where practical):
+  -v, --voice VOICE      Pick the OpenAI voice (see --list-voices)
+  -m, --model MODEL      Pick the OpenAI model (default: gpt-4o-mini-tts)
+  -o FILE                Write audio to FILE instead of playing it
+  -f FILE                Read input text from FILE (use - for stdin)
+  -r RATE                Words-per-minute hint (accepted for compatibility)
+      --list-voices      Show known voice names and exit
+  -h, --help             Show this help text
+
+If no text is supplied on the command line, saynice reads from stdin.
+EOF
+}
+
+list_voices() {
+  cat <<'EOF'
+Known OpenAI TTS voices:
+  alloy ash ballad coral echo fable onyx nova sage shimmer verse
+
+Notes:
+- OpenAI may add more voices over time.
+- Compatibility alias: obsidian -> onyx
+EOF
+}
+
+err() {
+  printf 'saynice: %s\n' "$*" >&2
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    err "Missing dependency: $1"
+    exit 1
+  fi
+}
+
+contains_word() {
+  local needle="$1"
+  shift
+  local item
+  for item in "$@"; do
+    [[ "$item" == "$needle" ]] && return 0
+  done
+  return 1
+}
+
+VOICE="${SAYNICE_VOICE:-${SAYNICE_DEFAULT_VOICE:-alloy}}"
+MODEL="${SAYNICE_MODEL:-gpt-4o-mini-tts}"
+API_KEY="${SAYNICE_API_KEY:-${OPENAI_API_KEY:-}}"
+BASE_URL="${SAYNICE_BASE_URL:-${OPENAI_BASE_URL:-https://api.openai.com}}"
+AUDIO_FORMAT="${SAYNICE_AUDIO_FORMAT:-mp3}"
+INPUT_FILE=""
+OUTPUT_FILE=""
+RATE_HINT=""
+TEXT_ARGS=()
+KNOWN_VOICES=(alloy ash ballad coral echo fable onyx nova sage shimmer verse)
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --list-voices)
+      list_voices
+      exit 0
+      ;;
+    -v|--voice)
+      [[ $# -ge 2 ]] || { err "-v/--voice requires an argument"; usage >&2; exit 64; }
+      VOICE="$2"
+      shift 2
+      ;;
+    -m|--model)
+      [[ $# -ge 2 ]] || { err "-m/--model requires an argument"; usage >&2; exit 64; }
+      MODEL="$2"
+      shift 2
+      ;;
+    -o)
+      [[ $# -ge 2 ]] || { err "-o requires a file path"; usage >&2; exit 64; }
+      OUTPUT_FILE="$2"
+      shift 2
+      ;;
+    -f)
+      [[ $# -ge 2 ]] || { err "-f requires a file path"; usage >&2; exit 64; }
+      INPUT_FILE="$2"
+      shift 2
+      ;;
+    -r)
+      [[ $# -ge 2 ]] || { err "-r requires a rate"; usage >&2; exit 64; }
+      RATE_HINT="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      while [[ $# -gt 0 ]]; do
+        TEXT_ARGS+=("$1")
+        shift
+      done
+      ;;
+    -*)
+      err "Unknown option: $1"
+      usage >&2
+      exit 64
+      ;;
+    *)
+      TEXT_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ "$VOICE" == "?" ]]; then
+  list_voices
+  exit 0
+fi
+
+if [[ "$VOICE" == "obsidian" ]]; then
+  err "Note: voice 'obsidian' is mapped to OpenAI voice 'onyx'."
+  VOICE="onyx"
+fi
+
+if ! contains_word "$VOICE" "${KNOWN_VOICES[@]}"; then
+  err "Warning: '$VOICE' is not in the known voice list; API may reject it."
+fi
+
+if [[ -n "$RATE_HINT" ]]; then
+  err "Note: -r / --rate is accepted for compatibility but OpenAI TTS currently ignores it."
+fi
+
+text_source_count=0
+[[ -n "$INPUT_FILE" ]] && text_source_count=$((text_source_count + 1))
+[[ ${#TEXT_ARGS[@]} -gt 0 ]] && text_source_count=$((text_source_count + 1))
+if [[ $text_source_count -gt 1 ]]; then
+  err "Provide text via -f or inline arguments, not both."
+  exit 64
+fi
+
+TEXT=""
+if [[ -n "$INPUT_FILE" ]]; then
+  if [[ "$INPUT_FILE" == "-" ]]; then
+    TEXT="$(cat)"
+  else
+    [[ -f "$INPUT_FILE" ]] || { err "Input file not found: $INPUT_FILE"; exit 66; }
+    TEXT="$(cat "$INPUT_FILE")"
+  fi
+elif [[ ${#TEXT_ARGS[@]} -gt 0 ]]; then
+  TEXT="${TEXT_ARGS[*]}"
+else
+  if [[ -t 0 ]]; then
+    usage >&2
+    exit 64
+  fi
+  TEXT="$(cat)"
+fi
+
+if [[ -z "$(printf '%s' "$TEXT" | tr -d '\n\r\t ')" ]]; then
+  err "No text provided."
+  exit 64
+fi
+
+if [[ -z "$API_KEY" ]]; then
+  err "Set OPENAI_API_KEY (or SAYNICE_API_KEY) before running."
+  exit 78
+fi
+
+require_cmd curl
+require_cmd jq
+
+PLAYBACK_MODE=0
+if [[ -z "$OUTPUT_FILE" ]]; then
+  PLAYBACK_MODE=1
+  if ! command -v ffplay >/dev/null 2>&1; then
+    err "ffplay is required for playback when -o is not provided. Install ffmpeg or pass -o FILE."
+    exit 1
+  fi
+else
+  case "$OUTPUT_FILE" in
+    *.mp3) AUDIO_FORMAT="mp3" ;;
+    *.wav) AUDIO_FORMAT="wav" ;;
+    *.flac) AUDIO_FORMAT="flac" ;;
+    *.opus) AUDIO_FORMAT="opus" ;;
+    *.aac) AUDIO_FORMAT="aac" ;;
+    *.pcm|*.raw) AUDIO_FORMAT="pcm" ;;
+    *) : ;;
+  esac
+fi
+
+RESPONSE_FILE="$(mktemp /tmp/saynice.response.XXXXXX)"
+
+cleanup() {
+  [[ -n "${RESPONSE_FILE:-}" && -f "$RESPONSE_FILE" ]] && rm -f "$RESPONSE_FILE"
+  return 0
+}
+trap cleanup EXIT
+
+PAYLOAD=$(jq --null-input \
+  --arg model "$MODEL" \
+  --arg voice "$VOICE" \
+  --arg input "$TEXT" \
+  --arg format "$AUDIO_FORMAT" \
+  '{
+    model: $model,
+    voice: $voice,
+    input: $input,
+    response_format: $format
+  }')
+
+CURL_HEADERS=(-H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json")
+if [[ -n "${OPENAI_ORGANIZATION_KEY:-}" ]]; then
+  CURL_HEADERS+=(-H "OpenAI-Organization: ${OPENAI_ORGANIZATION_KEY}")
+fi
+if [[ -n "${OPENAI_PROJECT_KEY:-}" ]]; then
+  CURL_HEADERS+=(-H "OpenAI-Project: ${OPENAI_PROJECT_KEY}")
+fi
+
+if [[ $PLAYBACK_MODE -eq 1 ]]; then
+  if ! curl -sS --fail --no-buffer \
+    "${CURL_HEADERS[@]}" \
+    --data-raw "$PAYLOAD" \
+    "${BASE_URL%/}/v1/audio/speech" \
+    | ffplay -nodisp -autoexit -loglevel error -i pipe:0 >/dev/null 2>&1; then
+    err "Streaming playback failed."
+    exit 1
+  fi
+  exit 0
+fi
+
+if ! http_code=$(curl -sS \
+  "${CURL_HEADERS[@]}" \
+  --data-raw "$PAYLOAD" \
+  --output "$RESPONSE_FILE" \
+  --write-out "%{http_code}" \
+  "${BASE_URL%/}/v1/audio/speech"); then
+  err "Request failed."
+  exit 1
+fi
+
+if [[ "$http_code" -ge 400 ]]; then
+  err "OpenAI API error (HTTP $http_code)."
+  api_message="$(jq -r '.error.message // .message // empty' "$RESPONSE_FILE" 2>/dev/null || true)"
+  if [[ -n "$api_message" ]]; then
+    err "$api_message"
+  else
+    cat "$RESPONSE_FILE" >&2
+  fi
+  exit 1
+fi
+
+mv "$RESPONSE_FILE" "$OUTPUT_FILE"
+RESPONSE_FILE=""

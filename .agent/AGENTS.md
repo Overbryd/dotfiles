@@ -84,6 +84,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `jq` is installed, useful to filter, transform and work with JSON or NDJSON outputs.
 - `yaml-to-json` converst YAML to JSON. You can use that in a pipe with `jq` for querying.
 - `json-to-yaml` converts JSON to YAML.
+- `saynice` is used to get the attention of the user by sending a TTS message. Prefer `saynice` over `say`.
 
 More custom tools are in `~/.bin`.
 
@@ -105,4 +106,9 @@ More custom tools are in `~/.bin`.
 - Reserve runtime checks for user input at the outmost layer (Context, Controller or LiveView).
 - Use `alias` at the top of the module instead of fully qualified module names.
 - When processing data we control ourselves, prefer to "let it crash" semantics over defensive error handling.
+
+# Terraform
+
+- You can run `terraform validate` and `terraform plan`.
+- NEVER use -auto-approve to apply any changes. ALWAYS ask the user for confirmation, use `saynice` to get the users attention.
 
