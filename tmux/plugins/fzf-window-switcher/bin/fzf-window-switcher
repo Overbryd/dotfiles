@@ -21,17 +21,6 @@ while IFS='|' read -r target marker name; do
   entries+=("window${TAB}${target}${TAB}${display}")
 done < <("$TMUX_CMD" list-windows -a -F '#{session_name}:#{window_index}|#{?window_active,*, }|#{window_name}')
 
-while IFS='|' read -r target marker command cwd; do
-  [[ -z "$target" ]] && continue
-  readable_cwd=${cwd/#$HOME/~}
-  base_command=${command:-shell}
-  if [[ -n "$readable_cwd" ]]; then
-    display=$(printf '[P] %s %-12s %-15s @ %s' "${marker:- }" "$target" "$base_command" "$readable_cwd")
-  else
-    display=$(printf '[P] %s %-12s %s' "${marker:- }" "$target" "$base_command")
-  fi
-  entries+=("pane${TAB}${target}${TAB}${display}")
-done < <("$TMUX_CMD" list-panes -a -F '#{session_name}:#{window_index}.#{pane_index}|#{?pane_active,*, }|#{pane_current_command}|#{pane_current_path}')
 
 if [[ ${#entries[@]} -eq 0 ]]; then
   "$TMUX_CMD" display-message "tmux-fzf-switcher: nothing to select"
@@ -53,12 +42,6 @@ case "$choice_type" in
   window)
     "$TMUX_CMD" switch-client -t "$session"
     "$TMUX_CMD" select-window -t "$target"
-    ;;
-  pane)
-    window_target=${target%.*}
-    "$TMUX_CMD" switch-client -t "$session"
-    "$TMUX_CMD" select-window -t "$window_target"
-    "$TMUX_CMD" select-pane -t "$target"
     ;;
   *)
     ;; # ignore unexpected selections
