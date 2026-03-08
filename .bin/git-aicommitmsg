@@ -4,16 +4,22 @@ export OPENAI_MAX_TOKENS=4096
 export OPENAI_SYSTEM="You are a helpful assistant, do your best to write a concise commit message based on a given git diff. Provide a short first sentence, followed by two newlines with an optional description of the changes as bullet points. Just provide the text of the commit message, nothing else, no explanations."
 export OPENAI_MODEL="gpt-5-mini"
 
-export CHANGESET="$(git staged)"
+USE_ALL=0
+CHANGESET="$(git staged)"
 for arg in "$@"; do
   case "$arg" in
     -a|--all)
-      export CHANGESET="$(git diff)"
+      USE_ALL=1
+      CHANGESET="$(git diff)"
       break
       ;;
   esac
 done
-test -z "$CHANGESET" && die "No changes to commit"
 
-Q "$CHANGESET"
+if test -z "$CHANGESET"; then
+  test "$USE_ALL" -eq 1 && die "No changes to commit"
+  die "Usage: git-aicommitmsg [--all|-a]\nEither there must be staged files, or --all must be provided"
+fi
+
+printf '%s' "$CHANGESET" | Q -
 
