@@ -2,24 +2,78 @@
 
 export OPENAI_MAX_TOKENS=4096
 export OPENAI_SYSTEM="You are a helpful assistant, do your best to write a concise commit message based on a given git diff. Provide a short first sentence, followed by two newlines with an optional description of the changes as bullet points. Just provide the text of the commit message, nothing else, no explanations."
-export OPENAI_MODEL="gpt-5-mini"
+export OPENAI_MODEL="gpt-5.4-nano"
 
+MAX_DIFF_LINES="${AI_COMMITMSG_MAX_DIFF_LINES:=10000}"
 USE_ALL=0
-CHANGESET="$(git staged)"
+
+die() {
+  printf '%s\n' "$*" >&2
+  exit 1
+}
+
+git_diff() {
+  if [ "$USE_ALL" -eq 1 ]; then
+    git diff --no-color "$@"
+  else
+    git diff --cached --no-color "$@"
+  fi
+}
+
+line_count() {
+  wc -l < "$1" | tr -d ' '
+}
+
 for arg in "$@"; do
   case "$arg" in
     -a|--all)
       USE_ALL=1
-      CHANGESET="$(git diff)"
-      break
       ;;
   esac
 done
 
-if test -z "$CHANGESET"; then
+tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/git-aicommitmsg.XXXXXX")" || exit 1
+trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
+
+full_diff="$tmpdir/full.diff"
+compact_diff="$tmpdir/compact.diff"
+compact_diff_raw="$tmpdir/compact.diff.raw"
+
+git_diff > "$full_diff"
+
+if test ! -s "$full_diff"; then
   test "$USE_ALL" -eq 1 && die "No changes to commit"
   die "Usage: git-aicommitmsg [--all|-a]\nEither there must be staged files, or --all must be provided"
 fi
 
-printf '%s' "$CHANGESET" | Q -
+full_diff_lines="$(line_count "$full_diff")"
 
+if test "$full_diff_lines" -le "$MAX_DIFF_LINES"; then
+  Q - < "$full_diff"
+  exit 0
+fi
+
+{
+  printf 'NOTE: The original diff was %s lines, which exceeds the %s line limit. This is an abbreviated representation. Prioritize the file list, summary, and compact patch when generating the commit message.\n\n' "$full_diff_lines" "$MAX_DIFF_LINES"
+
+  printf '\n# Changed files \n'
+  git_diff --name-status --find-renames
+} > "$compact_diff_raw"
+
+compact_diff_lines="$(line_count "$compact_diff_raw")"
+
+if test "$compact_diff_lines" -gt "$MAX_DIFF_LINES"; then
+  truncated_lines=$((MAX_DIFF_LINES - 2))
+  if test "$truncated_lines" -lt 1; then
+    truncated_lines=1
+  fi
+
+  {
+    head -n "$truncated_lines" "$compact_diff_raw"
+    printf '\n[truncated abbreviated diff: showing first %s of %s lines]\n' "$truncated_lines" "$compact_diff_lines"
+  } > "$compact_diff"
+else
+  cp "$compact_diff_raw" "$compact_diff"
+fi
+
+Q - < "$compact_diff"
