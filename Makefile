@@ -1,6 +1,7 @@
 EXCLUDED_DOTFILES := .git .git-crypt .gitattributes .gitignore .gitmodules .ssh
 DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 DOT_CONFIG_FILES := $(addprefix ~/, $(wildcard .config/*))
+PI_EXTENSIONS := $(addprefix ~/.pi/agent/extensions/, $(notdir $(wildcard pi/extensions/*.ts)))
 LAUNCH_AGENTS := $(addprefix ~/Library/, $(wildcard LaunchAgents/*))
 
 DOTFILES_ROOT = $(HOME)/dotfiles
@@ -512,7 +513,8 @@ dotfiles:
 dotfiles: \
 	~/dotfiles \
 	$(DOTFILES) \
-	$(DOT_CONFIG_FILES)
+	$(DOT_CONFIG_FILES) \
+	$(PI_EXTENSIONS)
 
 ~/dotfiles:
 	ln -s /usr/local/dotfiles ~/dotfiles
@@ -531,6 +533,12 @@ dotfiles: \
 
 ~/.config:
 	mkdir ~/.config
+
+~/.pi/agent/extensions/%: pi/extensions/% | ~/.pi/agent/extensions
+	ln -svf $(DOTFILES_ROOT)/$< $@
+
+~/.pi/agent/extensions:
+	mkdir -p $@
 
 ~/.%:
 	cd ~ && ln -svf $(DOTFILES_ROOT)/$(notdir $@) $@
