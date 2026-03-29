@@ -20,3 +20,6 @@ noremap <leader>U :UltiSnipsEdit<CR>
 " close all other buffers (buffer only)
 nnoremap <leader>co :w \| %bd \| e# \| bd!# <CR>
 
+" toggle line wrapping in the current window
+nnoremap <leader>w :set wrap!<CR>
+
