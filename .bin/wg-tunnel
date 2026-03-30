@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly SCUTIL_BIN=${SCUTIL_BIN:-/usr/sbin/scutil}
+readonly AWK_BIN=/usr/bin/awk
+readonly SLEEP_BIN=/bin/sleep
+readonly TR_BIN=/usr/bin/tr
+readonly SCRIPT_NAME=$(basename "$0")
+
+usage() {
+  cat <<'EOF'
+Usage:
+  wg-tunnel list
+  wg-tunnel show <tunnel>
+  wg-tunnel status <tunnel>
+  wg-tunnel is-connected <tunnel>
+  wg-tunnel start <tunnel>
+  wg-tunnel stop <tunnel>
+
+Control WireGuard tunnels through macOS's network connection service API.
+This script intentionally uses `scutil --nc` instead of UI scripting.
+EOF
+}
+
+die() {
+  echo "$SCRIPT_NAME: $*" >&2
+  exit 1
+}
+
+require_tunnel_name() {
+  [[ $# -ge 1 ]] || die "missing tunnel name"
+}
+
+service_exists() {
+  "$SCUTIL_BIN" --nc show "$1" >/dev/null 2>&1
+}
+
+raw_status() {
+  "$SCUTIL_BIN" --nc status "$1" | "$AWK_BIN" 'NR == 1 { print; exit }'
+}
+
+normalized_status() {
+  local status
+  status=$(raw_status "$1" | "$TR_BIN" '[:upper:]' '[:lower:]')
+
+  case "$status" in
+    connected*) echo connected ;;
+    connecting*) echo connecting ;;
+    disconnected*) echo disconnected ;;
+    disconnecting*) echo disconnecting ;;
+    invalid*) echo invalid ;;
+    *) echo unknown ;;
+  esac
+}
+
+wait_for_status_change() {
+  local tunnel=$1
+  local undesired=$2
+  local status
+  local attempt
+
+  for attempt in 1 2 3 4 5; do
+    status=$(normalized_status "$tunnel")
+    if [[ "$status" != "$undesired" ]]; then
+      echo "$status"
+      return 0
+    fi
+    "$SLEEP_BIN" 1
+  done
+
+  status=$(normalized_status "$tunnel")
+  echo "$status"
+  [[ "$status" != "$undesired" ]]
+}
+
+command=${1:-help}
+shift || true
+
+case "$command" in
+  help|-h|--help)
+    usage
+    ;;
+
+  list)
+    "$SCUTIL_BIN" --nc list
+    ;;
+
+  show)
+    require_tunnel_name "$@"
+    service_exists "$1" || die "no such VPN service: $1"
+    "$SCUTIL_BIN" --nc show "$1"
+    ;;
+
+  status)
+    require_tunnel_name "$@"
+    service_exists "$1" || die "no such VPN service: $1"
+    normalized_status "$1"
+    ;;
+
+  is-connected)
+    require_tunnel_name "$@"
+    service_exists "$1" || die "no such VPN service: $1"
+
+    status=$(normalized_status "$1")
+    echo "$status"
+    [[ "$status" == connected ]]
+    ;;
+
+  start)
+    require_tunnel_name "$@"
+    service_exists "$1" || die "no such VPN service: $1"
+
+    status=$(normalized_status "$1")
+    case "$status" in
+      connected|connecting)
+        echo "$status"
+        exit 0
+        ;;
+    esac
+
+    "$SCUTIL_BIN" --nc start "$1" >/dev/null
+    wait_for_status_change "$1" disconnected || die "tunnel did not leave disconnected state: $1"
+    ;;
+
+  stop)
+    require_tunnel_name "$@"
+    service_exists "$1" || die "no such VPN service: $1"
+
+    status=$(normalized_status "$1")
+    case "$status" in
+      disconnected|disconnecting)
+        echo "$status"
+        exit 0
+        ;;
+    esac
+
+    "$SCUTIL_BIN" --nc stop "$1" >/dev/null
+    wait_for_status_change "$1" connected || die "tunnel did not leave connected state: $1"
+    ;;
+
+  *)
+    usage >&2
+    exit 64
+    ;;
+esac

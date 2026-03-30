@@ -1,0 +1,402 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly SCRIPT_NAME=$(basename "$0")
+readonly SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+readonly WG_TUNNEL_BIN_DEFAULT="$SCRIPT_DIR/wg-tunnel"
+readonly AWK_BIN=/usr/bin/awk
+readonly CURL_BIN=/usr/bin/curl
+readonly DATE_BIN=/bin/date
+readonly HOSTNAME_BIN=/bin/hostname
+readonly IOREG_BIN=/usr/sbin/ioreg
+readonly PLUTIL_BIN=/usr/bin/plutil
+readonly RUBY_BIN=/usr/bin/ruby
+readonly SECURITY_BIN=/usr/bin/security
+readonly SED_BIN=/usr/bin/sed
+readonly TR_BIN=/usr/bin/tr
+readonly ID_BIN=/usr/bin/id
+readonly MKDIR_BIN=/bin/mkdir
+
+DRY_RUN=0
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ms1-away-vpn-agent [--dry-run] [--help]
+
+Automates a WireGuard tunnel on macOS based on:
+- Home Assistant presence state
+- local screen lock state
+- local idle time
+
+This script is safe to keep in a public dotfiles repo:
+- it reads configuration from outside the repo by default
+- it prefers Home Assistant tokens from the macOS Keychain
+
+Default external config file:
+  ~/.wg-auto/ms1.env
+
+Recommended Keychain setup:
+  security add-generic-password -U -a "$USER" -s wg-auto-home-assistant -w '<LONG_LIVED_ACCESS_TOKEN>'
+
+Useful overrides for local testing:
+  WG_AUTO_EXPECT_HOSTNAME=mba1
+  WG_AUTO_HA_STATE_OVERRIDE=on
+  WG_AUTO_LOCKED_OVERRIDE=true
+  WG_AUTO_IDLE_SECONDS_OVERRIDE=900
+  ms1-away-vpn-agent --dry-run
+EOF
+}
+
+log() {
+  echo "$("$DATE_BIN" '+%Y-%m-%dT%H:%M:%S%z') $*"
+}
+
+normalize() {
+  printf '%s' "$1" \
+    | "$TR_BIN" '[:upper:]' '[:lower:]' \
+    | "$SED_BIN" 's/^[[:space:]]*//; s/[[:space:]]*$//'
+}
+
+bool_from_text() {
+  case "$(normalize "$1")" in
+    1|true|yes|on|locked) echo true ;;
+    0|false|no|off|unlocked) echo false ;;
+    *) return 1 ;;
+  esac
+}
+
+bool_to_int() {
+  case "$(bool_from_text "$1")" in
+    true) echo 1 ;;
+    false) echo 0 ;;
+  esac
+}
+
+csv_contains() {
+  local csv=$1
+  local needle
+  local item
+
+  needle=$(normalize "$2")
+  IFS=',' read -r -a items <<< "$csv"
+
+  for item in "${items[@]}"; do
+    if [[ "$(normalize "$item")" == "$needle" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+remember_state() {
+  local record=$1
+  "$MKDIR_BIN" -p "$WG_AUTO_STATE_DIR"
+  printf '%s\n' "$record" > "$WG_AUTO_STATE_FILE"
+}
+
+last_state() {
+  if [[ -f "$WG_AUTO_STATE_FILE" ]]; then
+    <"$WG_AUTO_STATE_FILE" read -r record || true
+    printf '%s' "${record:-}"
+  fi
+}
+
+log_if_changed() {
+  local record=$1
+  local previous
+
+  previous=$(last_state)
+  if [[ "$record" != "$previous" ]]; then
+    log "$record"
+    remember_state "$record"
+  fi
+}
+
+log_force() {
+  local record=$1
+  log "$record"
+  remember_state "$record"
+}
+
+load_external_config() {
+  if [[ -f "$WG_AUTO_CONFIG_FILE" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "$WG_AUTO_CONFIG_FILE"
+    set +a
+  fi
+}
+
+current_hostname() {
+  "$HOSTNAME_BIN" -s 2>/dev/null || "$HOSTNAME_BIN"
+}
+
+current_lock_state() {
+  if [[ -n "${WG_AUTO_LOCKED_OVERRIDE:-}" ]]; then
+    bool_from_text "$WG_AUTO_LOCKED_OVERRIDE"
+    return
+  fi
+
+  if "$IOREG_BIN" -a -n Root -d1 2>/dev/null | "$PLUTIL_BIN" -extract IOConsoleLocked raw -o - - 2>/dev/null; then
+    return
+  fi
+
+  echo false
+}
+
+current_idle_seconds() {
+  local idle_ns
+
+  if [[ -n "${WG_AUTO_IDLE_SECONDS_OVERRIDE:-}" ]]; then
+    printf '%s\n' "$WG_AUTO_IDLE_SECONDS_OVERRIDE"
+    return
+  fi
+
+  idle_ns=$(
+    "$IOREG_BIN" -c IOHIDSystem 2>/dev/null \
+      | "$AWK_BIN" '/HIDIdleTime/ { gsub(/[^0-9]/, "", $NF); print $NF; exit }'
+  )
+
+  if [[ -z "$idle_ns" ]]; then
+    echo 0
+    return
+  fi
+
+  echo $(( idle_ns / 1000000000 ))
+}
+
+home_assistant_token() {
+  if [[ -n "${HA_TOKEN:-}" ]]; then
+    printf '%s' "$HA_TOKEN"
+    return 0
+  fi
+
+  if [[ -n "${HA_TOKEN_FILE:-}" && -f "$HA_TOKEN_FILE" ]]; then
+    "$AWK_BIN" 'NR == 1 { print; exit }' "$HA_TOKEN_FILE"
+    return 0
+  fi
+
+  "$SECURITY_BIN" find-generic-password -w \
+    -s "$HA_TOKEN_KEYCHAIN_SERVICE" \
+    -a "$HA_TOKEN_KEYCHAIN_ACCOUNT"
+}
+
+home_assistant_state() {
+  local token
+  local response
+  local url
+
+  if [[ -n "${WG_AUTO_HA_STATE_OVERRIDE:-}" ]]; then
+    printf '%s\n' "$WG_AUTO_HA_STATE_OVERRIDE"
+    return 0
+  fi
+
+  token=$(home_assistant_token)
+  url="${HA_URL%/}/api/states/${HA_ENTITY_ID}"
+
+  response=$(
+    "$CURL_BIN" --silent --show-error --fail --max-time 10 \
+      -H "Authorization: Bearer $token" \
+      -H 'Accept: application/json' \
+      "$url"
+  )
+
+  printf '%s' "$response" \
+    | "$RUBY_BIN" -rjson -e 'print JSON.parse(STDIN.read).fetch("state")'
+}
+
+presence_from_state() {
+  local state
+
+  state=$(normalize "$1")
+
+  case "$state" in
+    ''|unknown|unavailable)
+      echo unknown
+      return
+      ;;
+  esac
+
+  if csv_contains "$HA_AWAY_STATES" "$state"; then
+    echo away
+  elif csv_contains "$HA_HOME_STATES" "$state"; then
+    echo home
+  elif [[ "$WG_AUTO_TREAT_OTHER_STATES_AS_AWAY" == 1 ]]; then
+    echo away
+  else
+    echo unknown
+  fi
+}
+
+single_line() {
+  printf '%s' "$1" | "$TR_BIN" '\n' ' '
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=1
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "$SCRIPT_NAME: unknown argument: $1" >&2
+      usage >&2
+      exit 64
+      ;;
+  esac
+  shift
+done
+
+WG_AUTO_CONFIG_FILE=${WG_AUTO_CONFIG_FILE:-$HOME/.wg-auto/ms1.env}
+load_external_config
+
+WG_AUTO_EXPECT_HOSTNAME=${WG_AUTO_EXPECT_HOSTNAME:-ms1}
+WG_AUTO_TUNNEL=${WG_AUTO_TUNNEL:-ms1}
+WG_TUNNEL_BIN=${WG_TUNNEL_BIN:-$WG_TUNNEL_BIN_DEFAULT}
+WG_AUTO_IDLE_THRESHOLD_SECONDS=${WG_AUTO_IDLE_THRESHOLD_SECONDS:-600}
+WG_AUTO_HOME_ACTIVE_THRESHOLD_SECONDS=${WG_AUTO_HOME_ACTIVE_THRESHOLD_SECONDS:-120}
+WG_AUTO_ENABLE_DISCONNECT=$(bool_to_int "${WG_AUTO_ENABLE_DISCONNECT:-0}")
+WG_AUTO_TREAT_OTHER_STATES_AS_AWAY=$(bool_to_int "${WG_AUTO_TREAT_OTHER_STATES_AS_AWAY:-0}")
+WG_AUTO_STATE_DIR=${WG_AUTO_STATE_DIR:-$HOME/.local/state/wg-auto}
+WG_AUTO_STATE_FILE=${WG_AUTO_STATE_FILE:-$WG_AUTO_STATE_DIR/ms1-away-vpn-agent.last}
+HA_URL=${HA_URL:-}
+HA_ENTITY_ID=${HA_ENTITY_ID:-}
+HA_AWAY_STATES=${HA_AWAY_STATES:-on,away,not_home}
+HA_HOME_STATES=${HA_HOME_STATES:-off,home}
+HA_TOKEN_KEYCHAIN_SERVICE=${HA_TOKEN_KEYCHAIN_SERVICE:-wg-auto-home-assistant}
+HA_TOKEN_KEYCHAIN_ACCOUNT=${HA_TOKEN_KEYCHAIN_ACCOUNT:-${USER:-$($ID_BIN -un)}}
+
+if [[ "$(current_hostname)" != "$WG_AUTO_EXPECT_HOSTNAME" ]]; then
+  exit 0
+fi
+
+if [[ ! -x "$WG_TUNNEL_BIN" ]]; then
+  log_if_changed "error=missing-wg-tunnel path=$WG_TUNNEL_BIN"
+  exit 1
+fi
+
+if ! "$WG_TUNNEL_BIN" show "$WG_AUTO_TUNNEL" >/dev/null 2>&1; then
+  log_if_changed "error=tunnel-not-found tunnel=$WG_AUTO_TUNNEL"
+  exit 1
+fi
+
+if [[ -z "${WG_AUTO_HA_STATE_OVERRIDE:-}" ]]; then
+  if [[ -z "$HA_URL" || -z "$HA_ENTITY_ID" ]]; then
+    log_if_changed "noop=config-incomplete config_file=$WG_AUTO_CONFIG_FILE missing=HA_URL_or_HA_ENTITY_ID"
+    exit 0
+  fi
+
+  if ! home_assistant_token >/dev/null 2>&1; then
+    log_if_changed "noop=ha-token-missing config_file=$WG_AUTO_CONFIG_FILE keychain_service=$HA_TOKEN_KEYCHAIN_SERVICE keychain_account=$HA_TOKEN_KEYCHAIN_ACCOUNT"
+    exit 0
+  fi
+fi
+
+ha_state=''
+if ! ha_state=$(home_assistant_state 2>&1); then
+  log_if_changed "error=home-assistant-query-failed detail=$(single_line "$ha_state")"
+  exit 1
+fi
+
+if ! locked=$(current_lock_state 2>/dev/null); then
+  log_if_changed "error=lock-state-unreadable"
+  exit 1
+fi
+
+idle_seconds=$(current_idle_seconds)
+presence=$(presence_from_state "$ha_state")
+connected=no
+
+if "$WG_TUNNEL_BIN" is-connected "$WG_AUTO_TUNNEL" >/dev/null 2>&1; then
+  connected=yes
+fi
+
+idle_enough=no
+if (( idle_seconds >= WG_AUTO_IDLE_THRESHOLD_SECONDS )); then
+  idle_enough=yes
+fi
+
+home_active=no
+if [[ "$locked" == false ]] && (( idle_seconds < WG_AUTO_HOME_ACTIVE_THRESHOLD_SECONDS )); then
+  home_active=yes
+fi
+
+action=no-op
+reason=''
+
+case "$presence" in
+  away)
+    if [[ "$connected" == yes ]]; then
+      reason='away-but-already-connected'
+    elif [[ "$locked" == true ]]; then
+      action=start
+      reason='away-and-locked'
+    elif [[ "$idle_enough" == yes ]]; then
+      action=start
+      reason='away-and-idle-threshold-met'
+    else
+      reason='away-but-machine-still-active'
+    fi
+    ;;
+
+  home)
+    if [[ "$connected" == no ]]; then
+      reason='home-and-tunnel-already-disconnected'
+    elif [[ "$WG_AUTO_ENABLE_DISCONNECT" == 1 && "$home_active" == yes ]]; then
+      action=stop
+      reason='home-and-active-again'
+    elif [[ "$WG_AUTO_ENABLE_DISCONNECT" == 1 ]]; then
+      reason='home-but-not-active-enough-to-disconnect'
+    else
+      reason='home-and-disconnect-disabled'
+    fi
+    ;;
+
+  *)
+    reason="presence-unknown-for-state-$(single_line "$ha_state")"
+    ;;
+esac
+
+summary="state=presence:$presence ha:$ha_state locked:$locked idle_enough:$idle_enough connected:$connected action:$action reason:$reason"
+
+case "$action" in
+  start)
+    if (( DRY_RUN )); then
+      log_force "dry_run=1 tunnel=$WG_AUTO_TUNNEL action=start idle_seconds=$idle_seconds locked=$locked ha_state=$ha_state reason=$reason"
+      exit 0
+    fi
+
+    if result=$("$WG_TUNNEL_BIN" start "$WG_AUTO_TUNNEL" 2>&1); then
+      log_force "tunnel=$WG_AUTO_TUNNEL action=start result=$(single_line "$result") idle_seconds=$idle_seconds locked=$locked ha_state=$ha_state reason=$reason"
+      exit 0
+    fi
+
+    log_force "error=tunnel-start-failed tunnel=$WG_AUTO_TUNNEL detail=$(single_line "$result")"
+    exit 1
+    ;;
+
+  stop)
+    if (( DRY_RUN )); then
+      log_force "dry_run=1 tunnel=$WG_AUTO_TUNNEL action=stop idle_seconds=$idle_seconds locked=$locked ha_state=$ha_state reason=$reason"
+      exit 0
+    fi
+
+    if result=$("$WG_TUNNEL_BIN" stop "$WG_AUTO_TUNNEL" 2>&1); then
+      log_force "tunnel=$WG_AUTO_TUNNEL action=stop result=$(single_line "$result") idle_seconds=$idle_seconds locked=$locked ha_state=$ha_state reason=$reason"
+      exit 0
+    fi
+
+    log_force "error=tunnel-stop-failed tunnel=$WG_AUTO_TUNNEL detail=$(single_line "$result")"
+    exit 1
+    ;;
+
+  *)
+    log_if_changed "$summary"
+    ;;
+esac
