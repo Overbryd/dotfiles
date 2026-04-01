@@ -1,25 +1,1395 @@
-#!/usr/bin/env bash
+#!/usr/bin/python3
 
-if [[ "$(hostname)" == "mba1" ]]; then
-  from="10.10.10.4"
-elif [[ "$(hostname)" == "ms1" ]]; then
-  from="10.10.10.5"
-else
-  die "Unknown host: $(hostname)"
-fi
+"""wsync: plan-first workspace sync skeleton.
 
-rsync \
-  --archive \
-  --verbose \
-  --checksum \
-  --compress \
-  --cache \
-  --timeout=120 \
-  --partial-dir=/tmp/rsync-$(date +%Y-%m-%d) \
-  --progress \
-  --exclude='.terraform/' \
-  --exclude='.direnv/' \
-  --exclude='__pycache__/' \
-  --exclude='_build/' \
-  $from:"$(pwd)"/ "$(pwd)"/
+Current status:
+- Python CLI skeleton
+- path/profile target resolution
+- Git root detection
+- mixed-tree planning with nested Git repos excluded from plain-dir chunks
+- plan file generation in ~/.local/state/wsync/runs/<run-id>/plan.txt
+- doctor command for local/remote prerequisites
+- portable rsync dry-run previews for plain-dir and repo-overlay chunks
+- vendored tomli fallback for Python 3.9
 
+Not implemented yet:
+- actual rsync apply
+- actual Git fetch/apply orchestration
+- edited-plan apply flow
+"""
+
+import fnmatch
+import json
+import os
+import shlex
+import shutil
+import socket
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+
+
+DEFAULT_RSYNC_CANDIDATES = [
+    "/opt/homebrew/bin/rsync",
+    "/usr/local/bin/rsync",
+    "/usr/bin/rsync",
+]
+
+DEFAULT_COMMON_EXCLUDES = [
+    ".DS_Store",
+    ".direnv/",
+    ".terraform/",
+    "__pycache__/",
+    ".cache/",
+]
+
+MAX_SCAN_DIRS = 10_000
+MAX_PREVIEW_LINES = 40
+
+REMOTE_OVERLAY_LIST_SCRIPT = r'''
+import fnmatch
+import json
+import os
+import subprocess
+import sys
+
+repo = os.path.realpath(sys.argv[1])
+includes = json.loads(sys.argv[2])
+
+
+def run(args):
+    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+
+def tracked_paths(repo_root):
+    result = run(["git", "-C", repo_root, "ls-files", "-z"])
+    if result.returncode != 0:
+        raise SystemExit(result.stderr.strip() or "git ls-files failed")
+    return {path for path in result.stdout.split("\0") if path}
+
+
+def untracked_paths(repo_root):
+    result = run(["git", "-C", repo_root, "ls-files", "--others", "--exclude-standard", "-z"])
+    if result.returncode != 0:
+        raise SystemExit(result.stderr.strip() or "git ls-files --others failed")
+    return {path for path in result.stdout.split("\0") if path}
+
+
+def collect_subtree(repo_root, rel_path):
+    target = os.path.join(repo_root, rel_path)
+    if not (os.path.exists(target) or os.path.islink(target)):
+        return set()
+    results = set()
+    if os.path.islink(target) or os.path.isfile(target):
+        results.add(rel_path)
+        return results
+    for current_root, dirnames, filenames in os.walk(target, topdown=True, followlinks=False):
+        rel_root = os.path.relpath(current_root, repo_root)
+        if rel_root == '.':
+            rel_root = ''
+        keep = []
+        for dirname in dirnames:
+            candidate = os.path.join(current_root, dirname)
+            rel = os.path.join(rel_root, dirname) if rel_root else dirname
+            rel = rel.replace(os.sep, '/')
+            if os.path.islink(candidate):
+                results.add(rel)
+            else:
+                keep.append(dirname)
+        dirnames[:] = keep
+        for filename in filenames:
+            rel = os.path.join(rel_root, filename) if rel_root else filename
+            results.add(rel.replace(os.sep, '/'))
+    return results
+
+
+def collect_matches(repo_root, pattern):
+    pattern = pattern.replace('\\', '/')
+    if pattern.endswith('/***'):
+        base = pattern[:-4].rstrip('/')
+        return collect_subtree(repo_root, base)
+    if not any(ch in pattern for ch in '*?[]'):
+        return collect_subtree(repo_root, pattern)
+    results = set()
+    for current_root, dirnames, filenames in os.walk(repo_root, topdown=True, followlinks=False):
+        rel_root = os.path.relpath(current_root, repo_root)
+        if rel_root == '.':
+            rel_root = ''
+        keep = []
+        for dirname in dirnames:
+            candidate = os.path.join(current_root, dirname)
+            rel = os.path.join(rel_root, dirname) if rel_root else dirname
+            rel = rel.replace(os.sep, '/')
+            if os.path.islink(candidate):
+                if fnmatch.fnmatch(rel, pattern):
+                    results.add(rel)
+            else:
+                keep.append(dirname)
+        dirnames[:] = keep
+        for filename in filenames:
+            rel = os.path.join(rel_root, filename) if rel_root else filename
+            rel = rel.replace(os.sep, '/')
+            if fnmatch.fnmatch(rel, pattern):
+                results.add(rel)
+    return results
+
+
+tracked = tracked_paths(repo)
+results = set(untracked_paths(repo))
+for pattern in includes:
+    results.update(path for path in collect_matches(repo, pattern) if path not in tracked and not path.startswith('.git/'))
+for path in sorted(path for path in results if path and path not in tracked and not path.startswith('.git/')):
+    print(path)
+'''
+
+
+class UserError(Exception):
+    pass
+
+
+@dataclass
+class Command:
+    action: str
+    target: Optional[str] = None
+
+
+@dataclass
+class RootSpec:
+    path: Path
+    source: str
+    includes: List[str] = field(default_factory=list)
+    excludes: List[str] = field(default_factory=list)
+    presets: List[str] = field(default_factory=list)
+
+
+@dataclass
+class Target:
+    kind: str
+    label: str
+    roots: List[RootSpec]
+
+
+@dataclass
+class GitSnapshot:
+    repo_path: Path
+    branch: str
+    head: str
+    upstream: Optional[str]
+    ahead: Optional[int]
+    behind: Optional[int]
+    tracked_dirty: int
+    untracked: int
+    detached: bool
+    available: bool = True
+    error: Optional[str] = None
+
+
+@dataclass
+class PlanChunk:
+    chunk_type: str
+    path: Path
+    direction: str
+    summary: str
+    lines: List[str] = field(default_factory=list)
+    applyable: bool = False
+    status: str = "planned"
+    chunk_id: str = ""
+
+    def render(self) -> str:
+        applyable_value = "yes" if self.applyable else "no"
+        body = [
+            "=== {} ===".format(self.chunk_id),
+            "type = {}".format(self.chunk_type),
+            "path = {}".format(self.path),
+            "direction = {}".format(self.direction),
+            "status = {}".format(self.status),
+            "applyable = {}".format(applyable_value),
+            "summary = {}".format(self.summary),
+        ]
+        if self.lines:
+            body.append("")
+            body.extend(self.lines)
+        return "\n".join(body)
+
+
+@dataclass
+class Plan:
+    run_id: str
+    action: str
+    target_label: str
+    plan_path: Path
+    chunks: List[PlanChunk] = field(default_factory=list)
+
+    def render(self) -> str:
+        header = [
+            "# wsync plan",
+            "run_id = {}".format(self.run_id),
+            "action = {}".format(self.action),
+            "target = {}".format(self.target_label),
+            "generated_at = {}".format(datetime.now().isoformat(timespec="seconds")),
+            "chunk_count = {}".format(len(self.chunks)),
+            "plan_only = true",
+        ]
+        chunks_text = "\n\n\n".join(chunk.render() for chunk in self.chunks)
+        if not chunks_text:
+            chunks_text = "# no chunks generated"
+        return "\n".join(header) + "\n\n\n" + chunks_text + "\n"
+
+
+@dataclass
+class DoctorCheck:
+    name: str
+    status: str
+    detail: str
+
+
+@dataclass
+class RsyncPreview:
+    available: bool
+    command: List[str]
+    changed_lines: List[str] = field(default_factory=list)
+    error: Optional[str] = None
+    returncode: Optional[int] = None
+
+
+@dataclass
+class Config:
+    config_home: Path
+    config_path: Path
+    profiles_dir: Path
+    data: Dict[str, Any]
+    parser_name: Optional[str]
+
+    @classmethod
+    def load(cls) -> "Config":
+        config_home = Path(os.environ.get("WSYNC_CONFIG_HOME", "~/.config/wsync")).expanduser()
+        config_path = config_home / "config.toml"
+        profiles_dir = config_home / "profiles"
+        data: Dict[str, Any] = {}
+        parser_name = detect_toml_parser_name()
+
+        if config_path.exists():
+            data = load_toml_file(config_path)
+
+        return cls(
+            config_home=config_home,
+            config_path=config_path,
+            profiles_dir=profiles_dir,
+            data=data,
+            parser_name=parser_name,
+        )
+
+    def machines(self) -> Dict[str, Any]:
+        return self.data.get("machines", {})
+
+    def machine(self, hostname: str) -> Dict[str, Any]:
+        return self.machines().get(hostname, {})
+
+    def peer_for(self, hostname: str) -> Optional[str]:
+        env_peer = os.environ.get("WSYNC_PEER")
+        if env_peer:
+            return env_peer
+        machine = self.machine(hostname)
+        peer = machine.get("peer")
+        return str(peer) if peer else None
+
+    def ssh_host_for(self, hostname: str) -> Optional[str]:
+        env_host = os.environ.get("WSYNC_SSH_HOST")
+        if env_host:
+            return env_host
+        machine = self.machine(hostname)
+        ssh_host = machine.get("ssh_host")
+        if ssh_host:
+            return str(ssh_host)
+        return self.peer_for(hostname)
+
+    def rsync_candidates(self) -> List[str]:
+        env = os.environ.get("WSYNC_RSYNC")
+        if env:
+            return [env]
+        defaults = self.data.get("defaults", {})
+        configured = defaults.get("rsync_candidates") or DEFAULT_RSYNC_CANDIDATES
+        return [str(item) for item in configured]
+
+    def common_excludes(self) -> List[str]:
+        defaults = self.data.get("defaults", {})
+        excludes = defaults.get("excludes", {})
+        common = excludes.get("common") or DEFAULT_COMMON_EXCLUDES
+        return [str(item) for item in common]
+
+    def preset_excludes(self, preset_names: Sequence[str]) -> List[str]:
+        presets = self.data.get("presets", {})
+        values: List[str] = []
+        for preset_name in preset_names:
+            preset = presets.get(preset_name, {})
+            values.extend(str(item) for item in preset.get("excludes", []))
+        return unique(values)
+
+    def load_profile(self, name: str) -> Target:
+        profile_path = self.profiles_dir / (name + ".toml")
+        if not profile_path.exists():
+            raise UserError("Unknown profile: {}".format(name))
+
+        profile_data = load_toml_file(profile_path)
+        roots_data = profile_data.get("roots")
+        if not isinstance(roots_data, list) or not roots_data:
+            raise UserError("Profile {} has no [[roots]] entries".format(name))
+
+        roots: List[RootSpec] = []
+        for item in roots_data:
+            if not isinstance(item, dict) or "path" not in item:
+                raise UserError("Profile {} contains an invalid root entry".format(name))
+            root_path = expand_path(str(item["path"]))
+            roots.append(
+                RootSpec(
+                    path=root_path,
+                    source="profile:{}".format(name),
+                    includes=[str(value) for value in item.get("includes", [])],
+                    excludes=[str(value) for value in item.get("excludes", [])],
+                    presets=[str(value) for value in item.get("presets", [])],
+                )
+            )
+
+        label = str(profile_data.get("name") or name)
+        return Target(kind="profile", label=label, roots=roots)
+
+    def has_profile(self, name: str) -> bool:
+        return (self.profiles_dir / (name + ".toml")).exists()
+
+
+def detect_toml_parser_name() -> Optional[str]:
+    try:
+        import tomllib  # type: ignore
+
+        return "tomllib"
+    except ImportError:
+        pass
+
+    vendor_dir = Path(__file__).resolve().parent / "_vendor"
+    if vendor_dir.exists():
+        sys.path.insert(0, str(vendor_dir))
+
+    try:
+        import tomli  # type: ignore
+
+        return "tomli"
+    except ImportError:
+        return None
+
+
+def load_toml_file(path: Path) -> Dict[str, Any]:
+    try:
+        import tomllib  # type: ignore
+
+        with path.open("rb") as handle:
+            return tomllib.load(handle)
+    except ImportError:
+        pass
+
+    vendor_dir = Path(__file__).resolve().parent / "_vendor"
+    if vendor_dir.exists():
+        sys.path.insert(0, str(vendor_dir))
+
+    try:
+        import tomli  # type: ignore
+    except ImportError:
+        raise UserError(
+            "Cannot parse TOML config at {}. Python 3.11+ provides tomllib, "
+            "or you can vendor tomli into .bin/_vendor/.".format(path)
+        )
+
+    with path.open("rb") as handle:
+        return tomli.load(handle)
+
+
+def parse_cli(argv: Sequence[str]) -> Command:
+    if not argv:
+        return Command(action="pull", target=None)
+
+    first = argv[0]
+    if first in ("-h", "--help", "help"):
+        print_help()
+        raise SystemExit(0)
+
+    if first == "doctor":
+        if len(argv) != 1:
+            raise UserError("Usage: wsync doctor")
+        return Command(action="doctor")
+
+    if first in ("pull", "push"):
+        if len(argv) > 2:
+            raise UserError("Usage: wsync {} [target]".format(first))
+        return Command(action=first, target=argv[1] if len(argv) == 2 else None)
+
+    if len(argv) != 1:
+        raise UserError("Usage: wsync [target] | wsync pull [target] | wsync push [target] | wsync doctor")
+
+    return Command(action="pull", target=first)
+
+
+def print_help() -> None:
+    print(
+        "Usage:\n"
+        "  wsync\n"
+        "  wsync <path-or-profile>\n"
+        "  wsync pull [target]\n"
+        "  wsync push [target]\n"
+        "  wsync doctor\n\n"
+        "Current behavior:\n"
+        "  - path/profile resolution\n"
+        "  - plan generation\n"
+        "  - doctor checks\n"
+        "  - apply phase not implemented yet\n"
+    )
+
+
+def expand_path(raw: str) -> Path:
+    return Path(raw).expanduser().resolve()
+
+
+def current_hostname() -> str:
+    return socket.gethostname().split(".", 1)[0]
+
+
+def run_command(
+    args: Sequence[str],
+    cwd: Optional[Path] = None,
+    check: bool = False,
+    timeout: Optional[int] = None,
+) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        list(args),
+        cwd=str(cwd) if cwd else None,
+        check=check,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def ssh_command(host: str, script: str, timeout: int = 8) -> subprocess.CompletedProcess:
+    return run_command(
+        [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            host,
+            "sh",
+            "-lc",
+            script,
+        ],
+        timeout=timeout,
+    )
+
+
+def unique(values: Sequence[str]) -> List[str]:
+    seen = set()
+    result: List[str] = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
+
+def workspace_anchor(path: Path) -> Path:
+    resolved = path.resolve()
+    return resolved.parent if resolved.is_file() else resolved
+
+
+def find_git_root(path: Path) -> Optional[Path]:
+    anchor = workspace_anchor(path)
+    result = run_command(["git", "-C", str(anchor), "rev-parse", "--show-toplevel"])
+    if result.returncode != 0:
+        return None
+    output = result.stdout.strip()
+    if not output:
+        return None
+    return Path(output).resolve()
+
+
+def resolve_target(config: Config, raw_target: Optional[str]) -> Target:
+    if raw_target is None:
+        base = workspace_anchor(Path.cwd())
+        git_root = find_git_root(base)
+        resolved = git_root or base
+        return Target(
+            kind="path",
+            label=str(resolved),
+            roots=[RootSpec(path=resolved, source="cwd")],
+        )
+
+    if looks_like_path(raw_target):
+        path = expand_path(raw_target)
+        if not path.exists():
+            raise UserError("Path does not exist: {}".format(raw_target))
+        base = workspace_anchor(path)
+        git_root = find_git_root(base)
+        resolved = git_root or base
+        source = "path:{}".format(raw_target)
+        return Target(kind="path", label=str(resolved), roots=[RootSpec(path=resolved, source=source)])
+
+    if config.has_profile(raw_target):
+        return config.load_profile(raw_target)
+
+    candidate = expand_path(raw_target)
+    if candidate.exists():
+        base = workspace_anchor(candidate)
+        git_root = find_git_root(base)
+        resolved = git_root or base
+        return Target(kind="path", label=str(resolved), roots=[RootSpec(path=resolved, source="path:{}".format(raw_target))])
+
+    raise UserError("Unknown target: {} (not a path and no matching profile)".format(raw_target))
+
+
+def looks_like_path(value: str) -> bool:
+    return value.startswith(("/", "~", "./", "../")) or "/" in value
+
+
+def state_root() -> Path:
+    return Path(os.environ.get("WSYNC_STATE_HOME", "~/.local/state/wsync")).expanduser()
+
+
+def create_run_dir() -> Tuple[str, Path, Path]:
+    root = state_root()
+    runs_dir = root / "runs"
+    logs_dir = root / "logs"
+    locks_dir = root / "locks"
+    for directory in (runs_dir, logs_dir, locks_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    run_id = "{}-{}".format(datetime.now().strftime("%Y%m%d-%H%M%S"), os.getpid())
+    run_dir = runs_dir / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    plan_path = run_dir / "plan.txt"
+    return run_id, run_dir, plan_path
+
+
+def resolve_rsync(config: Config) -> Tuple[Optional[str], Optional[str]]:
+    for candidate in config.rsync_candidates():
+        candidate_path = Path(candidate)
+        if candidate_path.exists() and os.access(str(candidate_path), os.X_OK):
+            version = first_line(run_command([str(candidate_path), "--version"]).stdout)
+            return str(candidate_path), version
+
+    which = shutil.which("rsync")
+    if which:
+        version = first_line(run_command([which, "--version"]).stdout)
+        return which, version
+
+    return None, None
+
+
+def first_line(text: str) -> Optional[str]:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[0] if lines else None
+
+
+def remote_path_spec(host: str, path: Path) -> str:
+    return "{}:{}".format(host, shlex.quote(str(path)))
+
+
+def portable_rsync_args(rsync_path: str) -> List[str]:
+    return [rsync_path, "-a", "-n", "-i", "-z", "--timeout=60", "-e", "ssh"]
+
+
+def limit_preview_lines(lines: Sequence[str], limit: int = MAX_PREVIEW_LINES) -> List[str]:
+    if len(lines) <= limit:
+        return list(lines)
+    return list(lines[:limit]) + ["... {} more line(s) omitted".format(len(lines) - limit)]
+
+
+def tracked_paths_local(repo_root: Path) -> Tuple[Set[str], Optional[str]]:
+    result = run_command(["git", "-C", str(repo_root), "ls-files", "-z"])
+    if result.returncode != 0:
+        return set(), first_line(result.stderr) or "git ls-files failed"
+    return {path for path in result.stdout.split("\0") if path}, None
+
+
+def untracked_paths_local(repo_root: Path) -> Tuple[List[str], Optional[str]]:
+    result = run_command(["git", "-C", str(repo_root), "ls-files", "--others", "--exclude-standard", "-z"])
+    if result.returncode != 0:
+        return [], first_line(result.stderr) or "git ls-files --others failed"
+    return sorted(path for path in result.stdout.split("\0") if path), None
+
+
+def collect_subtree_paths(repo_root: Path, rel_path: str) -> Set[str]:
+    rel_path = rel_path.strip("/")
+    target = repo_root / rel_path if rel_path else repo_root
+    if not (target.exists() or target.is_symlink()):
+        return set()
+
+    results: Set[str] = set()
+    if target.is_symlink() or target.is_file():
+        if rel_path:
+            results.add(rel_path)
+        return results
+
+    for current_root, dirnames, filenames in os.walk(str(target), topdown=True, followlinks=False):
+        current = Path(current_root)
+        rel_root_path = current.relative_to(repo_root)
+        keep: List[str] = []
+        for dirname in dirnames:
+            candidate = current / dirname
+            rel = (rel_root_path / dirname).as_posix()
+            if candidate.is_symlink():
+                results.add(rel)
+            else:
+                keep.append(dirname)
+        dirnames[:] = keep
+        for filename in filenames:
+            results.add((rel_root_path / filename).as_posix())
+    return results
+
+
+def match_include_paths(repo_root: Path, pattern: str) -> Set[str]:
+    normalized = pattern.replace("\\", "/")
+    if normalized.endswith("/***"):
+        base = normalized[:-4].rstrip("/")
+        return collect_subtree_paths(repo_root, base)
+
+    if not any(char in normalized for char in "*?[]"):
+        return collect_subtree_paths(repo_root, normalized)
+
+    results: Set[str] = set()
+    for current_root, dirnames, filenames in os.walk(str(repo_root), topdown=True, followlinks=False):
+        current = Path(current_root)
+        rel_root = current.relative_to(repo_root)
+        keep: List[str] = []
+        for dirname in dirnames:
+            candidate = current / dirname
+            rel = (rel_root / dirname).as_posix()
+            if candidate.is_symlink():
+                if fnmatch.fnmatch(rel, normalized):
+                    results.add(rel)
+            else:
+                keep.append(dirname)
+        dirnames[:] = keep
+        for filename in filenames:
+            rel = (rel_root / filename).as_posix()
+            if fnmatch.fnmatch(rel, normalized):
+                results.add(rel)
+    return results
+
+
+def overlay_paths_local(repo_root: Path, include_patterns: Sequence[str]) -> Tuple[List[str], Optional[str]]:
+    tracked, tracked_error = tracked_paths_local(repo_root)
+    if tracked_error:
+        return [], tracked_error
+
+    untracked, untracked_error = untracked_paths_local(repo_root)
+    if untracked_error:
+        return [], untracked_error
+
+    results: Set[str] = {path for path in untracked if not path.startswith(".git/")}
+    for pattern in include_patterns:
+        results.update(path for path in match_include_paths(repo_root, pattern) if path not in tracked and not path.startswith(".git/"))
+    return sorted(results), None
+
+
+def overlay_paths_remote(ssh_host: str, repo_root: Path, include_patterns: Sequence[str]) -> Tuple[List[str], Optional[str]]:
+    args = ["/usr/bin/python3", "-c", REMOTE_OVERLAY_LIST_SCRIPT, str(repo_root), json.dumps(list(include_patterns))]
+    remote_command = " ".join(shlex.quote(arg) for arg in args)
+    result = ssh_command(ssh_host, remote_command, timeout=20)
+    if result.returncode != 0:
+        detail = first_line(result.stderr) or first_line(result.stdout) or "remote overlay collection failed"
+        return [], detail
+    return sorted(line.strip() for line in result.stdout.splitlines() if line.strip()), None
+
+
+def count_untracked_files(repo_root: Path) -> Tuple[int, Optional[str]]:
+    files, error = untracked_paths_local(repo_root)
+    return len(files), error
+
+
+def write_list_file(path: Path, items: Sequence[str]) -> None:
+    path.write_text("".join(item + "\n" for item in items))
+
+
+def run_rsync_preview(command: List[str]) -> RsyncPreview:
+    result = run_command(command, timeout=120)
+    stdout_lines = [line for line in result.stdout.splitlines() if line.strip()]
+    changed_lines = [line for line in stdout_lines if not line.startswith("sending ") and not line.startswith("sent ")]
+    if result.returncode in (0,):
+        return RsyncPreview(available=True, command=command, changed_lines=changed_lines, returncode=result.returncode)
+    detail = first_line(result.stderr) or first_line(result.stdout) or "rsync preview failed"
+    return RsyncPreview(
+        available=False,
+        command=command,
+        changed_lines=changed_lines,
+        error=detail,
+        returncode=result.returncode,
+    )
+
+
+def collect_git_snapshot_local(repo_root: Path) -> GitSnapshot:
+    branch_result = run_command(["git", "-C", str(repo_root), "symbolic-ref", "--quiet", "--short", "HEAD"])
+    detached = branch_result.returncode != 0
+    branch = branch_result.stdout.strip() if not detached else "DETACHED"
+
+    head_result = run_command(["git", "-C", str(repo_root), "rev-parse", "HEAD"])
+    if head_result.returncode != 0:
+        return GitSnapshot(
+            repo_path=repo_root,
+            branch=branch,
+            head="unknown",
+            upstream=None,
+            ahead=None,
+            behind=None,
+            tracked_dirty=0,
+            untracked=0,
+            detached=detached,
+            available=False,
+            error=first_line(head_result.stderr) or "git rev-parse HEAD failed",
+        )
+
+    upstream_result = run_command(
+        ["git", "-C", str(repo_root), "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
+    )
+    upstream = upstream_result.stdout.strip() if upstream_result.returncode == 0 else None
+
+    status_result = run_command(["git", "-C", str(repo_root), "status", "--porcelain"])
+    tracked_dirty = 0
+    untracked = 0
+    for line in status_result.stdout.splitlines():
+        if not line.strip():
+            continue
+        if line.startswith("?? "):
+            untracked += 1
+        else:
+            tracked_dirty += 1
+
+    ahead = None
+    behind = None
+    if upstream:
+        counts_result = run_command(["git", "-C", str(repo_root), "rev-list", "--left-right", "--count", "HEAD...@{upstream}"])
+        if counts_result.returncode == 0:
+            parts = counts_result.stdout.strip().replace("\t", " ").split()
+            if len(parts) >= 2:
+                ahead = safe_int(parts[0])
+                behind = safe_int(parts[1])
+
+    return GitSnapshot(
+        repo_path=repo_root,
+        branch=branch,
+        head=head_result.stdout.strip(),
+        upstream=upstream,
+        ahead=ahead,
+        behind=behind,
+        tracked_dirty=tracked_dirty,
+        untracked=untracked,
+        detached=detached,
+    )
+
+
+def collect_git_snapshot_remote(ssh_host: str, repo_root: Path) -> GitSnapshot:
+    repo_q = shlex.quote(str(repo_root))
+    script = "\n".join(
+        [
+            "repo={}".format(repo_q),
+            "if ! git -C \"$repo\" rev-parse --is-inside-work-tree >/dev/null 2>&1; then",
+            "  echo '__WSYNC_ERROR__=not-a-repo'",
+            "  exit 12",
+            "fi",
+            "branch=$(git -C \"$repo\" symbolic-ref --quiet --short HEAD 2>/dev/null || printf 'DETACHED')",
+            "head=$(git -C \"$repo\" rev-parse HEAD 2>/dev/null || printf '')",
+            "upstream=$(git -C \"$repo\" rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null || printf '')",
+            "tracked_dirty=$(git -C \"$repo\" status --porcelain 2>/dev/null | awk 'NF && $1 != \"??\" { c++ } END { print c + 0 }')",
+            "untracked=$(git -C \"$repo\" status --porcelain 2>/dev/null | awk '$1 == \"??\" { c++ } END { print c + 0 }')",
+            "ahead=''",
+            "behind=''",
+            "if [ -n \"$upstream\" ]; then",
+            "  counts=$(git -C \"$repo\" rev-list --left-right --count HEAD...@{upstream} 2>/dev/null || printf '')",
+            "  if [ -n \"$counts\" ]; then",
+            "    ahead=$(printf '%s' \"$counts\" | awk '{print $1}')",
+            "    behind=$(printf '%s' \"$counts\" | awk '{print $2}')",
+            "  fi",
+            "fi",
+            "printf 'branch=%s\n' \"$branch\"",
+            "printf 'head=%s\n' \"$head\"",
+            "printf 'upstream=%s\n' \"$upstream\"",
+            "printf 'tracked_dirty=%s\n' \"$tracked_dirty\"",
+            "printf 'untracked=%s\n' \"$untracked\"",
+            "printf 'ahead=%s\n' \"$ahead\"",
+            "printf 'behind=%s\n' \"$behind\"",
+        ]
+    )
+
+    result = ssh_command(ssh_host, script)
+    if result.returncode != 0:
+        return GitSnapshot(
+            repo_path=repo_root,
+            branch="unknown",
+            head="unknown",
+            upstream=None,
+            ahead=None,
+            behind=None,
+            tracked_dirty=0,
+            untracked=0,
+            detached=False,
+            available=False,
+            error=first_line(result.stderr) or first_line(result.stdout) or "ssh remote git snapshot failed",
+        )
+
+    values: Dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+
+    branch = values.get("branch", "unknown")
+    return GitSnapshot(
+        repo_path=repo_root,
+        branch=branch,
+        head=values.get("head", "unknown"),
+        upstream=values.get("upstream") or None,
+        ahead=safe_int_or_none(values.get("ahead")),
+        behind=safe_int_or_none(values.get("behind")),
+        tracked_dirty=safe_int(values.get("tracked_dirty", "0")),
+        untracked=safe_int(values.get("untracked", "0")),
+        detached=(branch == "DETACHED"),
+        available=True,
+    )
+
+
+def safe_int(value: str) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def safe_int_or_none(value: Optional[str]) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def classify_worktree(local: GitSnapshot, peer: Optional[GitSnapshot]) -> Tuple[str, bool]:
+    reasons: List[str] = []
+    applyable = False
+
+    if not peer or not peer.available:
+        reasons.append("peer worktree inspection unavailable")
+        return "; ".join(reasons), False
+
+    if local.detached or peer.detached:
+        reasons.append("detached HEAD present")
+        return "; ".join(reasons), False
+
+    if local.tracked_dirty or local.untracked:
+        reasons.append("local worktree is dirty")
+    if peer.tracked_dirty or peer.untracked:
+        reasons.append("peer worktree is dirty")
+
+    if reasons:
+        return "; ".join(reasons), False
+
+    if local.branch != peer.branch:
+        reasons.append("different branches checked out (local={}, peer={})".format(local.branch, peer.branch))
+        return "; ".join(reasons), True
+
+    if local.head == peer.head:
+        reasons.append("same branch and same commit")
+        return "; ".join(reasons), False
+
+    reasons.append("same branch but different commits")
+    applyable = True
+    return "; ".join(reasons), applyable
+
+
+def format_snapshot(prefix: str, snapshot: Optional[GitSnapshot]) -> List[str]:
+    if snapshot is None:
+        return ["- {}: unavailable".format(prefix)]
+    if not snapshot.available:
+        detail = snapshot.error or "unknown error"
+        return ["- {}: unavailable ({})".format(prefix, detail)]
+
+    lines = [
+        "- {} branch: {}".format(prefix, snapshot.branch),
+        "- {} head: {}".format(prefix, snapshot.head),
+        "- {} upstream: {}".format(prefix, snapshot.upstream or "none"),
+        "- {} ahead/behind: {}/{}".format(
+            prefix,
+            "?" if snapshot.ahead is None else snapshot.ahead,
+            "?" if snapshot.behind is None else snapshot.behind,
+        ),
+        "- {} dirty tracked files: {}".format(prefix, snapshot.tracked_dirty),
+        "- {} untracked files: {}".format(prefix, snapshot.untracked),
+    ]
+    return lines
+
+
+def scan_nested_git_roots(root: Path) -> Tuple[List[Path], bool]:
+    nested: List[Path] = []
+    visited = 0
+    truncated = False
+
+    for current_root, dirnames, _filenames in os.walk(str(root), topdown=True, followlinks=False):
+        visited += 1
+        if visited > MAX_SCAN_DIRS:
+            truncated = True
+            break
+
+        current = Path(current_root)
+        filtered_dirnames = []
+        for dirname in dirnames:
+            candidate = current / dirname
+            if candidate.is_symlink():
+                continue
+            if dirname == ".git":
+                nested.append(current.resolve())
+                filtered_dirnames = []
+                break
+            filtered_dirnames.append(dirname)
+        dirnames[:] = filtered_dirnames
+
+    nested = [path for path in unique([str(path) for path in nested])]
+    return [Path(path) for path in nested if path != root], truncated
+
+
+def merge_excludes(config: Config, root: RootSpec) -> List[str]:
+    merged = []
+    merged.extend(config.common_excludes())
+    merged.extend(config.preset_excludes(root.presets))
+    merged.extend(root.excludes)
+    return unique(merged)
+
+
+def plain_dir_preview(
+    action: str,
+    root_path: Path,
+    ssh_host: Optional[str],
+    rsync_path: Optional[str],
+    excludes: Sequence[str],
+    nested_git_roots: Sequence[Path],
+) -> RsyncPreview:
+    if not ssh_host:
+        return RsyncPreview(available=False, command=[], error="peer host is unconfigured")
+    if not rsync_path:
+        return RsyncPreview(available=False, command=[], error="rsync is unavailable locally")
+
+    command = portable_rsync_args(rsync_path)
+    for pattern in excludes:
+        command.append("--exclude={}".format(pattern))
+    for nested in nested_git_roots:
+        try:
+            rel = nested.relative_to(root_path).as_posix().rstrip("/") + "/"
+            command.append("--exclude=/{}".format(rel))
+        except ValueError:
+            continue
+
+    source = remote_path_spec(ssh_host, root_path) if action == "pull" else str(root_path) + "/"
+    dest = str(root_path) + "/" if action == "pull" else remote_path_spec(ssh_host, root_path)
+    command.extend([source, dest])
+    return run_rsync_preview(command)
+
+
+def repo_overlay_preview(
+    action: str,
+    root: RootSpec,
+    repo_root: Path,
+    ssh_host: Optional[str],
+    rsync_path: Optional[str],
+    work_dir: Path,
+) -> Tuple[List[str], Optional[str], Optional[RsyncPreview]]:
+    if action == "pull":
+        if not ssh_host:
+            return [], "peer host is unconfigured", None
+        overlay_paths, overlay_error = overlay_paths_remote(ssh_host, repo_root, root.includes)
+    else:
+        overlay_paths, overlay_error = overlay_paths_local(repo_root, root.includes)
+
+    if overlay_error:
+        return [], overlay_error, None
+    if not overlay_paths:
+        return [], None, None
+    if not ssh_host:
+        return overlay_paths, "peer host is unconfigured", None
+    if not rsync_path:
+        return overlay_paths, "rsync is unavailable locally", None
+
+    files_from_path = work_dir / ("repo-overlay-{}-files.txt".format(repo_root.name))
+    write_list_file(files_from_path, overlay_paths)
+
+    command = portable_rsync_args(rsync_path)
+    command.append("--files-from={}".format(files_from_path))
+    source = remote_path_spec(ssh_host, repo_root) if action == "pull" else str(repo_root) + "/"
+    dest = str(repo_root) + "/" if action == "pull" else remote_path_spec(ssh_host, repo_root)
+    command.extend([source, dest])
+    return overlay_paths, None, run_rsync_preview(command)
+
+
+def build_plan(action: str, target: Target, config: Config, ssh_host: Optional[str], plan_path: Path, run_id: str) -> Plan:
+    plan = Plan(run_id=run_id, action=action, target_label=target.label, plan_path=plan_path)
+    work_dir = plan_path.parent
+    rsync_path, rsync_version = resolve_rsync(config)
+
+    for root in target.roots:
+        if not root.path.exists():
+            plan.chunks.append(
+                PlanChunk(
+                    chunk_type="missing-path",
+                    path=root.path,
+                    direction=action,
+                    summary="Skip missing path",
+                    lines=["- source: {}".format(root.source), "- reason: path does not exist locally"],
+                    applyable=False,
+                    status="skipped",
+                )
+            )
+            continue
+
+        repo_root = find_git_root(root.path)
+        if repo_root:
+            plan.chunks.extend(build_git_chunks(action, root, repo_root, config, ssh_host, rsync_path, rsync_version, work_dir))
+            continue
+
+        if root.path.is_file():
+            plan.chunks.append(
+                PlanChunk(
+                    chunk_type="unsupported-path",
+                    path=root.path,
+                    direction=action,
+                    summary="Skip file target outside a Git repo",
+                    lines=[
+                        "- source: {}".format(root.source),
+                        "- reason: plain file targets are not supported; use a directory, profile, or repo path",
+                    ],
+                    applyable=False,
+                    status="skipped",
+                )
+            )
+            continue
+
+        plan.chunks.extend(build_plain_chunks(action, root, config, ssh_host, rsync_path, rsync_version, work_dir))
+
+    for index, chunk in enumerate(plan.chunks, start=1):
+        chunk.chunk_id = "chunk-{:04d}".format(index)
+
+    return plan
+
+
+def build_git_chunks(
+    action: str,
+    root: RootSpec,
+    repo_root: Path,
+    config: Config,
+    ssh_host: Optional[str],
+    rsync_path: Optional[str],
+    rsync_version: Optional[str],
+    work_dir: Path,
+) -> List[PlanChunk]:
+    excludes = merge_excludes(config, root)
+    untracked_count, untracked_error = count_untracked_files(repo_root)
+    overlay_paths, overlay_error, overlay_preview = repo_overlay_preview(
+        action, root, repo_root, ssh_host, rsync_path, work_dir
+    )
+    local_snapshot = collect_git_snapshot_local(repo_root)
+    peer_snapshot = collect_git_snapshot_remote(ssh_host, repo_root) if ssh_host else None
+    classification, worktree_applyable = classify_worktree(local_snapshot, peer_snapshot)
+
+    peer_label = ssh_host or "unconfigured"
+    overlay_lines = [
+        "- source: {}".format(root.source),
+        "- candidate untracked files: {}".format(untracked_count),
+        "- overlay candidate paths from source side: {}".format(len(overlay_paths)),
+        "- explicit includes: {}".format(", ".join(root.includes) if root.includes else "none"),
+        "- merged excludes: {}".format(", ".join(excludes) if excludes else "none"),
+        "- symlink policy: copy symlinks as symlinks, do not follow targets",
+    ]
+    if rsync_version:
+        overlay_lines.append("- rsync: {}{}".format(rsync_path or "rsync", " ({})".format(rsync_version)))
+    if untracked_error:
+        overlay_lines.append("- local note: {}".format(untracked_error))
+    if overlay_error:
+        overlay_lines.append("- preview status: unavailable ({})".format(overlay_error))
+    elif overlay_preview is None:
+        overlay_lines.append("- preview status: no candidate overlay paths")
+    elif overlay_preview.available:
+        overlay_lines.append("- preview status: available")
+        overlay_lines.append("- rsync dry-run changed items: {}".format(len(overlay_preview.changed_lines)))
+        overlay_lines.append("- rsync command: {}".format(" ".join(shlex.quote(arg) for arg in overlay_preview.command)))
+        preview_lines = limit_preview_lines(overlay_preview.changed_lines)
+        if preview_lines:
+            overlay_lines.append("- rsync preview:")
+            overlay_lines.extend("  {}".format(line) for line in preview_lines)
+        else:
+            overlay_lines.append("- rsync preview: no changes")
+    else:
+        overlay_lines.append("- preview status: unavailable ({})".format(overlay_preview.error or "rsync preview failed"))
+        overlay_lines.append("- rsync command: {}".format(" ".join(shlex.quote(arg) for arg in overlay_preview.command)))
+
+    chunks = [
+        PlanChunk(
+            chunk_type="git-sync",
+            path=repo_root,
+            direction=action,
+            summary="Sync Git refs and objects both ways without touching either worktree",
+            lines=[
+                "- source: {}".format(root.source),
+                "- peer host: {}".format(peer_label),
+                "- peer repo path: {}".format(repo_root),
+                "- planned local action: git fetch peer repo refs over ssh",
+                "- planned remote action: ssh to peer and fetch refs from current repo",
+                "- note: fetch/apply phase is not implemented in this skeleton",
+            ],
+            applyable=False,
+        ),
+        PlanChunk(
+            chunk_type="repo-overlay",
+            path=repo_root,
+            direction=action,
+            summary="Dry-run local-only repo overlay sync without touching tracked files",
+            lines=overlay_lines,
+            applyable=False,
+        ),
+        PlanChunk(
+            chunk_type="worktree-review",
+            path=repo_root,
+            direction=action,
+            summary="Inspect local vs peer worktree state before any current-machine worktree action",
+            lines=(
+                ["- classification: {}".format(classification)]
+                + format_snapshot("local", local_snapshot)
+                + format_snapshot("peer", peer_snapshot)
+                + [
+                    "- automated actions in v1: skip, show guidance, safe fast-forward, safe branch switch",
+                    "- manual only in v1: merge, rebase, stash/pop, reset, peer worktree changes",
+                    "- note: guided apply flow is not implemented in this skeleton",
+                ]
+            ),
+            applyable=worktree_applyable,
+        ),
+    ]
+    return chunks
+
+
+def build_plain_chunks(
+    action: str,
+    root: RootSpec,
+    config: Config,
+    ssh_host: Optional[str],
+    rsync_path: Optional[str],
+    rsync_version: Optional[str],
+    work_dir: Path,
+) -> List[PlanChunk]:
+    excludes = merge_excludes(config, root)
+    nested_git_roots, truncated = scan_nested_git_roots(root.path)
+    preview = plain_dir_preview(action, root.path, ssh_host, rsync_path, excludes, nested_git_roots)
+
+    lines = [
+        "- source: {}".format(root.source),
+        "- peer host: {}".format(ssh_host or "unconfigured"),
+        "- merged excludes: {}".format(", ".join(excludes) if excludes else "none"),
+        "- nested git roots excluded from plain-dir chunk: {}".format(len(nested_git_roots)),
+        "- symlink policy: do not follow symlink targets",
+    ]
+    if rsync_version:
+        lines.append("- rsync: {}{}".format(rsync_path or "rsync", " ({})".format(rsync_version)))
+    if preview.available:
+        lines.append("- preview status: available")
+        lines.append("- rsync dry-run changed items: {}".format(len(preview.changed_lines)))
+        lines.append("- rsync command: {}".format(" ".join(shlex.quote(arg) for arg in preview.command)))
+        preview_lines = limit_preview_lines(preview.changed_lines)
+        if preview_lines:
+            lines.append("- rsync preview:")
+            lines.extend("  {}".format(line) for line in preview_lines)
+        else:
+            lines.append("- rsync preview: no changes")
+    else:
+        lines.append("- preview status: unavailable ({})".format(preview.error or "unknown reason"))
+    if truncated:
+        lines.append("- warning: directory scan truncated after {} directories".format(MAX_SCAN_DIRS))
+    if nested_git_roots:
+        for nested in nested_git_roots[:20]:
+            lines.append("- excluded nested repo: {}".format(nested))
+        if len(nested_git_roots) > 20:
+            lines.append("- ... {} more nested repos omitted from summary".format(len(nested_git_roots) - 20))
+
+    chunks: List[PlanChunk] = [
+        PlanChunk(
+            chunk_type="plain-dir",
+            path=root.path,
+            direction=action,
+            summary="Dry-run plain directory sync with nested Git repos handled separately",
+            lines=lines,
+            applyable=False,
+        )
+    ]
+
+    for nested_repo in nested_git_roots:
+        nested_root = RootSpec(path=nested_repo, source="nested-git:{}".format(root.path))
+        chunks.extend(build_git_chunks(action, nested_root, nested_repo, config, ssh_host, rsync_path, rsync_version, work_dir))
+
+    return chunks
+
+
+def write_plan(plan: Plan) -> None:
+    plan.plan_path.write_text(plan.render())
+
+
+def print_plan_summary(plan: Plan) -> None:
+    type_counts: Dict[str, int] = {}
+    for chunk in plan.chunks:
+        type_counts[chunk.chunk_type] = type_counts.get(chunk.chunk_type, 0) + 1
+
+    print("Planned {} chunks for {}".format(len(plan.chunks), plan.target_label))
+    for chunk_type in sorted(type_counts):
+        print("  - {:<15} {}".format(chunk_type, type_counts[chunk_type]))
+    print("Plan file: {}".format(plan.plan_path))
+    print("Apply phase is not implemented yet; this run stops after planning.")
+
+
+def run_doctor(config: Config) -> int:
+    checks: List[DoctorCheck] = []
+    hostname = current_hostname()
+    peer = config.peer_for(hostname)
+    ssh_host = config.ssh_host_for(hostname)
+
+    checks.append(DoctorCheck("hostname", "ok", hostname))
+    checks.append(
+        DoctorCheck(
+            "config path",
+            "ok" if config.config_path.exists() else "warn",
+            str(config.config_path) + ("" if config.config_path.exists() else " (missing, optional for path targets)"),
+        )
+    )
+    checks.append(
+        DoctorCheck(
+            "profiles dir",
+            "ok" if config.profiles_dir.exists() else "warn",
+            str(config.profiles_dir) + ("" if config.profiles_dir.exists() else " (missing, optional until profiles are used)"),
+        )
+    )
+    checks.append(
+        DoctorCheck(
+            "python",
+            "ok" if Path("/usr/bin/python3").exists() else "error",
+            "/usr/bin/python3" if Path("/usr/bin/python3").exists() else "missing",
+        )
+    )
+    checks.append(
+        DoctorCheck(
+            "toml parser",
+            "ok" if config.parser_name else "warn",
+            config.parser_name or "missing (use Python 3.11+ tomllib or vendor tomli into .bin/_vendor/)",
+        )
+    )
+
+    for tool in ("git", "ssh"):
+        path = shutil.which(tool)
+        checks.append(DoctorCheck(tool, "ok" if path else "error", path or "not found in PATH"))
+
+    rsync_path, rsync_version = resolve_rsync(config)
+    checks.append(
+        DoctorCheck(
+            "rsync",
+            "ok" if rsync_path else "error",
+            "{}{}".format(rsync_path or "not found", " ({})".format(rsync_version) if rsync_version else ""),
+        )
+    )
+
+    checks.append(DoctorCheck("peer", "ok" if peer else "warn", peer or "unconfigured"))
+    checks.append(DoctorCheck("ssh host", "ok" if ssh_host else "warn", ssh_host or "unconfigured"))
+
+    state = state_root()
+    try:
+        (state / "runs").mkdir(parents=True, exist_ok=True)
+        (state / "logs").mkdir(parents=True, exist_ok=True)
+        (state / "locks").mkdir(parents=True, exist_ok=True)
+        checks.append(DoctorCheck("state dirs", "ok", str(state)))
+    except OSError as error:
+        checks.append(DoctorCheck("state dirs", "error", str(error)))
+
+    if ssh_host:
+        host_result = ssh_command(ssh_host, "hostname -s", timeout=6)
+        if host_result.returncode == 0:
+            checks.append(DoctorCheck("ssh connectivity", "ok", first_line(host_result.stdout) or "connected"))
+
+            remote_python = ssh_command(ssh_host, "test -x /usr/bin/python3 && /usr/bin/python3 --version", timeout=6)
+            checks.append(
+                DoctorCheck(
+                    "remote python",
+                    "ok" if remote_python.returncode == 0 else "warn",
+                    first_line(remote_python.stdout) or first_line(remote_python.stderr) or "unavailable",
+                )
+            )
+
+            remote_git = ssh_command(ssh_host, "command -v git >/dev/null && git --version", timeout=6)
+            checks.append(
+                DoctorCheck(
+                    "remote git",
+                    "ok" if remote_git.returncode == 0 else "warn",
+                    first_line(remote_git.stdout) or first_line(remote_git.stderr) or "unavailable",
+                )
+            )
+
+            remote_rsync = ssh_command(
+                ssh_host,
+                "command -v rsync >/dev/null && rsync --version 2>/dev/null | head -n 1",
+                timeout=6,
+            )
+            checks.append(
+                DoctorCheck(
+                    "remote rsync",
+                    "ok" if remote_rsync.returncode == 0 else "warn",
+                    first_line(remote_rsync.stdout) or first_line(remote_rsync.stderr) or "unavailable",
+                )
+            )
+        else:
+            checks.append(
+                DoctorCheck(
+                    "ssh connectivity",
+                    "warn",
+                    first_line(host_result.stderr) or first_line(host_result.stdout) or "connection failed",
+                )
+            )
+
+    width = max(len(check.name) for check in checks)
+    exit_code = 0
+    for check in checks:
+        if check.status == "error":
+            exit_code = 1
+        print("{:<{width}}  {:<5}  {}".format(check.name, check.status.upper(), check.detail, width=width))
+
+    return exit_code
+
+
+def main(argv: Sequence[str]) -> int:
+    command = parse_cli(argv)
+    config = Config.load()
+
+    if command.action == "doctor":
+        return run_doctor(config)
+
+    hostname = current_hostname()
+    ssh_host = config.ssh_host_for(hostname)
+    target = resolve_target(config, command.target)
+
+    run_id, _run_dir, plan_path = create_run_dir()
+    plan = build_plan(command.action, target, config, ssh_host, plan_path, run_id)
+    write_plan(plan)
+    print_plan_summary(plan)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main(sys.argv[1:]))
+    except UserError as error:
+        print("wsync: {}".format(error), file=sys.stderr)
+        raise SystemExit(2)
+    except KeyboardInterrupt:
+        print("wsync: interrupted", file=sys.stderr)
+        raise SystemExit(130)
