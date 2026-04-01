@@ -6,6 +6,9 @@ LAUNCH_AGENTS := $(addprefix ~/Library/, $(wildcard LaunchAgents/*))
 
 DOTFILES_ROOT = $(HOME)/dotfiles
 BREW = $(DOTFILES_ROOT)/.bin/brew
+NODE_VERSION = 24.14.0
+NPM_VERSION = 11.11.0
+NPM_MIN_RELEASE_AGE = 30
 
 # execute all commands per task in one shell, allowing for environment variables to be set for
 # all following commands.
@@ -292,8 +295,13 @@ python:
 node: \
 	$(HOMEBREW_PREFIX)/nodenv
 	cd $(HOMEBREW_PREFIX)
-	TMPDIR=/tmp NODENV_ROOT=$(HOMEBREW_PREFIX)/nodenv sudo -Eubinary nodenv install 20.8.1
-	TMPDIR=/tmp NODENV_ROOT=$(HOMEBREW_PREFIX)/nodenv sudo -Eubinary nodenv global 20.8.1
+	$(BREW) upgrade node-build
+	TMPDIR=/tmp NODENV_ROOT=$(HOMEBREW_PREFIX)/nodenv sudo -Eubinary nodenv install $(NODE_VERSION)
+	TMPDIR=/tmp NODENV_ROOT=$(HOMEBREW_PREFIX)/nodenv sudo -Eubinary nodenv global $(NODE_VERSION)
+	# npm 11.10+ is required for min-release-age support.
+	HOME=$(HOMEBREW_PREFIX) TMPDIR=/tmp NODENV_ROOT=$(HOMEBREW_PREFIX)/nodenv sudo -Eubinary nodenv exec npm install -g npm@$(NPM_VERSION)
+	HOME=$(HOMEBREW_PREFIX) NODENV_ROOT=$(HOMEBREW_PREFIX)/nodenv sudo -Eubinary nodenv exec npm config set min-release-age $(NPM_MIN_RELEASE_AGE) --location=global
+	HOME=$(HOMEBREW_PREFIX) NODENV_ROOT=$(HOMEBREW_PREFIX)/nodenv nodenv exec npm config ls -l | grep -E '^(min-release-age|before) ='
 
 $(HOMEBREW_PREFIX)/nodenv:
 	$(BREW) install nodenv node-build
