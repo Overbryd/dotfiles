@@ -88,7 +88,11 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 More custom tools are in `~/.bin`.
 
-# Elixir
+# Global coding preferences
+
+## Elixir / Phoenix / Ecto / `.ex` / `.exs`
+
+When editing Elixir code `*.ex`, `*.exs` files, obey these style rules:
 
 - Use `mix format` after an implementation phase.
 - Use `mix compile --warnings-as-errors` after an implementation phase.
@@ -99,6 +103,7 @@ More custom tools are in `~/.bin`.
 - Use standard library calls, avoid creating wrapper functions.
 - Use Ecto embedded schemas to build structs that need to be casted from external data (e.g. JSON, NDJSON, YAML, params, etc.)
 - When control flow is needed, prefer pattern matching `with`, `case` and `cond` over `if`.
+- Prefer pipelines and direct expressions over temporary variables.
 - Prefer function overloading with pattern matching over control flow to simplify function bodies.
 - Inline variable definitions into pipe chains whenever possible; avoid intermediate assignments.
 - Prefer pipe chains with `then/2` or `tap/2` at the end over assigning intermediate variables for return tuples.
@@ -106,6 +111,40 @@ More custom tools are in `~/.bin`.
 - Reserve runtime checks for user input at the outmost layer (Context, Controller or LiveView).
 - Use `alias` at the top of the module instead of fully qualified module names.
 - When processing data we control ourselves, prefer to "let it crash" semantics over defensive error handling.
+
+- Prefer pattern matching over type-name-based helper proliferation.
+  - Good: `reload/1`, `children_of/1`, `fields/1`, `expected_summary/1`
+  - Bad: `reload_task/1`, `reload_subtask/1`, `expected_task_summary/1`, etc., unless the split is truly necessary.
+- Use multiple function heads with pattern matching instead of branching on struct/module/type when practical.
+- Let structs drive dispatch through pattern matching.
+- Keep function names semantic, not type-encoded, where pattern matching already expresses the type.
+- Avoid unnecessary ignored bindings like `_ = some_function()`.
+  - If the value is not used, just call the function.
+- Prefer small, generic private helpers with pattern-matched clauses.
+- In recursive/tree-style validation code, prefer one public entrypoint and recursive private pattern-matched helpers.
+- Prefer clean, idiomatic Elixir over defensive boilerplate.
+- Reduce helper sprawl; consolidate similar logic into one function with multiple clauses when readable.
+- Keep tests idiomatic too; test helpers should follow the same standards.
+- Prefer exact assertions with helpful failure messages.
+
+## Elixir code style bias
+
+Strong preferences:
+
+- Pattern matching is preferred over:
+  - type switches
+  - `case` on struct type
+  - families of `<verb>_<type>_<noun>` helpers
+- If a helper can be expressed as one function with several clauses, do that.
+- Avoid `_ = ...` unless there is a very specific reason.
+- Prefer one public API and recursive private clauses for tree traversal/validation.
+- Use generic helper names when the clauses already make the types obvious.
+
+## Applies to
+
+- `**/*.ex`
+- `**/*.exs`
+- Elixir, Phoenix, Ecto projects
 
 # Terraform
 
