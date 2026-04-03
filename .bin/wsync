@@ -1,21 +1,17 @@
 #!/usr/bin/python3
 
-"""wsync: plan-first workspace sync skeleton.
+"""wsync: plan-first workspace sync tool.
 
 Current status:
-- Python CLI skeleton
+- Python CLI for pull/push/doctor
 - path/profile target resolution
 - Git root detection
 - mixed-tree planning with nested Git repos excluded from plain-dir chunks
 - plan file generation in ~/.local/state/wsync/runs/<run-id>/plan.txt
 - doctor command for local/remote prerequisites
 - portable rsync dry-run previews for plain-dir and repo-overlay chunks
+- confirm-to-apply flow with editable plan
 - vendored tomli fallback for Python 3.9
-
-Not implemented yet:
-- actual rsync apply
-- actual Git fetch/apply orchestration
-- edited-plan apply flow
 """
 
 import fnmatch
@@ -197,6 +193,7 @@ class PlanChunk:
     applyable: bool = False
     status: str = "planned"
     chunk_id: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     def render(self) -> str:
         applyable_value = "yes" if self.applyable else "no"
@@ -231,7 +228,7 @@ class Plan:
             "target = {}".format(self.target_label),
             "generated_at = {}".format(datetime.now().isoformat(timespec="seconds")),
             "chunk_count = {}".format(len(self.chunks)),
-            "plan_only = true",
+            "confirm_to_apply = true",
         ]
         chunks_text = "\n\n\n".join(chunk.render() for chunk in self.chunks)
         if not chunks_text:
@@ -442,7 +439,7 @@ def print_help() -> None:
         "  - path/profile resolution\n"
         "  - plan generation\n"
         "  - doctor checks\n"
-        "  - apply phase not implemented yet\n"
+        "  - editable plan + confirm-to-apply\n"
     )
 
 
@@ -595,8 +592,63 @@ def remote_path_spec(host: str, path: Path) -> str:
     return "{}:{}".format(host, shlex.quote(str(path)))
 
 
-def portable_rsync_args(rsync_path: str) -> List[str]:
-    return [rsync_path, "-a", "-n", "-i", "-z", "--timeout=60", "-e", "ssh"]
+def portable_rsync_args(rsync_path: str, dry_run: bool = True) -> List[str]:
+    args = [rsync_path, "-a"]
+    if dry_run:
+        args.append("-n")
+    args.extend(["-i", "-z", "--timeout=60", "-e", "ssh"])
+    return args
+
+
+def build_plain_dir_rsync_command(
+    action: str,
+    root_path: Path,
+    ssh_host: Optional[str],
+    rsync_path: Optional[str],
+    excludes: Sequence[str],
+    nested_git_roots: Sequence[Path],
+    dry_run: bool,
+) -> Tuple[Optional[List[str]], Optional[str]]:
+    if not ssh_host:
+        return None, "peer host is unconfigured"
+    if not rsync_path:
+        return None, "rsync is unavailable locally"
+
+    command = portable_rsync_args(rsync_path, dry_run=dry_run)
+    for pattern in excludes:
+        command.append("--exclude={}".format(pattern))
+    for nested in nested_git_roots:
+        try:
+            rel = nested.relative_to(root_path).as_posix().rstrip("/") + "/"
+            command.append("--exclude=/{}".format(rel))
+        except ValueError:
+            continue
+
+    source = remote_path_spec(ssh_host, root_path) if action == "pull" else str(root_path) + "/"
+    dest = str(root_path) + "/" if action == "pull" else remote_path_spec(ssh_host, root_path)
+    command.extend([source, dest])
+    return command, None
+
+
+def build_repo_overlay_rsync_command(
+    action: str,
+    repo_root: Path,
+    ssh_host: Optional[str],
+    rsync_path: Optional[str],
+    files_from_path: Path,
+    dry_run: bool,
+) -> Tuple[Optional[List[str]], Optional[str]]:
+    if not ssh_host:
+        return None, "peer host is unconfigured"
+    if not rsync_path:
+        return None, "rsync is unavailable locally"
+
+    command = portable_rsync_args(rsync_path, dry_run=dry_run)
+    command.append("--files-from={}".format(files_from_path))
+    source = remote_path_spec(ssh_host, repo_root) if action == "pull" else str(repo_root) + "/"
+    dest = str(repo_root) + "/" if action == "pull" else remote_path_spec(ssh_host, repo_root)
+    command.extend([source, dest])
+    return command, None
 
 
 def limit_preview_lines(lines: Sequence[str], limit: int = MAX_PREVIEW_LINES) -> List[str]:
@@ -974,24 +1026,17 @@ def plain_dir_preview(
     excludes: Sequence[str],
     nested_git_roots: Sequence[Path],
 ) -> RsyncPreview:
-    if not ssh_host:
-        return RsyncPreview(available=False, command=[], error="peer host is unconfigured")
-    if not rsync_path:
-        return RsyncPreview(available=False, command=[], error="rsync is unavailable locally")
-
-    command = portable_rsync_args(rsync_path)
-    for pattern in excludes:
-        command.append("--exclude={}".format(pattern))
-    for nested in nested_git_roots:
-        try:
-            rel = nested.relative_to(root_path).as_posix().rstrip("/") + "/"
-            command.append("--exclude=/{}".format(rel))
-        except ValueError:
-            continue
-
-    source = remote_path_spec(ssh_host, root_path) if action == "pull" else str(root_path) + "/"
-    dest = str(root_path) + "/" if action == "pull" else remote_path_spec(ssh_host, root_path)
-    command.extend([source, dest])
+    command, error = build_plain_dir_rsync_command(
+        action,
+        root_path,
+        ssh_host,
+        rsync_path,
+        excludes,
+        nested_git_roots,
+        dry_run=True,
+    )
+    if error or command is None:
+        return RsyncPreview(available=False, command=[], error=error or "plain-dir preview command build failed")
     return run_rsync_preview(command)
 
 
@@ -1002,32 +1047,44 @@ def repo_overlay_preview(
     ssh_host: Optional[str],
     rsync_path: Optional[str],
     work_dir: Path,
-) -> Tuple[List[str], Optional[str], Optional[RsyncPreview]]:
+) -> Tuple[List[str], Optional[str], Optional[RsyncPreview], Optional[List[str]]]:
     if action == "pull":
         if not ssh_host:
-            return [], "peer host is unconfigured", None
+            return [], "peer host is unconfigured", None, None
         overlay_paths, overlay_error = overlay_paths_remote(ssh_host, repo_root, root.includes)
     else:
         overlay_paths, overlay_error = overlay_paths_local(repo_root, root.includes)
 
     if overlay_error:
-        return [], overlay_error, None
+        return [], overlay_error, None, None
     if not overlay_paths:
-        return [], None, None
-    if not ssh_host:
-        return overlay_paths, "peer host is unconfigured", None
-    if not rsync_path:
-        return overlay_paths, "rsync is unavailable locally", None
+        return [], None, None, None
 
     files_from_path = work_dir / ("repo-overlay-{}-files.txt".format(repo_root.name))
     write_list_file(files_from_path, overlay_paths)
 
-    command = portable_rsync_args(rsync_path)
-    command.append("--files-from={}".format(files_from_path))
-    source = remote_path_spec(ssh_host, repo_root) if action == "pull" else str(repo_root) + "/"
-    dest = str(repo_root) + "/" if action == "pull" else remote_path_spec(ssh_host, repo_root)
-    command.extend([source, dest])
-    return overlay_paths, None, run_rsync_preview(command)
+    preview_command, preview_error = build_repo_overlay_rsync_command(
+        action,
+        repo_root,
+        ssh_host,
+        rsync_path,
+        files_from_path,
+        dry_run=True,
+    )
+    apply_command, apply_error = build_repo_overlay_rsync_command(
+        action,
+        repo_root,
+        ssh_host,
+        rsync_path,
+        files_from_path,
+        dry_run=False,
+    )
+    if preview_error or preview_command is None:
+        return overlay_paths, preview_error, None, apply_command
+    if apply_error:
+        return overlay_paths, apply_error, run_rsync_preview(preview_command), None
+
+    return overlay_paths, None, run_rsync_preview(preview_command), apply_command
 
 
 def build_plan(action: str, target: Target, config: Config, ssh_host: Optional[str], plan_path: Path, run_id: str) -> Plan:
@@ -1092,7 +1149,7 @@ def build_git_chunks(
 ) -> List[PlanChunk]:
     excludes = merge_excludes(config, root)
     untracked_count, untracked_error = count_untracked_files(repo_root)
-    overlay_paths, overlay_error, overlay_preview = repo_overlay_preview(
+    overlay_paths, overlay_error, overlay_preview, overlay_apply_command = repo_overlay_preview(
         action, root, repo_root, ssh_host, rsync_path, work_dir
     )
     local_snapshot = collect_git_snapshot_local(repo_root)
@@ -1142,17 +1199,18 @@ def build_git_chunks(
                 "- peer repo path: {}".format(repo_root),
                 "- planned local action: git fetch peer repo refs over ssh",
                 "- planned remote action: ssh to peer and fetch refs from current repo",
-                "- note: fetch/apply phase is not implemented in this skeleton",
             ],
-            applyable=False,
+            applyable=bool(ssh_host),
+            metadata={"ssh_host": ssh_host or ""},
         ),
         PlanChunk(
             chunk_type="repo-overlay",
             path=repo_root,
             direction=action,
-            summary="Dry-run local-only repo overlay sync without touching tracked files",
+            summary="Sync local-only repo overlay paths without touching tracked files",
             lines=overlay_lines,
-            applyable=False,
+            applyable=bool(overlay_apply_command),
+            metadata={"apply_command": overlay_apply_command or [], "overlay_paths": overlay_paths},
         ),
         PlanChunk(
             chunk_type="worktree-review",
@@ -1166,7 +1224,6 @@ def build_git_chunks(
                 + [
                     "- automated actions in v1: skip, show guidance, safe fast-forward, safe branch switch",
                     "- manual only in v1: merge, rebase, stash/pop, reset, peer worktree changes",
-                    "- note: guided apply flow is not implemented in this skeleton",
                 ]
             ),
             applyable=worktree_applyable,
@@ -1187,6 +1244,15 @@ def build_plain_chunks(
     excludes = merge_excludes(config, root)
     nested_git_roots, truncated = scan_nested_git_roots(root.path)
     preview = plain_dir_preview(action, root.path, ssh_host, rsync_path, excludes, nested_git_roots)
+    apply_command, _apply_error = build_plain_dir_rsync_command(
+        action,
+        root.path,
+        ssh_host,
+        rsync_path,
+        excludes,
+        nested_git_roots,
+        dry_run=False,
+    )
 
     lines = [
         "- source: {}".format(root.source),
@@ -1222,9 +1288,10 @@ def build_plain_chunks(
             chunk_type="plain-dir",
             path=root.path,
             direction=action,
-            summary="Dry-run plain directory sync with nested Git repos handled separately",
+            summary="Sync plain directory with nested Git repos handled separately",
             lines=lines,
-            applyable=False,
+            applyable=bool(apply_command),
+            metadata={"apply_command": apply_command or []},
         )
     ]
 
@@ -1241,14 +1308,230 @@ def write_plan(plan: Plan) -> None:
 
 def print_plan_summary(plan: Plan) -> None:
     type_counts: Dict[str, int] = {}
+    applyable_count = 0
     for chunk in plan.chunks:
         type_counts[chunk.chunk_type] = type_counts.get(chunk.chunk_type, 0) + 1
+        if chunk.applyable:
+            applyable_count += 1
 
     print("Planned {} chunks for {}".format(len(plan.chunks), plan.target_label))
     for chunk_type in sorted(type_counts):
         print("  - {:<15} {}".format(chunk_type, type_counts[chunk_type]))
+    print("Apply-capable chunks: {}".format(applyable_count))
     print("Plan file: {}".format(plan.plan_path))
-    print("Apply phase is not implemented yet; this run stops after planning.")
+
+
+def extract_plan_chunk_ids(plan_text: str) -> List[str]:
+    ids = []
+    for line in plan_text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("=== ") or not stripped.endswith(" ==="):
+            continue
+        chunk_id = stripped[4:-4].strip()
+        if chunk_id.startswith("chunk-"):
+            ids.append(chunk_id)
+    return unique(ids)
+
+
+def selected_chunk_ids_from_plan(plan: Plan) -> List[str]:
+    plan_text = plan.plan_path.read_text()
+    selected = extract_plan_chunk_ids(plan_text)
+    known_ids = {chunk.chunk_id for chunk in plan.chunks}
+    return [chunk_id for chunk_id in selected if chunk_id in known_ids]
+
+
+def maybe_edit_plan(plan: Plan) -> None:
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return
+
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+    if not editor:
+        return
+
+    response = input("Open plan in {} before apply? [y/N]: ".format(editor)).strip().lower()
+    if response not in ("y", "yes"):
+        return
+
+    command = shlex.split(editor) + [str(plan.plan_path)]
+    result = subprocess.run(command)
+    if result.returncode != 0:
+        raise UserError("Editor exited with status {}".format(result.returncode))
+
+
+def confirm_apply(selected_chunk_count: int, plan_path: Path) -> bool:
+    if selected_chunk_count <= 0:
+        print("No chunks selected in {} after plan edits. Nothing to apply.".format(plan_path))
+        return False
+
+    if os.environ.get("WSYNC_YES") == "yes":
+        return True
+
+    if not sys.stdin.isatty():
+        raise UserError(
+            "Refusing to apply without interactive confirmation. "
+            "Set WSYNC_YES=yes to apply non-interactively."
+        )
+
+    response = input("Apply {} selected chunk(s)? Type 'yes' to continue: ".format(selected_chunk_count)).strip()
+    return response == "yes"
+
+
+def append_log(log_path: Path, text: str) -> None:
+    with log_path.open("a") as handle:
+        handle.write(text)
+        if not text.endswith("\n"):
+            handle.write("\n")
+
+
+def format_command(args: Sequence[str]) -> str:
+    return " ".join(shlex.quote(arg) for arg in args)
+
+
+def log_command_result(log_path: Path, label: str, command: Sequence[str], result: subprocess.CompletedProcess) -> None:
+    append_log(log_path, "[{time}] {label}".format(time=datetime.now().isoformat(timespec="seconds"), label=label))
+    append_log(log_path, "$ {}".format(format_command(command)))
+    if result.stdout.strip():
+        append_log(log_path, result.stdout.rstrip())
+    if result.stderr.strip():
+        append_log(log_path, result.stderr.rstrip())
+    append_log(log_path, "exit={}\n".format(result.returncode))
+
+
+def apply_rsync_chunk(chunk: PlanChunk, log_path: Path) -> Tuple[bool, str]:
+    apply_command = [str(value) for value in chunk.metadata.get("apply_command", [])]
+    if not apply_command:
+        return False, "missing apply command"
+
+    result = run_command(apply_command, timeout=600)
+    log_command_result(log_path, "apply {} {}".format(chunk.chunk_type, chunk.path), apply_command, result)
+    if result.returncode != 0:
+        detail = first_line(result.stderr) or first_line(result.stdout) or "rsync apply failed"
+        return False, detail
+
+    itemized_lines = [line for line in result.stdout.splitlines() if line.strip() and not line.startswith("sending ") and not line.startswith("sent ")]
+    return True, "applied ({} changed line(s))".format(len(itemized_lines))
+
+
+def apply_git_sync_chunk(chunk: PlanChunk, ssh_host: Optional[str], log_path: Path) -> Tuple[bool, str]:
+    host = ssh_host or chunk.metadata.get("ssh_host") or ""
+    if not host:
+        return False, "peer host is unconfigured"
+
+    repo_root = chunk.path
+    refspec = "+refs/heads/*:refs/remotes/wsync-peer/*"
+
+    local_fetch_command = [
+        "git",
+        "-C",
+        str(repo_root),
+        "fetch",
+        "--prune",
+        "--tags",
+        remote_path_spec(host, repo_root),
+        refspec,
+    ]
+    local_fetch_result = run_command(local_fetch_command, timeout=180)
+    log_command_result(log_path, "apply git-sync local fetch {}".format(repo_root), local_fetch_command, local_fetch_result)
+    if local_fetch_result.returncode != 0:
+        detail = first_line(local_fetch_result.stderr) or first_line(local_fetch_result.stdout) or "local git fetch failed"
+        return False, detail
+
+    source_spec = remote_path_spec(current_hostname(), repo_root)
+    script = "\n".join(
+        [
+            "repo={}".format(shlex.quote(str(repo_root))),
+            "source={}".format(shlex.quote(source_spec)),
+            "git -C \"$repo\" fetch --prune --tags \"$source\" '{}'".format(refspec),
+        ]
+    )
+    remote_result = ssh_command(host, script, timeout=180)
+    append_log(log_path, "[{time}] apply git-sync remote fetch {repo}".format(time=datetime.now().isoformat(timespec="seconds"), repo=repo_root))
+    append_log(log_path, "$ ssh {} sh -lc {}".format(shlex.quote(host), shlex.quote(script)))
+    if remote_result.stdout.strip():
+        append_log(log_path, remote_result.stdout.rstrip())
+    if remote_result.stderr.strip():
+        append_log(log_path, remote_result.stderr.rstrip())
+    append_log(log_path, "exit={}\n".format(remote_result.returncode))
+    if remote_result.returncode != 0:
+        detail = first_line(remote_result.stderr) or first_line(remote_result.stdout) or "remote git fetch failed"
+        return False, detail
+
+    return True, "applied (local+remote fetch complete)"
+
+
+def apply_selected_chunks(plan: Plan, ssh_host: Optional[str], selected_chunk_ids: Sequence[str], log_path: Path) -> int:
+    selected = set(selected_chunk_ids)
+    applied = 0
+    skipped = 0
+    failed = 0
+
+    for chunk in plan.chunks:
+        if chunk.chunk_id not in selected:
+            chunk.status = "skipped"
+            skipped += 1
+            continue
+
+        if not chunk.applyable:
+            chunk.status = "skipped"
+            detail = "not applyable in current environment"
+            skipped += 1
+            chunk.lines.append("- apply result: {}".format(detail))
+            print("[SKIPPED] {} {} -- {}".format(chunk.chunk_id, chunk.summary, detail))
+            continue
+
+        if chunk.chunk_type == "git-sync":
+            ok, detail = apply_git_sync_chunk(chunk, ssh_host, log_path)
+        elif chunk.chunk_type in ("plain-dir", "repo-overlay"):
+            ok, detail = apply_rsync_chunk(chunk, log_path)
+        elif chunk.chunk_type == "worktree-review":
+            chunk.status = "skipped"
+            detail = "guidance-only (no automatic worktree action applied)"
+            skipped += 1
+            chunk.lines.append("- apply result: {}".format(detail))
+            print("[SKIPPED] {} {} -- {}".format(chunk.chunk_id, chunk.summary, detail))
+            continue
+        else:
+            chunk.status = "skipped"
+            detail = "non-actionable chunk type"
+            skipped += 1
+            chunk.lines.append("- apply result: {}".format(detail))
+            print("[SKIPPED] {} {} -- {}".format(chunk.chunk_id, chunk.summary, detail))
+            continue
+
+        chunk.lines.append("- apply result: {}".format(detail))
+        if ok:
+            chunk.status = "applied"
+            applied += 1
+            print("[APPLIED] {} {}".format(chunk.chunk_id, chunk.summary))
+        else:
+            chunk.status = "failed"
+            failed += 1
+            print("[FAILED ] {} {} -- {}".format(chunk.chunk_id, chunk.summary, detail))
+
+    print("Apply summary: applied={}, skipped={}, failed={}".format(applied, skipped, failed))
+    return 1 if failed else 0
+
+
+def acquire_apply_lock() -> Path:
+    lock_path = state_root() / "locks" / "apply.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        raise UserError("Another wsync apply run appears to be active ({})".format(lock_path))
+
+    with os.fdopen(fd, "w") as handle:
+        handle.write("pid={}\n".format(os.getpid()))
+        handle.write("created_at={}\n".format(datetime.now().isoformat(timespec="seconds")))
+
+    return lock_path
+
+
+def release_apply_lock(lock_path: Path) -> None:
+    try:
+        lock_path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def run_doctor(config: Config) -> int:
@@ -1381,7 +1664,33 @@ def main(argv: Sequence[str]) -> int:
     plan = build_plan(command.action, target, config, ssh_host, plan_path, run_id)
     write_plan(plan)
     print_plan_summary(plan)
-    return 0
+
+    print("You can edit the plan file and remove chunk blocks before apply.")
+    maybe_edit_plan(plan)
+
+    selected_chunk_ids = selected_chunk_ids_from_plan(plan)
+    selected_set = set(selected_chunk_ids)
+    selected_applyable_count = sum(1 for chunk in plan.chunks if chunk.chunk_id in selected_set and chunk.applyable)
+
+    print("Selected chunks after plan review: {}".format(len(selected_chunk_ids)))
+    print("Selected apply-capable chunks: {}".format(selected_applyable_count))
+    if selected_applyable_count > 0 and not confirm_apply(selected_applyable_count, plan.plan_path):
+        print("Apply canceled. Plan kept at {}".format(plan.plan_path))
+        return 0
+
+    lock_path = acquire_apply_lock()
+    log_path = state_root() / "logs" / (run_id + ".log")
+    append_log(log_path, "run_id={} action={} target={}".format(run_id, plan.action, plan.target_label))
+
+    try:
+        exit_code = apply_selected_chunks(plan, ssh_host, selected_chunk_ids, log_path)
+    finally:
+        release_apply_lock(lock_path)
+
+    write_plan(plan)
+    print("Updated plan with apply statuses: {}".format(plan.plan_path))
+    print("Run log: {}".format(log_path))
+    return exit_code
 
 
 if __name__ == "__main__":
