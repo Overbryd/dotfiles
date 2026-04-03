@@ -2,6 +2,7 @@ EXCLUDED_DOTFILES := .git .git-crypt .gitattributes .gitignore .gitmodules .ssh
 DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 DOT_CONFIG_FILES := $(addprefix ~/, $(wildcard .config/*))
 PI_EXTENSIONS := $(addprefix ~/.pi/agent/extensions/, $(notdir $(wildcard pi/extensions/*.ts)))
+PI_AGENT_FILES := ~/.pi/agent/AGENTS.md
 LAUNCH_AGENTS := $(addprefix ~/Library/, $(wildcard LaunchAgents/*))
 
 DOTFILES_ROOT = $(HOME)/dotfiles
@@ -522,7 +523,8 @@ dotfiles: \
 	~/dotfiles \
 	$(DOTFILES) \
 	$(DOT_CONFIG_FILES) \
-	$(PI_EXTENSIONS)
+	$(PI_EXTENSIONS) \
+	$(PI_AGENT_FILES)
 
 ~/dotfiles:
 	ln -s /usr/local/dotfiles ~/dotfiles
@@ -541,6 +543,17 @@ dotfiles: \
 
 ~/.config:
 	mkdir ~/.config
+
+~/.pi/agent/AGENTS.md: .agent/AGENTS.md | ~/.pi/agent
+	ln -svf $(DOTFILES_ROOT)/$< $@
+
+~/.pi/agent:
+	if [ -L $$HOME/.pi ]; then
+		echo "ERROR: ~/.pi must be a real directory (pi stores sessions/settings there), not a symlink."
+		echo "Fix: rm ~/.pi && mkdir -p ~/.pi/agent"
+		exit 1
+	fi
+	mkdir -p $@
 
 ~/.pi/agent/extensions/%: pi/extensions/% | ~/.pi/agent/extensions
 	ln -svf $(DOTFILES_ROOT)/$< $@
