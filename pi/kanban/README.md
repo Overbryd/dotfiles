@@ -328,6 +328,8 @@ Fallback policy:
 - `PI_KANBAN_REALITY_CHECK_TICKET_INTERVAL` — completed-ticket threshold for requiring a `reality-check` run, default `3`
 - `PI_BACKBONE_SLEEP_SECONDS` — supervisor sleep between healthchecks
 - `PI_BACKBONE_NUDGE_COOLDOWN_SECONDS` — minimum seconds between manager nudges
+- `PI_BACKBONE_MANAGER_COMPACT_IDLE_COUNT` — minimum consecutive idle healthchecks before backbone may send `/compact`, default `8`
+- `PI_BACKBONE_MANAGER_COMPACT_COOLDOWN_SECONDS` — minimum seconds between backbone-issued manager `/compact` commands, default `1800`
 - `PI_BACKBONE_MAX_RUNTIME_SECONDS` — maximum supervisor runtime before clean exit
 - `PI_BACKBONE_HEALTH_LINES` — manager pane lines captured for healthchecks
 - `PI_BACKBONE_STUCK_SUSPICION_SECONDS` — sustained suspicion window before hard reset
@@ -399,7 +401,7 @@ If the manager appears idle, the backbone may send:
 
 - an earlier periodic healthcheck prompt when no managed worker pane remains active and the manager itself has gone idle
 - a periodic healthcheck prompt on the normal cooldown
-- `/compact`, followed by a periodic healthcheck prompt on repeated idleness
+- a less-frequent `/compact`, followed by a periodic healthcheck prompt only after extended repeated idleness and subject to a separate compact cooldown
 - a periodic healthcheck prompt that explicitly calls out when `reality-check` is due by elapsed time or by completed-ticket count
 
 When `2-planned/`, `3-in_progress/`, and `4-in_review/` are empty and no managed worker pane remains active, the backbone switches to a special file-watch idle mode instead of repeatedly nudging the manager. In that mode it waits for lane-file changes under `0-open/`, `1-to_refine/`, `2-planned/`, `3-in_progress/`, or `4-in_review/` before waking the manager again.

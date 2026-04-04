@@ -52,6 +52,8 @@ HEALTHCHECK_MANAGER_CMD="$(kanban_subcommand_path healthcheck-manager)"
 
 sleep_seconds="${PI_BACKBONE_SLEEP_SECONDS:-30}"
 nudge_cooldown_seconds="${PI_BACKBONE_NUDGE_COOLDOWN_SECONDS:-300}"
+manager_compact_idle_count="${PI_BACKBONE_MANAGER_COMPACT_IDLE_COUNT:-8}"
+manager_compact_cooldown_seconds="${PI_BACKBONE_MANAGER_COMPACT_COOLDOWN_SECONDS:-1800}"
 max_runtime_seconds="${PI_BACKBONE_MAX_RUNTIME_SECONDS:-28800}"
 base_healthcheck_prompt='Do your periodic healthcheck now. Re-read the current .kanban lanes including 0-open and 1-to_refine, inspect active worker panes with the kanban helper commands, do one bounded reconciliation pass, and adjust priorities as needed. Keep work moving from 0-open to 1-to_refine to 2-planned to 3-in_progress to 4-in_review to 5-done. If a reality-check findings ticket or one of its cleanup follow-ons exists, prioritize that cleanup stream ahead of unrelated new work. If no higher-priority implementation or review should run first and 1-to_refine is non-empty, start a real refinement pass instead of idling. Report the result in the pane output, and if that pass reveals a single clear follow-on task launch it before stopping. Only wait when there is no clear immediate next action.'
 export KANBAN_LOG_FILE="$LOG_DIR/backbone.log"
@@ -71,7 +73,7 @@ write_backbone_env "$session_id" "$window_id" "$backbone_pane_id"
 set_window_visuals "$window_id"
 ensure_single_backbone_pane "$backbone_pane_id"
 write_backbone_env "$session_id" "$window_id" "$backbone_pane_id"
-log "backbone start: pid=$$ session=$session_id window=$window_id pane=$backbone_pane_id sleep_seconds=$sleep_seconds nudge_cooldown_seconds=$nudge_cooldown_seconds max_runtime_seconds=$max_runtime_seconds deadline_at=$deadline_at"
+log "backbone start: pid=$$ session=$session_id window=$window_id pane=$backbone_pane_id sleep_seconds=$sleep_seconds nudge_cooldown_seconds=$nudge_cooldown_seconds manager_compact_idle_count=$manager_compact_idle_count manager_compact_cooldown_seconds=$manager_compact_cooldown_seconds max_runtime_seconds=$max_runtime_seconds deadline_at=$deadline_at"
 
 start_manager() {
   "$START_ROLE_CMD" manager >/dev/null
@@ -131,7 +133,7 @@ maybe_nudge_manager_early_on_all_idle() {
 }
 
 nudge_manager() {
-  local idle_count seconds_remaining
+  local idle_count seconds_remaining compact_seconds_remaining
   idle_count="$1"
 
   if ! manager_nudge_due "$nudge_cooldown_seconds"; then
@@ -140,9 +142,16 @@ nudge_manager() {
     return 1
   fi
 
-  if (( idle_count >= 2 )); then
-    "$SEND_ROLE_CMD" manager '/compact' >/dev/null 2>&1 || true
-    sleep 2
+  if (( idle_count >= manager_compact_idle_count )); then
+    if manager_compact_due "$manager_compact_cooldown_seconds"; then
+      "$SEND_ROLE_CMD" manager '/compact' >/dev/null 2>&1 || true
+      record_manager_compact
+      log "manager healthcheck: idle (count=$idle_count); sent /compact before periodic healthcheck"
+      sleep 2
+    else
+      compact_seconds_remaining="$(seconds_until_manager_compact "$manager_compact_cooldown_seconds")"
+      log "manager healthcheck: idle (count=$idle_count); skipped /compact (${compact_seconds_remaining}s compact cooldown remaining)"
+    fi
   fi
 
   if send_manager_healthcheck_prompt periodic-healthcheck; then

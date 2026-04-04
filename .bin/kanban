@@ -945,6 +945,64 @@ record_manager_nudge() {
   } > "$state_file"
 }
 
+manager_compact_state_file() {
+  printf '%s/manager-compact.env\n' "$STATE_DIR"
+}
+
+manager_compact_due() {
+  local cooldown_seconds state_file now last_compacted_at
+  cooldown_seconds="$1"
+  state_file="$(manager_compact_state_file)"
+  now="$(date +%s)"
+  last_compacted_at=""
+
+  if [[ -f "$state_file" ]]; then
+    # shellcheck disable=SC1090
+    source "$state_file"
+  fi
+
+  if [[ -z "${last_compacted_at:-}" ]]; then
+    return 0
+  fi
+
+  (( now - last_compacted_at >= cooldown_seconds ))
+}
+
+seconds_until_manager_compact() {
+  local cooldown_seconds state_file now last_compacted_at elapsed remaining
+  cooldown_seconds="$1"
+  state_file="$(manager_compact_state_file)"
+  now="$(date +%s)"
+  last_compacted_at=""
+
+  if [[ -f "$state_file" ]]; then
+    # shellcheck disable=SC1090
+    source "$state_file"
+  fi
+
+  if [[ -z "${last_compacted_at:-}" ]]; then
+    printf '0\n'
+    return 0
+  fi
+
+  elapsed=$(( now - last_compacted_at ))
+  remaining=$(( cooldown_seconds - elapsed ))
+
+  if (( remaining < 0 )); then
+    remaining=0
+  fi
+
+  printf '%s\n' "$remaining"
+}
+
+record_manager_compact() {
+  local state_file now
+  state_file="$(manager_compact_state_file)"
+  now="$(date +%s)"
+
+  printf 'last_compacted_at=%q\n' "$now" > "$state_file"
+}
+
 window_role_activity_snapshot_file() {
   printf '%s/window-role-activity.tsv\n' "$STATE_DIR"
 }
