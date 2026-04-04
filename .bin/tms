@@ -1,0 +1,366 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TMUX_BIN=${TMUX_BIN:-tmux}
+TMUX_SOCKET=${TMUX_SOCKET:-}
+FZF_BIN=${FZF_BIN:-fzf}
+PROMPT=${TMS_PROMPT:-"open> "}
+FZF_OPTS=${TMS_FZF_OPTS:-"--height 100% --reverse"}
+WORK_ROOT=${TMS_WORK_ROOT:-$HOME/Work}
+PROJECTS_ROOT=${TMS_PROJECTS_ROOT:-$HOME/Projects}
+STATE_DIR=${TMS_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/tms}
+RECENTS_FILE=${TMS_RECENTS_FILE:-$STATE_DIR/recent.tsv}
+TAB=$'\t'
+
+usage() {
+  cat <<'EOF'
+Usage: tms [--list] [directory]
+
+Without arguments, pick a directory with fzf and open/switch a tmux session there.
+With a directory argument, open/switch directly.
+With --list, print candidates and exit.
+EOF
+}
+
+tmux_cmd() {
+  if [[ -n "$TMUX_SOCKET" ]]; then
+    "$TMUX_BIN" -L "$TMUX_SOCKET" "$@"
+  else
+    "$TMUX_BIN" "$@"
+  fi
+}
+
+exec_tmux() {
+  if [[ -n "$TMUX_SOCKET" ]]; then
+    exec "$TMUX_BIN" -L "$TMUX_SOCKET" "$@"
+  else
+    exec "$TMUX_BIN" "$@"
+  fi
+}
+
+canonical_path() {
+  (
+    cd "$1" 2>/dev/null
+    pwd -P
+  )
+}
+
+if [[ -d "$WORK_ROOT" ]]; then
+  WORK_ROOT=$(canonical_path "$WORK_ROOT")
+fi
+
+if [[ -d "$PROJECTS_ROOT" ]]; then
+  PROJECTS_ROOT=$(canonical_path "$PROJECTS_ROOT")
+fi
+
+pretty_path() {
+  local path=$1
+
+  case "$path" in
+    "$HOME")
+      printf '~\n'
+      ;;
+    "$HOME"/*)
+      printf '~/%s\n' "${path#$HOME/}"
+      ;;
+    *)
+      printf '%s\n' "$path"
+      ;;
+  esac
+}
+
+session_label_for_path() {
+  local path=$1
+  local base parent label
+
+  base=$(basename "$path")
+  parent=$(basename "$(dirname "$path")")
+
+  case "$path" in
+    "$PROJECTS_ROOT"/*/*)
+      label="$parent/$base"
+      ;;
+    *)
+      label="$base"
+      ;;
+  esac
+
+  printf '%s\n' "$label"
+}
+
+session_name_hint() {
+  local path=$1
+  local raw
+
+  raw=$(session_label_for_path "$path")
+  raw=${raw// /-}
+  raw=${raw//:/-}
+  raw=${raw//\//-}
+  raw=$(printf '%s' "$raw" | tr -cd '[:alnum:]_.-')
+
+  if [[ -z "$raw" ]]; then
+    raw=main
+  fi
+
+  printf '%s\n' "$raw"
+}
+
+find_session_for_path() {
+  local target=$1
+  local session root
+
+  tmux_cmd list-sessions -F '#{session_name}' 2>/dev/null | while IFS= read -r session; do
+    root=$(tmux_cmd show-options -qv -t "$session" @tms-root 2>/dev/null || true)
+
+    if [[ -z "$root" ]]; then
+      root=$(tmux_cmd display-message -p -t "$session:" '#{session_path}' 2>/dev/null || true)
+    fi
+
+    if [[ -z "$root" ]]; then
+      continue
+    fi
+
+    root=$(canonical_path "$root" 2>/dev/null || true)
+
+    if [[ "$root" == "$target" ]]; then
+      printf '%s\n' "$session"
+      break
+    fi
+  done
+}
+
+unique_session_name() {
+  local target=$1
+  local base name i
+
+  base=$(session_name_hint "$target")
+  name=$base
+  i=2
+
+  while tmux_cmd has-session -t "$name" 2>/dev/null; do
+    name="${base}-${i}"
+    i=$((i + 1))
+  done
+
+  printf '%s\n' "$name"
+}
+
+record_recent() {
+  local target=$1
+  local tmp
+
+  mkdir -p "$STATE_DIR"
+  tmp=$(mktemp "${TMPDIR:-/tmp}/tms-recent.XXXXXX")
+
+  {
+    printf '%s\t%s\n' "$(date +%s)" "$target"
+    if [[ -f "$RECENTS_FILE" ]]; then
+      awk -F '\t' -v path="$target" '$2 != path { print $0 }' "$RECENTS_FILE" | head -n 199
+    fi
+  } > "$tmp"
+
+  mv "$tmp" "$RECENTS_FILE"
+}
+
+emit_open_sessions() {
+  local activity session path label pretty
+
+  if ! tmux_cmd list-sessions >/dev/null 2>&1; then
+    return
+  fi
+
+  tmux_cmd list-sessions -F '#{session_activity}\t#{session_name}' \
+    | sort -t "$TAB" -k1,1nr \
+    | while IFS="$TAB" read -r activity session; do
+        path=$(tmux_cmd show-options -qv -t "$session" @tms-root 2>/dev/null || true)
+
+        if [[ -z "$path" ]]; then
+          path=$(tmux_cmd display-message -p -t "$session:" '#{session_path}' 2>/dev/null || true)
+        fi
+
+        [[ -n "$path" ]] || continue
+        path=$(canonical_path "$path" 2>/dev/null || true)
+        [[ -d "$path" ]] || continue
+
+        label=$(session_label_for_path "$path")
+        pretty=$(pretty_path "$path")
+
+        printf 'open\t%s\t[open]   %-24s %s\n' "$path" "$label" "$pretty"
+      done
+}
+
+emit_recent_paths() {
+  local path label pretty
+
+  [[ -f "$RECENTS_FILE" ]] || return
+
+  sort -t "$TAB" -k1,1nr "$RECENTS_FILE" | while IFS="$TAB" read -r _ path; do
+    [[ -n "$path" ]] || continue
+    path=$(canonical_path "$path" 2>/dev/null || true)
+    [[ -d "$path" ]] || continue
+
+    label=$(session_label_for_path "$path")
+    pretty=$(pretty_path "$path")
+    printf 'recent\t%s\t[recent] %-24s %s\n' "$path" "$label" "$pretty"
+  done
+}
+
+emit_work_paths() {
+  local path label pretty
+
+  [[ -d "$WORK_ROOT" ]] || return
+
+  find "$WORK_ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | LC_ALL=C sort | while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    path=$(canonical_path "$path" 2>/dev/null || true)
+    [[ -d "$path" ]] || continue
+
+    label=$(session_label_for_path "$path")
+    pretty=$(pretty_path "$path")
+    printf 'work\t%s\t[work]   %-24s %s\n' "$path" "$label" "$pretty"
+  done
+}
+
+emit_project_paths() {
+  local path label pretty
+
+  [[ -d "$PROJECTS_ROOT" ]] || return
+
+  find "$PROJECTS_ROOT" -mindepth 2 -maxdepth 2 -type d 2>/dev/null | LC_ALL=C sort | while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    path=$(canonical_path "$path" 2>/dev/null || true)
+    [[ -d "$path" ]] || continue
+
+    label=$(session_label_for_path "$path")
+    pretty=$(pretty_path "$path")
+    printf 'project\t%s\t[proj]   %-24s %s\n' "$path" "$label" "$pretty"
+  done
+}
+
+build_candidates() {
+  local raw seen out kind path display
+
+  raw=$(mktemp "${TMPDIR:-/tmp}/tms-raw.XXXXXX")
+  seen=$(mktemp "${TMPDIR:-/tmp}/tms-seen.XXXXXX")
+  out=$(mktemp "${TMPDIR:-/tmp}/tms-out.XXXXXX")
+
+  emit_open_sessions > "$raw"
+  emit_recent_paths >> "$raw"
+  emit_work_paths >> "$raw"
+  emit_project_paths >> "$raw"
+
+  : > "$seen"
+  : > "$out"
+
+  while IFS="$TAB" read -r kind path display; do
+    [[ -n "$path" ]] || continue
+    [[ -d "$path" ]] || continue
+
+    if grep -Fqx "$path" "$seen" 2>/dev/null; then
+      continue
+    fi
+
+    printf '%s\n' "$path" >> "$seen"
+    printf '%s\t%s\t%s\n' "$kind" "$path" "$display" >> "$out"
+  done < "$raw"
+
+  rm -f "$raw" "$seen"
+  printf '%s\n' "$out"
+}
+
+open_target() {
+  local target=$1
+  local session
+
+  target=$(canonical_path "$target")
+
+  if [[ ! -d "$target" ]]; then
+    printf 'tms: not a directory: %s\n' "$target" >&2
+    exit 1
+  fi
+
+  session=$(find_session_for_path "$target" || true)
+
+  if [[ -z "$session" ]]; then
+    session=$(unique_session_name "$target")
+    record_recent "$target"
+
+    if tmux_cmd list-sessions >/dev/null 2>&1; then
+      tmux_cmd new-session -d -s "$session" -c "$target"
+      tmux_cmd set-option -q -t "$session" @tms-root "$target"
+    else
+      exec_tmux new-session -s "$session" -c "$target"
+    fi
+  else
+    record_recent "$target"
+  fi
+
+  if [[ -n "${TMUX:-}" ]]; then
+    tmux_cmd switch-client -t "$session"
+  else
+    exec_tmux attach-session -t "$session"
+  fi
+}
+
+list_only=false
+selected_path=
+
+case "${1:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  --list)
+    list_only=true
+    shift
+    ;;
+  '')
+    ;;
+  *)
+    selected_path=$1
+    shift
+    ;;
+esac
+
+if [[ $# -gt 0 ]]; then
+  usage >&2
+  exit 1
+fi
+
+if [[ -n "$selected_path" ]]; then
+  open_target "$selected_path"
+fi
+
+candidates=$(build_candidates)
+trap 'rm -f "$candidates"' EXIT
+
+if [[ "$list_only" == true ]]; then
+  cat "$candidates"
+  exit 0
+fi
+
+if ! command -v "$FZF_BIN" >/dev/null 2>&1; then
+  printf 'tms: fzf is not installed\n' >&2
+  exit 1
+fi
+
+if [[ ! -s "$candidates" ]]; then
+  printf 'tms: no matching directories found\n' >&2
+  exit 1
+fi
+
+choice=$(
+  "$FZF_BIN" \
+    --prompt "$PROMPT" \
+    --delimiter '\t' \
+    --with-nth=3.. \
+    $FZF_OPTS < "$candidates"
+)
+
+if [[ -z "${choice:-}" ]]; then
+  exit 0
+fi
+
+selected_path=${choice#*$TAB}
+selected_path=${selected_path%%$TAB*}
+open_target "$selected_path"
