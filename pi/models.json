@@ -1,0 +1,23 @@
+{
+  "providers": {
+    "inceptionlabs": {
+      "baseUrl": "https://api.inceptionlabs.ai/v1",
+      "api": "openai-completions",
+      "apiKey": "INCEPTION_API_KEY",
+      "compat": {
+        "supportsStore": false,
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false,
+        "supportsUsageInStreaming": false,
+        "supportsStrictMode": false,
+        "maxTokensField": "max_tokens"
+      },
+      "models": [
+        {
+          "id": "mercury-2",
+          "name": "Mercury 2"
+        }
+      ]
+    }
+  }
+}

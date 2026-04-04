@@ -1,13 +1,14 @@
 EXCLUDED_DOTFILES := .git .git-crypt .gitattributes .gitignore .gitmodules .ssh
 DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 DOT_CONFIG_FILES := $(addprefix ~/, $(wildcard .config/*))
+PI_CONFIG_FILES := $(addprefix ~/.pi/agent/, $(notdir $(wildcard pi/*.json)))
 PI_EXTENSIONS := $(addprefix ~/.pi/agent/extensions/, $(notdir $(wildcard pi/extensions/*.ts)))
 PI_AGENT_FILES := ~/.pi/agent/AGENTS.md
 LAUNCH_AGENTS := $(addprefix ~/Library/, $(wildcard LaunchAgents/*))
 
 DOTFILES_ROOT = $(HOME)/dotfiles
 BREW = $(DOTFILES_ROOT)/.bin/brew
-NODE_VERSION = 24.14.0
+NODE_VERSION = 20.12.0
 NPM_VERSION = 11.11.0
 NPM_MIN_RELEASE_AGE = 30
 
@@ -523,6 +524,7 @@ dotfiles: \
 	~/dotfiles \
 	$(DOTFILES) \
 	$(DOT_CONFIG_FILES) \
+	$(PI_CONFIG_FILES) \
 	$(PI_EXTENSIONS) \
 	$(PI_AGENT_FILES)
 
@@ -545,6 +547,9 @@ dotfiles: \
 	mkdir ~/.config
 
 ~/.pi/agent/AGENTS.md: .agent/AGENTS.md | ~/.pi/agent
+	ln -svf $(DOTFILES_ROOT)/$< $@
+
+~/.pi/agent/models.json: pi/models.json | ~/.pi/agent
 	ln -svf $(DOTFILES_ROOT)/$< $@
 
 ~/.pi/agent:
