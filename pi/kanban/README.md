@@ -370,7 +370,7 @@ The healthcheck is deterministic. It relies on tmux history movement, manager pa
 
 If the manager appears idle, the backbone may send:
 
-- an earlier periodic healthcheck prompt when all managed non-backbone role panes in the project window have gone idle
+- an earlier periodic healthcheck prompt when no managed worker pane remains active and the manager itself has gone idle
 - a periodic healthcheck prompt on the normal cooldown
 - `/compact`, followed by a periodic healthcheck prompt on repeated idleness
 - a periodic healthcheck prompt that explicitly calls out when `reality-check` is due by elapsed time or by completed-ticket count

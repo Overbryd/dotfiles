@@ -926,6 +926,23 @@ capture_window_role_activity() {
   done < <(tmux list-panes -t "$window_id" -F $'#{pane_id}\t#{pane_dead}\t#{history_size}\t#{pane_title}')
 }
 
+capture_window_worker_role_activity() {
+  local pane_id history_size pane_title role
+
+  while IFS=$'\t' read -r pane_id history_size; do
+    pane_title="$(tmux display-message -p -t "$pane_id" '#{pane_title}')"
+    role="${pane_title#${PROJECT_NAME}:}"
+
+    if [[ "$role" != "manager" ]]; then
+      printf '%s\t%s\n' "$pane_id" "$history_size"
+    fi
+  done < <(capture_window_role_activity)
+}
+
+window_worker_role_count() {
+  capture_window_worker_role_activity | wc -l | tr -d ' '
+}
+
 window_role_panes_all_idle() {
   local snapshot_file current_file current_count previous_count pane_id history_size all_idle
   snapshot_file="$(window_role_activity_snapshot_file)"

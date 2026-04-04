@@ -103,6 +103,14 @@ send_manager_healthcheck_prompt() {
 }
 
 maybe_nudge_manager_early_on_all_idle() {
+  local worker_role_count
+  worker_role_count="$(window_worker_role_count)"
+
+  if [[ "$worker_role_count" != "0" ]]; then
+    set_window_role_idle_latch 0
+    return 1
+  fi
+
   if ! window_role_panes_all_idle; then
     set_window_role_idle_latch 0
     return 1
@@ -112,13 +120,13 @@ maybe_nudge_manager_early_on_all_idle() {
     return 1
   fi
 
-  if send_manager_healthcheck_prompt all-role-panes-idle; then
+  if send_manager_healthcheck_prompt all-worker-panes-idle; then
     set_window_role_idle_latch 1
-    log 'manager healthcheck: idle; all non-backbone panes are idle; nudged manager early'
+    log 'manager healthcheck: idle; no managed worker pane remains active and manager is idle; nudged manager early'
     return 0
   fi
 
-  log 'manager healthcheck: idle; all non-backbone panes are idle; early nudge failed because manager pane was unavailable'
+  log 'manager healthcheck: idle; no managed worker pane remains active and manager is idle; early nudge failed because manager pane was unavailable'
   return 1
 }
 
@@ -170,11 +178,11 @@ empty_queue_watch_snapshot() {
 }
 
 empty_queue_watch_applicable() {
-  local actionable_count active_non_backbone_count
+  local actionable_count worker_role_count
   actionable_count="$(find "$KANBAN_DIR/2-planned" "$KANBAN_DIR/3-in_progress" "$KANBAN_DIR/4-in_review" -maxdepth 1 -type f ! -name '.gitkeep' | wc -l | tr -d ' ')"
-  active_non_backbone_count="$(capture_window_role_activity | wc -l | tr -d ' ')"
+  worker_role_count="$(window_worker_role_count)"
 
-  [[ "$actionable_count" == "0" && "$active_non_backbone_count" -le 1 ]]
+  [[ "$actionable_count" == "0" && "$worker_role_count" == "0" ]]
 }
 
 maybe_wake_manager_for_due_reality_check() {
