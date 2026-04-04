@@ -11,7 +11,7 @@ Usage:
 Create or refresh a project-local .kanban/ skeleton.
 
 Defaults:
-  project-root  current git root, otherwise current working directory
+  project-root  current working directory
   plan-file     PLAN.md
   plans-dir     .plans
 
@@ -69,11 +69,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$project_root_input" ]]; then
-  if command -v git >/dev/null 2>&1; then
-    project_root_input="$(git rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "$PWD")"
-  else
-    project_root_input="$PWD"
-  fi
+  project_root_input="$PWD"
 fi
 
 project_root="$(absolute_dir_path "$project_root_input")"

@@ -11,6 +11,7 @@ These role files describe how agents should interact with the file-based kanban 
 - `implementer.md`
 - `reviewer.md`
 - `manager.md`
+- `reality-check.md`
 - `discussant.md`
 - `decider.md`
 - `recovery.md`

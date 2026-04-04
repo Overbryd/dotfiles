@@ -268,10 +268,10 @@ Role launches under `kanban start-role` use these defaults:
 
 Thinking policy:
 
-- `reviewer` and `refiner` always run at `xhigh`
+- `reviewer`, `refiner`, and `reality-check` always run at `xhigh`
 - `manager`, `planner`, and `recovery` default to `high`
 - other roles default to `medium`
-- non-review/refine roles are capped at `high`
+- non-review/refine/reality-check roles are capped at `high`
 - a ticket may raise the minimum required level through `minimum_thinking`
 
 Fallback policy:
@@ -299,6 +299,8 @@ Fallback policy:
 - `PI_KANBAN_PRIMARY_PROVIDER` — default provider for new role launches
 - `PI_KANBAN_FALLBACK_PROVIDER` — provider to use only on deliberate rate-limit fallback restarts
 - `PI_KANBAN_DEFAULT_MODEL` — default model for new role launches
+- `PI_KANBAN_REALITY_CHECK_INTERVAL_SECONDS` — elapsed-time threshold for requiring a `reality-check` run, default `7200`
+- `PI_KANBAN_REALITY_CHECK_TICKET_INTERVAL` — completed-ticket threshold for requiring a `reality-check` run, default `3`
 - `PI_BACKBONE_SLEEP_SECONDS` — supervisor sleep between healthchecks
 - `PI_BACKBONE_NUDGE_COOLDOWN_SECONDS` — minimum seconds between manager nudges
 - `PI_BACKBONE_MAX_RUNTIME_SECONDS` — maximum supervisor runtime before clean exit
@@ -330,6 +332,14 @@ The checkpoint script will:
 ### Why
 
 This gives recovery a clear, boring, inspectable rollback point.
+
+## Reality-check cadence
+
+The broader `reality-check` role is used to catch drift, half-finished work, excessive mocks or stubs, and other signs that the system is becoming less real than it should be.
+
+The manager should ensure `reality-check` runs at least once every 2 hours or after 3 checkpointed tickets, whichever comes first.
+
+Each `reality-check` run should rebuild fresh context and update at most one findings ticket.
 
 ## Recovery
 
@@ -363,6 +373,7 @@ If the manager appears idle, the backbone may send:
 - an earlier periodic healthcheck prompt when all managed non-backbone role panes in the project window have gone idle
 - a periodic healthcheck prompt on the normal cooldown
 - `/compact`, followed by a periodic healthcheck prompt on repeated idleness
+- a periodic healthcheck prompt that explicitly calls out when `reality-check` is due by elapsed time or by completed-ticket count
 
 When `2-planned/`, `3-in_progress/`, and `4-in_review/` are empty and no managed worker pane remains active, the backbone switches to a special file-watch idle mode instead of repeatedly nudging the manager. In that mode it waits for lane-file changes under `0-open/`, `1-to_refine/`, `2-planned/`, `3-in_progress/`, or `4-in_review/` before waking the manager again.
 
@@ -379,7 +390,8 @@ The manager must know how to respond to these nudges.
 5. manager reconciles pane state with ticket state
 6. reviewer acceptance moves tickets to `5-done/`
 7. manager checkpoints done tickets
-8. backbone restarts the system if it is clearly stuck
+8. manager periodically runs `reality-check` to catch drift and production-readiness gaps
+9. backbone restarts the system if it is clearly stuck
 
 ## Role lifecycle guidance
 
@@ -393,6 +405,7 @@ The manager must know how to respond to these nudges.
 - `reviewer`
 - `refiner`
 - `planner`
+- `reality-check`
 
 ### Usually transient
 

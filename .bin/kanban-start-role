@@ -119,7 +119,9 @@ fi
 thinking_level="$(effective_role_thinking "$role" "$ticket" "$thinking_override")"
 
 if [[ "$role" == "manager" ]]; then
-  initial_message="Read .kanban/README.md and .kanban/roles/manager.md. You are the manager inside the hard tmux backbone system. Use the kanban helper commands instead of raw tmux whenever possible. Reconcile .kanban lanes, worker panes, and git state. Delegate work by starting role panes inside this same tmux window. There must be at most one pane per role. Files and git state are authoritative over memory. When the backbone asks for a periodic healthcheck, do one bounded reconciliation pass, report the result, and if that pass reveals a single clear follow-on task launch it before stopping. Only wait when there is no clear immediate next action. Begin now."
+  initial_message="Read .kanban/README.md and .kanban/roles/manager.md. You are the manager inside the hard tmux backbone system. Use the kanban helper commands instead of raw tmux whenever possible. Reconcile .kanban lanes, worker panes, and git state. Delegate work by starting role panes inside this same tmux window. There must be at most one pane per role. Files and git state are authoritative over memory. Ensure a reality-check role is launched at least once every two hours or after three checkpointed tickets, especially when the backbone healthcheck says it is due. When the backbone asks for a periodic healthcheck, do one bounded reconciliation pass, report the result, and if that pass reveals a single clear follow-on task launch it before stopping. Only wait when there is no clear immediate next action. Begin now."
+elif [[ "$role" == "reality-check" ]]; then
+  initial_message="Read .kanban/README.md and .kanban/roles/reality-check.md. Rebuild fresh context from the broader project before making any recommendation. Audit for drift, half-implemented work, over-mocking, stubbed behavior, weak integration seams, bad code style, and shortcuts that keep the system from becoming real and production-ready. Write or update exactly one findings ticket as directed by the role file, then stop."
 else
   initial_message="Read .kanban/README.md and .kanban/roles/${role}.md."
 
@@ -164,6 +166,11 @@ command_string="bash $(printf '%q' "$launch_script")"
 pane_id="$(tmux split-window "$split_flag" -P -F '#{pane_id}' -t "$window_id" -c "$PROJECT_ROOT" "$command_string")"
 set_pane_title "$pane_id" "$(role_title "$role")"
 record_role_pane "$role" "$pane_id"
+
+if [[ "$role" == "reality-check" ]]; then
+  record_reality_check_launch start-role
+fi
+
 ensure_single_role_pane "$role" >/dev/null
 
 tmux select-layout -t "$window_id" tiled >/dev/null || true

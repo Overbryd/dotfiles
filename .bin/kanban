@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KANBAN_BIN_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-KANBAN_INSTALL_ROOT="$(cd -- "$KANBAN_BIN_DIR/.." && pwd)"
+KANBAN_CANONICAL_INSTALL_ROOT="/usr/local/dotfiles"
+KANBAN_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -d "$KANBAN_CANONICAL_INSTALL_ROOT/pi/kanban" && -d "$KANBAN_CANONICAL_INSTALL_ROOT/.bin" ]]; then
+  KANBAN_INSTALL_ROOT="$KANBAN_CANONICAL_INSTALL_ROOT"
+  KANBAN_BIN_DIR="$KANBAN_INSTALL_ROOT/.bin"
+else
+  KANBAN_BIN_DIR="$KANBAN_SCRIPT_DIR"
+  KANBAN_INSTALL_ROOT="$(cd -- "$KANBAN_BIN_DIR/.." && pwd)"
+fi
+
 KANBAN_ASSETS_DIR="$KANBAN_INSTALL_ROOT/pi/kanban"
 KANBAN_PROJECT_CONTEXT_LOADED=0
 
@@ -582,7 +591,7 @@ thinking_level_min() {
 
 role_default_thinking() {
   case "$1" in
-    reviewer|refiner)
+    reviewer|refiner|reality-check)
       printf 'xhigh\n'
       ;;
     manager|planner|recovery)
@@ -596,7 +605,7 @@ role_default_thinking() {
 
 role_maximum_thinking() {
   case "$1" in
-    reviewer|refiner)
+    reviewer|refiner|reality-check)
       printf 'xhigh\n'
       ;;
     *)
@@ -660,6 +669,165 @@ latest_checkpoint_ref() {
   git for-each-ref --sort=-creatordate --format='%(refname:short)' 'refs/tags/kanban/*' \
     | grep -v '^kanban/last-known-good$' \
     | head -n 1
+}
+
+reality_check_state_file() {
+  printf '%s/reality-check.env\n' "$STATE_DIR"
+}
+
+reality_check_interval_seconds() {
+  printf '%s\n' "${PI_KANBAN_REALITY_CHECK_INTERVAL_SECONDS:-7200}"
+}
+
+reality_check_ticket_interval() {
+  printf '%s\n' "${PI_KANBAN_REALITY_CHECK_TICKET_INTERVAL:-3}"
+}
+
+ensure_reality_check_state() {
+  local state_file now tracking_started_at last_reality_check_started_at tickets_completed_since_reality_check last_reality_check_reason
+  state_file="$(reality_check_state_file)"
+  now="$(date +%s)"
+  tracking_started_at=""
+  last_reality_check_started_at=""
+  tickets_completed_since_reality_check="0"
+  last_reality_check_reason=""
+
+  if [[ -f "$state_file" ]]; then
+    # shellcheck disable=SC1090
+    source "$state_file"
+  fi
+
+  if [[ -z "${tracking_started_at:-}" ]]; then
+    tracking_started_at="$now"
+  fi
+
+  if [[ -z "${tickets_completed_since_reality_check:-}" ]]; then
+    tickets_completed_since_reality_check="0"
+  fi
+
+  {
+    printf 'tracking_started_at=%q\n' "$tracking_started_at"
+    printf 'last_reality_check_started_at=%q\n' "${last_reality_check_started_at:-}"
+    printf 'tickets_completed_since_reality_check=%q\n' "$tickets_completed_since_reality_check"
+    printf 'last_reality_check_reason=%q\n' "${last_reality_check_reason:-}"
+  } > "$state_file"
+}
+
+record_reality_check_launch() {
+  local reason state_file now tracking_started_at
+  reason="${1:-scheduled-healthcheck}"
+  state_file="$(reality_check_state_file)"
+  now="$(date +%s)"
+  tracking_started_at="$now"
+
+  if [[ -f "$state_file" ]]; then
+    # shellcheck disable=SC1090
+    source "$state_file"
+  fi
+
+  tracking_started_at="${tracking_started_at:-$now}"
+
+  {
+    printf 'tracking_started_at=%q\n' "$tracking_started_at"
+    printf 'last_reality_check_started_at=%q\n' "$now"
+    printf 'tickets_completed_since_reality_check=%q\n' '0'
+    printf 'last_reality_check_reason=%q\n' "$reason"
+  } > "$state_file"
+}
+
+record_ticket_checkpoint_for_reality_check() {
+  local state_file now tracking_started_at last_reality_check_started_at tickets_completed_since_reality_check last_reality_check_reason
+  state_file="$(reality_check_state_file)"
+  now="$(date +%s)"
+  tracking_started_at="$now"
+  last_reality_check_started_at=""
+  tickets_completed_since_reality_check="0"
+  last_reality_check_reason=""
+
+  if [[ -f "$state_file" ]]; then
+    # shellcheck disable=SC1090
+    source "$state_file"
+  fi
+
+  tracking_started_at="${tracking_started_at:-$now}"
+  tickets_completed_since_reality_check="${tickets_completed_since_reality_check:-0}"
+  tickets_completed_since_reality_check=$(( tickets_completed_since_reality_check + 1 ))
+
+  {
+    printf 'tracking_started_at=%q\n' "$tracking_started_at"
+    printf 'last_reality_check_started_at=%q\n' "${last_reality_check_started_at:-}"
+    printf 'tickets_completed_since_reality_check=%q\n' "$tickets_completed_since_reality_check"
+    printf 'last_reality_check_reason=%q\n' "${last_reality_check_reason:-}"
+  } > "$state_file"
+}
+
+reality_check_due_reason() {
+  local state_file now tracking_started_at last_reality_check_started_at tickets_completed_since_reality_check base_timestamp interval_seconds ticket_interval due_time due_tickets
+  state_file="$(reality_check_state_file)"
+  ensure_reality_check_state >/dev/null 2>&1 || true
+  now="$(date +%s)"
+  tracking_started_at=""
+  last_reality_check_started_at=""
+  tickets_completed_since_reality_check="0"
+
+  if [[ -f "$state_file" ]]; then
+    # shellcheck disable=SC1090
+    source "$state_file"
+  fi
+
+  if [[ "${tickets_completed_since_reality_check:-0}" == "0" ]] && ! kanban_has_active_ticket_files "$KANBAN_DIR"; then
+    printf 'none\n'
+    return 0
+  fi
+
+  base_timestamp="${last_reality_check_started_at:-${tracking_started_at:-}}"
+  interval_seconds="$(reality_check_interval_seconds)"
+  ticket_interval="$(reality_check_ticket_interval)"
+  due_time=0
+  due_tickets=0
+
+  if [[ -n "$base_timestamp" ]] && (( now - base_timestamp >= interval_seconds )); then
+    due_time=1
+  fi
+
+  if (( ${tickets_completed_since_reality_check:-0} >= ticket_interval )); then
+    due_tickets=1
+  fi
+
+  if (( due_time == 1 && due_tickets == 1 )); then
+    printf 'time-and-ticket-count\n'
+  elif (( due_time == 1 )); then
+    printf 'time\n'
+  elif (( due_tickets == 1 )); then
+    printf 'ticket-count\n'
+  else
+    printf 'none\n'
+  fi
+}
+
+reality_check_healthcheck_guidance() {
+  local due_reason ticket_interval interval_seconds active_message
+  due_reason="$(reality_check_due_reason)"
+  ticket_interval="$(reality_check_ticket_interval)"
+  interval_seconds="$(reality_check_interval_seconds)"
+
+  if [[ "$due_reason" == "none" ]]; then
+    return 1
+  fi
+
+  active_message='If no reality-check pane is active, launch `kanban start-role reality-check` during this pass. If one is already active, inspect it and reconcile its findings.'
+
+  case "$due_reason" in
+    time)
+      printf 'Reality-check is due because at least %ss have elapsed since the last reality-check baseline. %s\n' "$interval_seconds" "$active_message"
+      ;;
+    ticket-count)
+      printf 'Reality-check is due because %s tickets have been checkpointed since the last reality-check. %s\n' "$ticket_interval" "$active_message"
+      ;;
+    time-and-ticket-count)
+      printf 'Reality-check is due both by elapsed time (%ss) and by completed ticket count (%s). %s\n' "$interval_seconds" "$ticket_interval" "$active_message"
+      ;;
+  esac
 }
 
 reset_manager_health_state() {
@@ -875,6 +1043,19 @@ kanban_has_ticket_files() {
     "$kanban_root/3-in_progress" \
     "$kanban_root/4-in_review" \
     "$kanban_root/5-done" \
+    -maxdepth 1 -type f ! -name '.gitkeep' -print -quit | grep -q .
+}
+
+kanban_has_active_ticket_files() {
+  local kanban_root
+  kanban_root="$1"
+
+  find \
+    "$kanban_root/0-open" \
+    "$kanban_root/1-to_refine" \
+    "$kanban_root/2-planned" \
+    "$kanban_root/3-in_progress" \
+    "$kanban_root/4-in_review" \
     -maxdepth 1 -type f ! -name '.gitkeep' -print -quit | grep -q .
 }
 

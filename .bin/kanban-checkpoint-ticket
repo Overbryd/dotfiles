@@ -66,4 +66,6 @@ git tag -fa kanban/last-known-good -m "Last known good after ${ticket_id}: ${tic
   printf 'last_known_good=%q\n' 'kanban/last-known-good'
 } > "$STATE_DIR/last-known-good.env"
 
+record_ticket_checkpoint_for_reality_check
+
 echo "$history_tag $commit_ref"

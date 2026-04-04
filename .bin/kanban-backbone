@@ -53,12 +53,13 @@ HEALTHCHECK_MANAGER_CMD="$(kanban_subcommand_path healthcheck-manager)"
 sleep_seconds="${PI_BACKBONE_SLEEP_SECONDS:-30}"
 nudge_cooldown_seconds="${PI_BACKBONE_NUDGE_COOLDOWN_SECONDS:-300}"
 max_runtime_seconds="${PI_BACKBONE_MAX_RUNTIME_SECONDS:-28800}"
-healthcheck_prompt='Do your periodic healthcheck now. Re-read the current .kanban lanes, inspect active worker panes with the kanban helper commands, do one bounded reconciliation pass, report the result in the pane output, and if that pass reveals a single clear follow-on task launch it before stopping. Only wait when there is no clear immediate next action.'
+base_healthcheck_prompt='Do your periodic healthcheck now. Re-read the current .kanban lanes, inspect active worker panes with the kanban helper commands, do one bounded reconciliation pass, report the result in the pane output, and if that pass reveals a single clear follow-on task launch it before stopping. Only wait when there is no clear immediate next action.'
 export KANBAN_LOG_FILE="$LOG_DIR/backbone.log"
 
 rotate_log_file "$KANBAN_LOG_FILE"
 reset_manager_health_state
 reset_window_role_activity_state
+ensure_reality_check_state
 
 session_id="$(tmux display-message -p '#{session_id}')"
 window_id="$(tmux display-message -p '#{window_id}')"
@@ -76,11 +77,24 @@ start_manager() {
   "$START_ROLE_CMD" manager >/dev/null
 }
 
-send_manager_healthcheck_prompt() {
-  local reason
-  reason="$1"
+manager_healthcheck_prompt() {
+  local prompt reality_check_guidance
+  prompt="$base_healthcheck_prompt"
+  reality_check_guidance="$(reality_check_healthcheck_guidance || true)"
 
-  if "$SEND_ROLE_CMD" manager "$healthcheck_prompt" >/dev/null 2>&1; then
+  if [[ -n "$reality_check_guidance" ]]; then
+    prompt+=" ${reality_check_guidance}"
+  fi
+
+  printf '%s\n' "$prompt"
+}
+
+send_manager_healthcheck_prompt() {
+  local reason prompt
+  reason="$1"
+  prompt="$(manager_healthcheck_prompt)"
+
+  if "$SEND_ROLE_CMD" manager "$prompt" >/dev/null 2>&1; then
     record_manager_nudge "$reason"
     return 0
   fi
@@ -163,8 +177,31 @@ empty_queue_watch_applicable() {
   [[ "$actionable_count" == "0" && "$active_non_backbone_count" -le 1 ]]
 }
 
+maybe_wake_manager_for_due_reality_check() {
+  local due_reason seconds_remaining
+  due_reason="$(reality_check_due_reason)"
+
+  if [[ "$due_reason" == "none" ]]; then
+    return 1
+  fi
+
+  if ! manager_nudge_due "$nudge_cooldown_seconds"; then
+    seconds_remaining="$(seconds_until_manager_nudge "$nudge_cooldown_seconds")"
+    log "manager healthcheck: idle; reality-check is due ($due_reason) but nudge cooldown is active (${seconds_remaining}s remaining)"
+    return 1
+  fi
+
+  if send_manager_healthcheck_prompt "reality-check-$due_reason"; then
+    log "manager healthcheck: idle; reality-check due ($due_reason); nudged manager"
+    return 0
+  fi
+
+  log "manager healthcheck: idle; reality-check due ($due_reason); wake-up failed because manager pane was unavailable"
+  return 1
+}
+
 handle_empty_queue_idle() {
-  local current_snapshot
+  local current_snapshot due_reason
 
   if ! empty_queue_watch_applicable; then
     empty_queue_watch_mode=0
@@ -173,15 +210,24 @@ handle_empty_queue_idle() {
   fi
 
   current_snapshot="$(empty_queue_watch_snapshot)"
+  due_reason="$(reality_check_due_reason)"
 
   if [[ "$empty_queue_watch_mode" -eq 0 ]]; then
     empty_queue_watch_mode=1
     empty_queue_watch_snapshot_cache="$current_snapshot"
     log 'manager healthcheck: idle; empty ready queue detected; entering file-watch idle mode'
+
+    if [[ "$due_reason" != "none" ]]; then
+      maybe_wake_manager_for_due_reality_check || true
+    fi
+
     return 0
   fi
 
   if [[ "$current_snapshot" == "$empty_queue_watch_snapshot_cache" ]]; then
+    if [[ "$due_reason" != "none" ]]; then
+      maybe_wake_manager_for_due_reality_check || true
+    fi
     return 0
   fi
 
