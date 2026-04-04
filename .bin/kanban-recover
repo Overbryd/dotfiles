@@ -72,7 +72,10 @@ archive_session_file recovery
   done
 } > "$context_file"
 
-recovery_prompt="Read .kanban/README.md, .kanban/roles/recovery.md, and .kanban/runtime/recovery/context.md. You are running as a one-off recovery agent after a hard reset. Stabilize the repo to the safest understandable re-entry point. Prefer the last known good checkpoint tag if reset is needed. Do not start tmux panes. Do not continue feature work. Write .kanban/runtime/recovery/last-recovery.md and .kanban/runtime/recovery/reentry.md before you finish."
+recovery_role_doc="$(resolve_role_doc recovery)"
+recovery_role_doc_display="$(role_doc_display_path "$recovery_role_doc")"
+recovery_role_doc_arg="$(pi_file_argument "$recovery_role_doc")"
+recovery_prompt="Read .kanban/README.md, ${recovery_role_doc_display}, and .kanban/runtime/recovery/context.md. You are running as a one-off recovery agent after a hard reset. Stabilize the repo to the safest understandable re-entry point. Prefer the last known good checkpoint tag if reset is needed. Do not start tmux panes. Do not continue feature work. Write .kanban/runtime/recovery/last-recovery.md and .kanban/runtime/recovery/reentry.md before you finish."
 cmd=(pi -p --session "$recovery_session_file")
 
 if [[ -n "${PI_BACKBONE_RECOVERY_PROVIDER:-}" ]]; then
@@ -83,7 +86,7 @@ if [[ -n "${PI_BACKBONE_RECOVERY_MODEL:-}" ]]; then
   cmd+=(--model "$PI_BACKBONE_RECOVERY_MODEL")
 fi
 
-cmd+=("@.kanban/README.md" "@.kanban/roles/recovery.md" "@$(relative_to_project "$context_file")" "$recovery_prompt")
+cmd+=("@.kanban/README.md" "$recovery_role_doc_arg" "@$(relative_to_project "$context_file")" "$recovery_prompt")
 
 if run_with_timeout "$recovery_timeout_seconds" "${cmd[@]}"; then
   if [[ ! -f "$report_file" ]]; then

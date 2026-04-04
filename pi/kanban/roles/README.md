@@ -1,5 +1,9 @@
 # Kanban roles
 
+These are the built-in role files loaded directly from the kanban install. They are not meant to be copied into each project's `.kanban/roles/` directory.
+
+Project-local `.kanban/roles/` is reserved for additional custom roles that are not part of this built-in set.
+
 These role files describe how agents should interact with the file-based kanban under the tmux backbone model.
 
 ## Roles
@@ -30,7 +34,7 @@ All roles must assume:
 A fresh agent should:
 
 1. read `.kanban/README.md`
-2. read the relevant role file
+2. read the relevant built-in or custom role file supplied with the launch
 3. read the ticket being worked on
 4. read any referenced `.plans/*` files before changing ticket state or code
 

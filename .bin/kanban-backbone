@@ -53,7 +53,7 @@ HEALTHCHECK_MANAGER_CMD="$(kanban_subcommand_path healthcheck-manager)"
 sleep_seconds="${PI_BACKBONE_SLEEP_SECONDS:-30}"
 nudge_cooldown_seconds="${PI_BACKBONE_NUDGE_COOLDOWN_SECONDS:-300}"
 max_runtime_seconds="${PI_BACKBONE_MAX_RUNTIME_SECONDS:-28800}"
-base_healthcheck_prompt='Do your periodic healthcheck now. Re-read the current .kanban lanes, inspect active worker panes with the kanban helper commands, do one bounded reconciliation pass, report the result in the pane output, and if that pass reveals a single clear follow-on task launch it before stopping. Only wait when there is no clear immediate next action.'
+base_healthcheck_prompt='Do your periodic healthcheck now. Re-read the current .kanban lanes including 0-open and 1-to_refine, inspect active worker panes with the kanban helper commands, do one bounded reconciliation pass, and adjust priorities as needed. Keep work moving from 0-open to 1-to_refine to 2-planned to 3-in_progress to 4-in_review to 5-done. If a reality-check findings ticket or one of its cleanup follow-ons exists, prioritize that cleanup stream ahead of unrelated new work. If no higher-priority implementation or review should run first and 1-to_refine is non-empty, start a real refinement pass instead of idling. Report the result in the pane output, and if that pass reveals a single clear follow-on task launch it before stopping. Only wait when there is no clear immediate next action.'
 export KANBAN_LOG_FILE="$LOG_DIR/backbone.log"
 
 rotate_log_file "$KANBAN_LOG_FILE"

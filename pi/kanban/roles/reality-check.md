@@ -64,6 +64,7 @@ The findings ticket should:
 - cite concrete files, tests, or tickets
 - separate symptoms from root causes
 - propose a small number of high-value follow-on tickets or corrections
+- make it obvious that these follow-ons belong to the active reality-check cleanup stream
 - preserve still-valid prior findings when they remain relevant
 
 ## Output standard

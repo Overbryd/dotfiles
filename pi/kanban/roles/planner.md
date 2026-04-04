@@ -27,11 +27,13 @@ Assume:
 - keep dependencies coherent
 - ensure planned tickets are actually ready
 - keep near-term work near the front of the queue
+- if a `reality-check` findings ticket or its child cleanup tickets exist, keep that cleanup stream ahead of unrelated new feature work until it is drained or explicitly blocked
 
 ## Do not
 
 - refine unclear work inside `2-planned/`
 - hide blocked work in the ready queue
+- bury `reality-check` cleanup tickets behind unrelated new feature work without an explicit reason
 - exceed practical WIP by pushing too much active work at once
 - rename panes or spawn sibling panes
 

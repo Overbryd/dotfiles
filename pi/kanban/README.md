@@ -253,10 +253,35 @@ If a ticket is blocked, state that clearly in the body as well.
 - If implementation starts, the ticket must move to `3-in_progress/`.
 - If review fails, move it back to `3-in_progress/` or `2-planned/`.
 - Keep `3-in_progress/` and `4-in_review/` small and current.
+- The manager is responsible for continuously moving work forward across `0-open/` -> `1-to_refine/` -> `2-planned/` -> `3-in_progress/` -> `4-in_review/` -> `5-done/`.
+- `1-to_refine/` is not a parking lot. When no higher-priority implementation or review work should go first, the manager should launch a real refinement pass.
+
+## Priority rules
+
+Default priority order:
+
+1. finish or reconcile active work already in `4-in_review/` and `3-in_progress/`
+2. if a `reality-check` findings ticket exists, prioritize it and the cleanup tickets derived from it ahead of unrelated new feature work
+3. keep `2-planned/` ordered so the next ready ticket is obvious
+4. when no clearer higher-priority active work exists, move the best ticket in `1-to_refine/` forward by starting a `refiner`
+5. when `1-to_refine/` is empty or drained, pull the next meaningful work from `0-open/` into refinement
+
+A reality-check child ticket should keep an explicit link back to the active findings ticket, preferably through `depends_on` or direct ticket references in the body.
 
 ## Helper commands
 
 The manager and backbone should prefer the `kanban` helper commands over ad hoc tmux manipulation.
+
+Important commands:
+
+- `kanban list-roles` — list active role panes in the project window
+- `kanban capture-role <role>` — inspect the latest output from a role pane
+- `kanban start-role <role> [ticket]` — launch a role pane for a specific task
+- `kanban stop-role <role>` — stop a stale or completed role pane
+- `kanban send-role <role> <message>` — send a focused nudge to an existing role pane
+- `kanban checkpoint-ticket <ticket>` — create the done-state checkpoint after review acceptance
+- `kanban healthcheck-manager` — deterministic health signal used by the backbone
+- `kanban recover` / `kanban hard-reset` — recovery tools for bad states
 
 ## Pi model and thinking policy
 
@@ -341,6 +366,8 @@ The manager should ensure `reality-check` runs at least once every 2 hours or af
 
 Each `reality-check` run should rebuild fresh context, start from a fresh session without resuming old role-chat history, and update at most one findings ticket.
 
+If `reality-check` produces or updates a findings ticket, the manager should treat that findings ticket and its linked cleanup follow-ons as the highest-priority refinement/planning/implementation stream ahead of unrelated new work until the cleanup run has been properly shaped and advanced.
+
 ## Recovery
 
 A hard reset means:
@@ -385,13 +412,14 @@ The manager must know how to respond to these nudges.
 
 1. backbone ensures manager exists
 2. manager reads `.kanban/` and current repo state
-3. manager starts worker panes as needed
-4. workers perform scoped work and update tickets
-5. manager reconciles pane state with ticket state
-6. reviewer acceptance moves tickets to `5-done/`
-7. manager checkpoints done tickets
-8. manager periodically runs `reality-check` to catch drift and production-readiness gaps
-9. backbone restarts the system if it is clearly stuck
+3. manager sets priorities and keeps tickets moving across the lane flow
+4. manager starts worker panes as needed
+5. workers perform scoped work and update tickets
+6. manager reconciles pane state with ticket state
+7. reviewer acceptance moves tickets to `5-done/`
+8. manager checkpoints done tickets
+9. manager periodically runs `reality-check` to catch drift and production-readiness gaps
+10. backbone restarts the system if it is clearly stuck
 
 ## Role lifecycle guidance
 
@@ -417,12 +445,14 @@ The manager must know how to respond to these nudges.
 
 ## Roles
 
-Role instructions live in `.kanban/roles/`.
+Built-in role instructions are loaded from the kanban install, normally `/usr/local/dotfiles/pi/kanban/roles/`.
+
+Project-local `.kanban/roles/` is reserved for additional custom roles that are not part of the built-in kanban role set.
 
 Fresh agents should read, in order:
 
 1. `.kanban/README.md`
-2. the relevant role file in `.kanban/roles/`
+2. the relevant built-in or custom role file supplied with the launch
 3. the ticket they are acting on
 4. the referenced `.plans/*` files
 

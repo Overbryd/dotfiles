@@ -345,6 +345,51 @@ relative_to_project() {
   esac
 }
 
+builtin_role_doc_path() {
+  printf '%s/roles/%s.md\n' "$KANBAN_ASSETS_DIR" "$1"
+}
+
+project_custom_role_doc_path() {
+  printf '%s/roles/%s.md\n' "$KANBAN_DIR" "$1"
+}
+
+resolve_role_doc() {
+  local role builtin_path custom_path
+  role="$1"
+  builtin_path="$(builtin_role_doc_path "$role")"
+
+  if [[ -f "$builtin_path" ]]; then
+    printf '%s\n' "$builtin_path"
+    return 0
+  fi
+
+  custom_path="$(project_custom_role_doc_path "$role")"
+  if [[ -f "$custom_path" ]]; then
+    printf '%s\n' "$custom_path"
+    return 0
+  fi
+
+  return 1
+}
+
+role_doc_display_path() {
+  local path
+  path="$1"
+
+  case "$path" in
+    "$PROJECT_ROOT"/*)
+      relative_to_project "$path"
+      ;;
+    *)
+      printf '%s\n' "$path"
+      ;;
+  esac
+}
+
+pi_file_argument() {
+  printf '@%s\n' "$(role_doc_display_path "$1")"
+}
+
 session_file_for_role() {
   printf '%s/%s.jsonl\n' "$SESSIONS_DIR" "$1"
 }

@@ -31,12 +31,15 @@ Assume:
 - define acceptance criteria
 - define verification steps
 - identify dependencies
+- if refining a `reality-check` findings ticket, preserve an explicit parent/child link from any derived cleanup ticket back to that findings ticket
+- if refining a `reality-check` findings ticket, keep the resulting cleanup tickets clearly prioritized ahead of unrelated new feature work
 - set `minimum_thinking` when the ticket clearly needs more than the default role depth
 - move ready tickets to `2-planned/`
 
 ## Do not
 
 - silently narrow or expand scope
+- lose the relationship between a `reality-check` findings ticket and the cleanup tickets derived from it
 - implement code while pretending to refine
 - rename panes or spawn sibling panes
 - move unclear work into `2-planned/`

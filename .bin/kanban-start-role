@@ -82,9 +82,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-role_doc="$KANBAN_DIR/roles/${role}.md"
-if [[ ! -f "$role_doc" ]]; then
-  echo "unknown role doc: $role_doc" >&2
+if ! role_doc="$(resolve_role_doc "$role")"; then
+  echo "unknown role doc for role '$role' (looked in $(builtin_role_doc_path "$role") and $(project_custom_role_doc_path "$role"))" >&2
   exit 1
 fi
 
@@ -123,14 +122,16 @@ if [[ -n "$ticket" ]]; then
   relative_ticket="$(relative_to_project "$ticket")"
 fi
 
+role_doc_display="$(role_doc_display_path "$role_doc")"
+role_doc_arg="$(pi_file_argument "$role_doc")"
 thinking_level="$(effective_role_thinking "$role" "$ticket" "$thinking_override")"
 
 if [[ "$role" == "manager" ]]; then
-  initial_message="Read .kanban/README.md and .kanban/roles/manager.md. You are the manager inside the hard tmux backbone system. Use the kanban helper commands instead of raw tmux whenever possible. Reconcile .kanban lanes, worker panes, and git state. Delegate work by starting role panes inside this same tmux window. There must be at most one pane per role. Files and git state are authoritative over memory. Ensure a reality-check role is launched at least once every two hours or after three checkpointed tickets, especially when the backbone healthcheck says it is due. When the backbone asks for a periodic healthcheck, do one bounded reconciliation pass, report the result, and if that pass reveals a single clear follow-on task launch it before stopping. Only wait when there is no clear immediate next action. Begin now."
+  initial_message="Read .kanban/README.md and ${role_doc_display}. You are the manager inside the hard tmux backbone system. Use the kanban helper commands instead of raw tmux whenever possible, especially kanban list-roles, kanban capture-role, kanban start-role, kanban stop-role, kanban send-role, and kanban checkpoint-ticket. Reconcile .kanban lanes, worker panes, and git state. You are ultimately responsible for adjusting priorities and keeping work moving from 0-open to 1-to_refine to 2-planned to 3-in_progress to 4-in_review to 5-done. If a reality-check findings ticket exists, prioritize it and the cleanup subtickets derived from it ahead of unrelated new feature work until that cleanup stream has been advanced. If nothing higher-priority is active, start a real refinement pass on the best ticket in 1-to_refine instead of idling. Delegate work by starting role panes inside this same tmux window. There must be at most one pane per role. Files and git state are authoritative over memory. Ensure a reality-check role is launched at least once every two hours or after three checkpointed tickets, especially when the backbone healthcheck says it is due. When the backbone asks for a periodic healthcheck, do one bounded reconciliation pass, report the result, and if that pass reveals a single clear follow-on task launch it before stopping. Only wait when there is no clear immediate next action. Begin now."
 elif [[ "$role" == "reality-check" ]]; then
-  initial_message="Read .kanban/README.md and .kanban/roles/reality-check.md. This role always starts with a fresh session and must not rely on prior conversation state. Rebuild fresh context from the broader project before making any recommendation. Audit for drift, half-implemented work, over-mocking, stubbed behavior, weak integration seams, bad code style, and shortcuts that keep the system from becoming real and production-ready. Write or update exactly one findings ticket as directed by the role file, then stop."
+  initial_message="Read .kanban/README.md and ${role_doc_display}. This role always starts with a fresh session and must not rely on prior conversation state. Rebuild fresh context from the broader project before making any recommendation. Audit for drift, half-implemented work, over-mocking, stubbed behavior, weak integration seams, bad code style, and shortcuts that keep the system from becoming real and production-ready. Write or update exactly one findings ticket as directed by the role file, then stop."
 else
-  initial_message="Read .kanban/README.md and .kanban/roles/${role}.md."
+  initial_message="Read .kanban/README.md and ${role_doc_display}."
 
   if [[ -n "$relative_ticket" ]]; then
     initial_message+=" Also read ${relative_ticket} and work only within that ticket's scope."
@@ -144,7 +145,7 @@ if [[ -n "$note" ]]; then
 fi
 
 launch_script="$STATE_DIR/start-${role}-$(date -u +"%Y%m%dT%H%M%SZ").sh"
-args=(--provider "$provider" --model "$model_id" --thinking "$thinking_level" --session "$session_file" "@.kanban/README.md" "@.kanban/roles/${role}.md")
+args=(--provider "$provider" --model "$model_id" --thinking "$thinking_level" --session "$session_file" "@.kanban/README.md" "$role_doc_arg")
 
 if [[ -n "$relative_ticket" ]]; then
   args+=("@${relative_ticket}")

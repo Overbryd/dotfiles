@@ -194,6 +194,7 @@ for lane in 0-open 1-to_refine 2-planned 3-in_progress 4-in_review 5-done; do
   create_gitkeep "$kanban_root/$lane/.gitkeep"
 done
 
+create_gitkeep "$kanban_root/roles/.gitkeep"
 create_gitkeep "$kanban_root/runtime/sessions/.gitkeep"
 create_gitkeep "$kanban_root/runtime/sessions/archive/.gitkeep"
 create_gitkeep "$kanban_root/runtime/state/.gitkeep"
@@ -205,8 +206,19 @@ seed_file "$assets_root/templates/ticket.md" "$kanban_root/templates/ticket.md"
 seed_file "$assets_root/runtime/.gitignore" "$kanban_root/runtime/.gitignore"
 
 while IFS= read -r asset_file; do
-  seed_file "$asset_file" "$kanban_root/roles/$(basename "$asset_file")"
-done < <(find "$assets_root/roles" -maxdepth 1 -type f | sort)
+  frozen_role_copy="$kanban_root/roles/$(basename "$asset_file")"
+
+  if [[ ! -f "$frozen_role_copy" ]]; then
+    continue
+  fi
+
+  if [[ "$force" -eq 1 ]]; then
+    rm -f "$frozen_role_copy"
+    echo "removed frozen built-in role copy $frozen_role_copy"
+  else
+    echo "note: built-in roles are loaded from $assets_root/roles; ignoring project-local copy $frozen_role_copy"
+  fi
+done < <(find "$assets_root/roles" -maxdepth 1 -type f -name '*.md' ! -name 'README.md' | sort)
 
 if [[ "$seed_from_plans" -eq 1 ]]; then
   if kanban_has_ticket_files "$kanban_root"; then
