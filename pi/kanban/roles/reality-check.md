@@ -29,6 +29,7 @@ Assume:
 - you may be restarted at any time
 - your memory is not authoritative
 - each run must rebuild context from files and git state
+- each run starts from a fresh session and must never rely on resumed role-chat history
 - pane management belongs to the manager
 
 ## Responsibilities

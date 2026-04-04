@@ -339,7 +339,7 @@ The broader `reality-check` role is used to catch drift, half-finished work, exc
 
 The manager should ensure `reality-check` runs at least once every 2 hours or after 3 checkpointed tickets, whichever comes first.
 
-Each `reality-check` run should rebuild fresh context and update at most one findings ticket.
+Each `reality-check` run should rebuild fresh context, start from a fresh session without resuming old role-chat history, and update at most one findings ticket.
 
 ## Recovery
 

@@ -107,6 +107,13 @@ fallback_provider="$(kanban_pi_fallback_provider)"
 model_id="$(kanban_pi_default_model)"
 provider="${provider_override:-$primary_provider}"
 
+if [[ "$role" == "reality-check" ]]; then
+  if [[ "$resume_session" -eq 1 ]]; then
+    echo 'ignoring --resume for reality-check; this role always starts with a fresh session' >&2
+  fi
+  resume_session=0
+fi
+
 if [[ "$resume_session" -eq 0 ]]; then
   archive_session_file "$role"
 fi
@@ -121,7 +128,7 @@ thinking_level="$(effective_role_thinking "$role" "$ticket" "$thinking_override"
 if [[ "$role" == "manager" ]]; then
   initial_message="Read .kanban/README.md and .kanban/roles/manager.md. You are the manager inside the hard tmux backbone system. Use the kanban helper commands instead of raw tmux whenever possible. Reconcile .kanban lanes, worker panes, and git state. Delegate work by starting role panes inside this same tmux window. There must be at most one pane per role. Files and git state are authoritative over memory. Ensure a reality-check role is launched at least once every two hours or after three checkpointed tickets, especially when the backbone healthcheck says it is due. When the backbone asks for a periodic healthcheck, do one bounded reconciliation pass, report the result, and if that pass reveals a single clear follow-on task launch it before stopping. Only wait when there is no clear immediate next action. Begin now."
 elif [[ "$role" == "reality-check" ]]; then
-  initial_message="Read .kanban/README.md and .kanban/roles/reality-check.md. Rebuild fresh context from the broader project before making any recommendation. Audit for drift, half-implemented work, over-mocking, stubbed behavior, weak integration seams, bad code style, and shortcuts that keep the system from becoming real and production-ready. Write or update exactly one findings ticket as directed by the role file, then stop."
+  initial_message="Read .kanban/README.md and .kanban/roles/reality-check.md. This role always starts with a fresh session and must not rely on prior conversation state. Rebuild fresh context from the broader project before making any recommendation. Audit for drift, half-implemented work, over-mocking, stubbed behavior, weak integration seams, bad code style, and shortcuts that keep the system from becoming real and production-ready. Write or update exactly one findings ticket as directed by the role file, then stop."
 else
   initial_message="Read .kanban/README.md and .kanban/roles/${role}.md."
 
