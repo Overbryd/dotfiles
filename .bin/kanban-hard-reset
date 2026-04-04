@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source "$(cd -- "$(dirname -- "$0")" && pwd)/kanban"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  kanban hard-reset
+
+Kill all non-backbone kanban role panes in the project window.
+EOF
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
+
+require_project_context
+require_cmd tmux
+
+window_id="$(tmux_target_window_id)"
+killed=0
+
+backbone_pane_title="$(backbone_title)"
+
+while IFS=$'\t' read -r pane_id pane_title; do
+  if [[ "$pane_title" == "$PROJECT_NAME:"* && "$pane_title" != "$backbone_pane_title" ]]; then
+    tmux kill-pane -t "$pane_id"
+    killed=$((killed + 1))
+  fi
+done < <(tmux list-panes -t "$window_id" -F $'#{pane_id}\t#{pane_title}')
+
+rm -f "$STATE_DIR/manager-health.env" "$STATE_DIR/manager-health-output.txt" "$STATE_DIR/manager-tail.txt" "$STATE_DIR/manager-tail-normalized.txt" "$STATE_DIR/window-role-activity.tsv" "$STATE_DIR/window-role-idle.env" "$STATE_DIR"/role-*.env
+
+tmux select-layout -t "$window_id" tiled >/dev/null || true
+
+echo "$killed"

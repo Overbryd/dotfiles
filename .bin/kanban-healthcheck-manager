@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source "$(cd -- "$(dirname -- "$0")" && pwd)/kanban"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  kanban healthcheck-manager
+
+Classify manager health from tmux pane history.
+EOF
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
+
+require_project_context
+require_cmd tmux
+ensure_runtime_dirs
+
+state_file="$STATE_DIR/manager-health.env"
+tail_file="$STATE_DIR/manager-tail.txt"
+normalized_tail_file="$STATE_DIR/manager-tail-normalized.txt"
+lines="${PI_BACKBONE_HEALTH_LINES:-100}"
+drop_last_lines="${PI_BACKBONE_HEALTH_DROP_LAST_LINES:-4}"
+stuck_suspicion_seconds="${PI_BACKBONE_STUCK_SUSPICION_SECONDS:-900}"
+error_regex='(rate limit|status 429|quota exceeded|invalid api key|authentication failed|oauth|network error|econnreset|econnrefused|enotfound|etimedout|context overflow|prompt too long|too many tokens)'
+
+last_history_size=""
+last_pane_id=""
+suspicion_started_at=""
+suspicion_reason=""
+suspicion_elapsed_seconds="0"
+if [[ -f "$state_file" ]]; then
+  # shellcheck disable=SC1090
+  source "$state_file"
+fi
+
+now="$(date +%s)"
+
+write_state() {
+  {
+    printf 'last_history_size=%q\n' "$1"
+    printf 'last_pane_id=%q\n' "$2"
+    printf 'suspicion_started_at=%q\n' "$3"
+    printf 'suspicion_reason=%q\n' "$4"
+    printf 'suspicion_elapsed_seconds=%q\n' "$5"
+  } > "$state_file"
+}
+
+clear_suspicion() {
+  suspicion_started_at=""
+  suspicion_reason=""
+  suspicion_elapsed_seconds="0"
+}
+
+write_missing_state() {
+  clear_suspicion
+  write_state '' '' "$suspicion_started_at" "$suspicion_reason" "$suspicion_elapsed_seconds"
+}
+
+if ! pane_id="$(find_role_pane manager)"; then
+  write_missing_state
+  echo "missing"
+  exit 0
+fi
+
+pane_dead="$(tmux display-message -p -t "$pane_id" '#{pane_dead}')"
+if [[ "$pane_dead" != "0" ]]; then
+  write_missing_state
+  echo "missing"
+  exit 0
+fi
+
+tail_content="$(capture_pane_lines "$pane_id" "$lines")"
+printf '%s\n' "$tail_content" > "$tail_file"
+printf '%s\n' "$tail_content" | normalize_pane_snapshot "$drop_last_lines" > "$normalized_tail_file"
+
+history_size="$(tmux display-message -p -t "$pane_id" '#{history_size}')"
+error_match="$(printf '%s\n' "$tail_content" | grep -Eio "$error_regex" | head -n 1 || true)"
+pane_changed=0
+history_moved=0
+
+if [[ "$pane_id" != "${last_pane_id:-}" ]]; then
+  pane_changed=1
+elif [[ "$history_size" != "${last_history_size:-}" ]]; then
+  history_moved=1
+fi
+
+if [[ -n "$error_match" && "$pane_changed" -eq 0 && "$history_moved" -eq 0 ]]; then
+  if [[ -z "${suspicion_started_at:-}" || "$error_match" != "${suspicion_reason:-}" ]]; then
+    suspicion_started_at="$now"
+    suspicion_reason="$error_match"
+  fi
+
+  suspicion_elapsed_seconds=$(( now - suspicion_started_at ))
+  write_state "$history_size" "$pane_id" "$suspicion_started_at" "$suspicion_reason" "$suspicion_elapsed_seconds"
+
+  if (( suspicion_elapsed_seconds >= stuck_suspicion_seconds )); then
+    echo "stuck"
+  else
+    echo "suspect"
+  fi
+
+  exit 0
+fi
+
+clear_suspicion
+write_state "$history_size" "$pane_id" "$suspicion_started_at" "$suspicion_reason" "$suspicion_elapsed_seconds"
+
+if [[ "$pane_changed" -eq 1 ]]; then
+  echo "idle"
+  exit 0
+fi
+
+if [[ "$history_moved" -eq 1 ]]; then
+  echo "working"
+  exit 0
+fi
+
+echo "idle"

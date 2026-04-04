@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source "$(cd -- "$(dirname -- "$0")" && pwd)/kanban"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  kanban capture-role <role> [--lines <n>]
+EOF
+}
+
+role="${1:-}"
+if [[ "$role" == "--help" || "$role" == "-h" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ -z "$role" ]]; then
+  usage
+  exit 1
+fi
+shift || true
+
+require_project_context
+require_cmd tmux
+
+lines="80"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --lines)
+      lines="${2:-80}"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+pane_id="$(find_role_pane "$role")"
+capture_pane_lines "$pane_id" "$lines"

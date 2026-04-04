@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source "$(cd -- "$(dirname -- "$0")" && pwd)/kanban"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  kanban backbone [--once]
+
+Run the tmux supervisor loop in the current tmux pane.
+EOF
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
+
+require_project_context
+require_cmd tmux pi git bash
+ensure_runtime_dirs
+
+if [[ -z "${TMUX:-}" ]]; then
+  echo 'kanban backbone must be started from inside tmux' >&2
+  exit 1
+fi
+
+once=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --once)
+      once=1
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+START_ROLE_CMD="$(kanban_subcommand_path start-role)"
+SEND_ROLE_CMD="$(kanban_subcommand_path send-role)"
+HARD_RESET_CMD="$(kanban_subcommand_path hard-reset)"
+RECOVER_CMD="$(kanban_subcommand_path recover)"
+HEALTHCHECK_MANAGER_CMD="$(kanban_subcommand_path healthcheck-manager)"
+
+sleep_seconds="${PI_BACKBONE_SLEEP_SECONDS:-30}"
+nudge_cooldown_seconds="${PI_BACKBONE_NUDGE_COOLDOWN_SECONDS:-300}"
+max_runtime_seconds="${PI_BACKBONE_MAX_RUNTIME_SECONDS:-28800}"
+healthcheck_prompt='Do your periodic healthcheck now. Re-read the current .kanban lanes, inspect active worker panes with the kanban helper commands, do one bounded reconciliation pass, report the result in the pane output, and if that pass reveals a single clear follow-on task launch it before stopping. Only wait when there is no clear immediate next action.'
+export KANBAN_LOG_FILE="$LOG_DIR/backbone.log"
+
+rotate_log_file "$KANBAN_LOG_FILE"
+reset_manager_health_state
+reset_window_role_activity_state
+
+session_id="$(tmux display-message -p '#{session_id}')"
+window_id="$(tmux display-message -p '#{window_id}')"
+backbone_pane_id="$(tmux display-message -p '#{pane_id}')"
+started_at="$(date +%s)"
+deadline_at=$(( started_at + max_runtime_seconds ))
+
+write_backbone_env "$session_id" "$window_id" "$backbone_pane_id"
+set_window_visuals "$window_id"
+ensure_single_backbone_pane "$backbone_pane_id"
+write_backbone_env "$session_id" "$window_id" "$backbone_pane_id"
+log "backbone start: pid=$$ session=$session_id window=$window_id pane=$backbone_pane_id sleep_seconds=$sleep_seconds nudge_cooldown_seconds=$nudge_cooldown_seconds max_runtime_seconds=$max_runtime_seconds deadline_at=$deadline_at"
+
+start_manager() {
+  "$START_ROLE_CMD" manager >/dev/null
+}
+
+send_manager_healthcheck_prompt() {
+  local reason
+  reason="$1"
+
+  if "$SEND_ROLE_CMD" manager "$healthcheck_prompt" >/dev/null 2>&1; then
+    record_manager_nudge "$reason"
+    return 0
+  fi
+
+  return 1
+}
+
+maybe_nudge_manager_early_on_all_idle() {
+  if ! window_role_panes_all_idle; then
+    set_window_role_idle_latch 0
+    return 1
+  fi
+
+  if window_role_idle_latched; then
+    return 1
+  fi
+
+  if send_manager_healthcheck_prompt all-role-panes-idle; then
+    set_window_role_idle_latch 1
+    log 'manager healthcheck: idle; all non-backbone panes are idle; nudged manager early'
+    return 0
+  fi
+
+  log 'manager healthcheck: idle; all non-backbone panes are idle; early nudge failed because manager pane was unavailable'
+  return 1
+}
+
+nudge_manager() {
+  local idle_count seconds_remaining
+  idle_count="$1"
+
+  if ! manager_nudge_due "$nudge_cooldown_seconds"; then
+    seconds_remaining="$(seconds_until_manager_nudge "$nudge_cooldown_seconds")"
+    log "manager healthcheck: idle (count=$idle_count); nudge cooldown active (${seconds_remaining}s remaining)"
+    return 1
+  fi
+
+  if (( idle_count >= 2 )); then
+    "$SEND_ROLE_CMD" manager '/compact' >/dev/null 2>&1 || true
+    sleep 2
+  fi
+
+  if send_manager_healthcheck_prompt periodic-healthcheck; then
+    log "manager healthcheck: idle (count=$idle_count); nudged manager"
+    return 0
+  fi
+
+  log "manager healthcheck: idle (count=$idle_count); nudge failed because manager pane was unavailable"
+  return 1
+}
+
+recover_and_restart() {
+  log 'hard reset: stopping all role panes'
+  "$HARD_RESET_CMD" >/dev/null 2>&1 || true
+
+  log 'hard reset: running recovery'
+  if ! "$RECOVER_CMD" >/dev/null 2>&1; then
+    log 'recovery failed; continuing to manager restart anyway'
+  fi
+
+  log 'hard reset: restarting manager'
+  start_manager
+}
+
+empty_queue_watch_snapshot() {
+  find \
+    "$KANBAN_DIR/0-open" \
+    "$KANBAN_DIR/1-to_refine" \
+    "$KANBAN_DIR/2-planned" \
+    "$KANBAN_DIR/3-in_progress" \
+    "$KANBAN_DIR/4-in_review" \
+    -maxdepth 1 -type f ! -name '.gitkeep' | sort
+}
+
+empty_queue_watch_applicable() {
+  local actionable_count active_non_backbone_count
+  actionable_count="$(find "$KANBAN_DIR/2-planned" "$KANBAN_DIR/3-in_progress" "$KANBAN_DIR/4-in_review" -maxdepth 1 -type f ! -name '.gitkeep' | wc -l | tr -d ' ')"
+  active_non_backbone_count="$(capture_window_role_activity | wc -l | tr -d ' ')"
+
+  [[ "$actionable_count" == "0" && "$active_non_backbone_count" -le 1 ]]
+}
+
+handle_empty_queue_idle() {
+  local current_snapshot
+
+  if ! empty_queue_watch_applicable; then
+    empty_queue_watch_mode=0
+    empty_queue_watch_snapshot_cache=""
+    return 1
+  fi
+
+  current_snapshot="$(empty_queue_watch_snapshot)"
+
+  if [[ "$empty_queue_watch_mode" -eq 0 ]]; then
+    empty_queue_watch_mode=1
+    empty_queue_watch_snapshot_cache="$current_snapshot"
+    log 'manager healthcheck: idle; empty ready queue detected; entering file-watch idle mode'
+    return 0
+  fi
+
+  if [[ "$current_snapshot" == "$empty_queue_watch_snapshot_cache" ]]; then
+    return 0
+  fi
+
+  empty_queue_watch_mode=0
+  empty_queue_watch_snapshot_cache=""
+  set_window_role_idle_latch 0
+  log 'manager healthcheck: idle; kanban lane files changed while empty queue watch was active; waking manager'
+
+  if send_manager_healthcheck_prompt kanban-lane-change; then
+    return 0
+  fi
+
+  log 'manager healthcheck: idle; lane change wake-up failed because manager pane was unavailable'
+  return 0
+}
+
+idle_count=0
+empty_queue_watch_mode=0
+empty_queue_watch_snapshot_cache=""
+start_manager
+
+while true; do
+  now="$(date +%s)"
+  if (( now >= deadline_at )); then
+    log 'backbone max runtime reached; exiting supervisor loop'
+    exit 0
+  fi
+
+  result="$($HEALTHCHECK_MANAGER_CMD 2>/dev/null || echo stuck)"
+
+  case "$result" in
+    working)
+      idle_count=0
+      empty_queue_watch_mode=0
+      empty_queue_watch_snapshot_cache=""
+      set_window_role_idle_latch 0
+      window_role_panes_all_idle >/dev/null 2>&1 || true
+      log 'manager healthcheck: working'
+      ;;
+    missing)
+      idle_count=0
+      empty_queue_watch_mode=0
+      empty_queue_watch_snapshot_cache=""
+      set_window_role_idle_latch 0
+      reset_window_role_activity_state
+      log 'manager healthcheck: missing; starting manager'
+      start_manager
+      ;;
+    idle)
+      if handle_empty_queue_idle; then
+        idle_count=0
+      else
+        idle_count=$((idle_count + 1))
+        if maybe_nudge_manager_early_on_all_idle; then
+          idle_count=0
+        else
+          nudge_manager "$idle_count" || true
+        fi
+      fi
+      ;;
+    suspect)
+      idle_count=0
+      empty_queue_watch_mode=0
+      empty_queue_watch_snapshot_cache=""
+      set_window_role_idle_latch 0
+      if [[ -f "$STATE_DIR/manager-health.env" ]]; then
+        # shellcheck disable=SC1090
+        source "$STATE_DIR/manager-health.env"
+      fi
+      log "manager healthcheck: suspect; reason=${suspicion_reason:-unknown} elapsed=${suspicion_elapsed_seconds:-0}s"
+      ;;
+    stuck|restart)
+      idle_count=0
+      empty_queue_watch_mode=0
+      empty_queue_watch_snapshot_cache=""
+      set_window_role_idle_latch 0
+      reset_window_role_activity_state
+      log "manager healthcheck: $result; performing hard reset"
+      recover_and_restart
+      ;;
+    *)
+      idle_count=0
+      empty_queue_watch_mode=0
+      empty_queue_watch_snapshot_cache=""
+      set_window_role_idle_latch 0
+      reset_window_role_activity_state
+      log "manager healthcheck: unknown result '$result'; performing hard reset"
+      recover_and_restart
+      ;;
+  esac
+
+  if [[ "$once" -eq 1 ]]; then
+    exit 0
+  fi
+
+  now="$(date +%s)"
+  remaining_seconds=$(( deadline_at - now ))
+  if (( remaining_seconds <= 0 )); then
+    log 'backbone max runtime reached; exiting supervisor loop'
+    exit 0
+  fi
+
+  if (( remaining_seconds < sleep_seconds )); then
+    sleep "$remaining_seconds"
+  else
+    sleep "$sleep_seconds"
+  fi
+done
