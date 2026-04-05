@@ -3,6 +3,9 @@ id: KB-0000
 type: feature
 depends_on: []
 minimum_thinking: medium
+# Optional priority override:
+# priority: ignore     # do not process yet
+# priority: immediate  # highest user-requestable priority
 ---
 
 # Ticket title

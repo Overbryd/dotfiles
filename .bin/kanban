@@ -305,8 +305,18 @@ set_window_visuals() {
   window_id="$1"
 
   tmux rename-window -t "$window_id" "$PROJECT_NAME"
+  tmux set-window-option -t "$window_id" automatic-rename off >/dev/null
+  tmux set-window-option -t "$window_id" allow-rename off >/dev/null
+  tmux set-window-option -t "$window_id" allow-set-title off >/dev/null
   tmux set-window-option -t "$window_id" pane-border-status top >/dev/null
   tmux set-window-option -t "$window_id" pane-border-format '#{pane_title}' >/dev/null
+}
+
+lock_pane_title_from_app_changes() {
+  local pane_id
+  pane_id="$1"
+
+  tmux set-window-option -t "$pane_id" allow-set-title off >/dev/null 2>&1 || true
 }
 
 set_pane_title() {
@@ -553,16 +563,99 @@ normalize_pane_snapshot() {
   '
 }
 
+ticket_frontmatter_scalar() {
+  local key file
+  key="$1"
+  file="$2"
+
+  awk -v key="$key" '
+    BEGIN {
+      in_frontmatter = 0
+    }
+    NR == 1 {
+      if ($0 == "---") {
+        in_frontmatter = 1
+        next
+      }
+      exit
+    }
+    in_frontmatter && $0 == "---" {
+      exit
+    }
+    in_frontmatter && $0 ~ ("^" key ":[[:space:]]*") {
+      sub("^" key ":[[:space:]]*", "", $0)
+      print
+      exit
+    }
+  ' "$file"
+}
+
 ticket_id_from_file() {
-  awk '/^id:/ { print $2; exit }' "$1"
+  ticket_frontmatter_scalar id "$1"
+}
+
+ticket_type_from_file() {
+  ticket_frontmatter_scalar type "$1"
+}
+
+ticket_priority_from_file() {
+  ticket_frontmatter_scalar priority "$1"
 }
 
 ticket_minimum_thinking_from_file() {
-  awk '/^minimum_thinking:/ { print $2; exit }' "$1"
+  ticket_frontmatter_scalar minimum_thinking "$1"
 }
 
 ticket_title_from_file() {
   sed -n 's/^# //p' "$1" | head -n 1
+}
+
+ticket_lane_name() {
+  basename -- "$(dirname -- "$1")"
+}
+
+valid_ticket_priority() {
+  case "$1" in
+    ""|normal|ignore|immediate)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+ticket_effective_priority_from_file() {
+  local file raw_priority lane
+  file="$1"
+  raw_priority="$(ticket_priority_from_file "$file" | tr '[:upper:]' '[:lower:]')"
+  lane="$(ticket_lane_name "$file")"
+
+  if ! valid_ticket_priority "$raw_priority"; then
+    raw_priority="normal"
+  fi
+
+  case "$raw_priority" in
+    ignore|immediate)
+      printf '%s\n' "$raw_priority"
+      return 0
+      ;;
+  esac
+
+  if [[ -z "$raw_priority" && "$lane" == "0-open" ]]; then
+    printf 'ignore\n'
+    return 0
+  fi
+
+  printf 'normal\n'
+}
+
+ticket_is_ignored() {
+  [[ "$(ticket_effective_priority_from_file "$1")" == "ignore" ]]
+}
+
+ticket_is_immediate() {
+  [[ "$(ticket_effective_priority_from_file "$1")" == "immediate" ]]
 }
 
 valid_thinking_level() {
@@ -820,7 +913,7 @@ reality_check_due_reason() {
     source "$state_file"
   fi
 
-  if [[ "${tickets_completed_since_reality_check:-0}" == "0" ]] && ! kanban_has_active_ticket_files "$KANBAN_DIR"; then
+  if [[ "${tickets_completed_since_reality_check:-0}" == "0" ]] && ! kanban_has_processable_ticket_files "$KANBAN_DIR"; then
     printf 'none\n'
     return 0
   fi
@@ -850,17 +943,51 @@ reality_check_due_reason() {
   fi
 }
 
+immediate_ticket_healthcheck_guidance() {
+  local file count summary limit
+  count=0
+  summary=""
+  limit=5
+
+  while IFS= read -r file; do
+    [[ -n "$file" ]] || continue
+    count=$(( count + 1 ))
+
+    if (( count <= limit )); then
+      if [[ -n "$summary" ]]; then
+        summary+="; "
+      fi
+      summary+="$(relative_to_project "$file")"
+    fi
+  done < <(kanban_immediate_ticket_files "$KANBAN_DIR")
+
+  if (( count == 0 )); then
+    return 1
+  fi
+
+  if (( count > limit )); then
+    summary+="; ..."
+  fi
+
+  printf 'Immediate-priority tickets exist and override both reality-check work and normal work. Let the current active pass reach a clear stop, then keep the system focused on immediate tickets only until none remain. Work immediate tickets in series and let them traverse the lanes normally. Current immediate tickets: %s. Tickets with priority: ignore are not actionable, and tickets in 0-open without a priority are also ignored.\n' "$summary"
+}
+
 reality_check_healthcheck_guidance() {
-  local due_reason ticket_interval interval_seconds active_message
+  local due_reason ticket_interval interval_seconds active_message immediate_override_note
   due_reason="$(reality_check_due_reason)"
   ticket_interval="$(reality_check_ticket_interval)"
   interval_seconds="$(reality_check_interval_seconds)"
+  immediate_override_note=''
 
   if [[ "$due_reason" == "none" ]]; then
     return 1
   fi
 
-  active_message='If no reality-check pane is active, launch `kanban start-role reality-check` during this pass. If one is already active, inspect it and reconcile its findings.'
+  if kanban_has_immediate_ticket_files "$KANBAN_DIR"; then
+    active_message='Immediate-priority tickets currently override reality-check work. Do not start a new reality-check until the immediate queue is drained. If a reality-check pane is already active, let it reach a clear stop, capture its findings, and then refocus on the immediate queue.'
+  else
+    active_message='If no reality-check pane is active, launch `kanban start-role reality-check` during this pass. If one is already active, inspect it and reconcile its findings.'
+  fi
 
   case "$due_reason" in
     time)
@@ -1166,7 +1293,7 @@ kanban_has_ticket_files() {
     -maxdepth 1 -type f ! -name '.gitkeep' -print -quit | grep -q .
 }
 
-kanban_has_active_ticket_files() {
+kanban_active_lane_ticket_files() {
   local kanban_root
   kanban_root="$1"
 
@@ -1176,7 +1303,62 @@ kanban_has_active_ticket_files() {
     "$kanban_root/2-planned" \
     "$kanban_root/3-in_progress" \
     "$kanban_root/4-in_review" \
-    -maxdepth 1 -type f ! -name '.gitkeep' -print -quit | grep -q .
+    -maxdepth 1 -type f ! -name '.gitkeep' | sort
+}
+
+kanban_processable_ticket_files() {
+  local kanban_root file lane priority
+  kanban_root="$1"
+
+  while IFS= read -r file; do
+    [[ -n "$file" ]] || continue
+    lane="$(ticket_lane_name "$file")"
+    priority="$(ticket_effective_priority_from_file "$file")"
+
+    if [[ "$priority" == "ignore" ]]; then
+      continue
+    fi
+
+    if [[ "$lane" == "0-open" && "$priority" != "immediate" ]]; then
+      continue
+    fi
+
+    printf '%s\n' "$file"
+  done < <(kanban_active_lane_ticket_files "$kanban_root")
+}
+
+kanban_has_processable_ticket_files() {
+  local kanban_root
+  kanban_root="$1"
+
+  kanban_processable_ticket_files "$kanban_root" | grep -q .
+}
+
+kanban_immediate_ticket_files() {
+  local kanban_root file
+  kanban_root="$1"
+
+  while IFS= read -r file; do
+    [[ -n "$file" ]] || continue
+
+    if ticket_is_immediate "$file"; then
+      printf '%s\n' "$file"
+    fi
+  done < <(kanban_active_lane_ticket_files "$kanban_root")
+}
+
+kanban_has_immediate_ticket_files() {
+  local kanban_root
+  kanban_root="$1"
+
+  kanban_immediate_ticket_files "$kanban_root" | grep -q .
+}
+
+kanban_has_active_ticket_files() {
+  local kanban_root
+  kanban_root="$1"
+
+  kanban_active_lane_ticket_files "$kanban_root" | grep -q .
 }
 
 kanban_next_ticket_id_for_dir() {

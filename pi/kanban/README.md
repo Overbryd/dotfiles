@@ -89,6 +89,7 @@ The backbone will:
 - title the backbone pane as `<project_name>:backbone`
 - enforce at most one backbone pane in that project window
 - enable pane border titles for the window
+- lock the project window against application-driven tmux title changes so managed pane titles stay stable
 - start the manager in a separate pane
 
 ### Pane naming
@@ -105,6 +106,8 @@ Examples:
 my_project:backbone
 my_project:manager
 ```
+
+Kanban relies on these pane titles for role discovery and recovery. Because interactive `pi` tries to set the terminal title itself, the kanban scripts disable tmux `allow-set-title` for the managed project window and role panes so `pi` cannot overwrite the managed pane titles.
 
 ### Uniqueness rule
 
@@ -139,8 +142,15 @@ Use for:
 - questions
 - rough feature requests
 - user-owned prerequisites not yet incorporated into active work
+- review notes or draft tickets that are still being written
 
 These files may be incomplete.
+
+Priority behavior in `0-open/`:
+
+- a ticket in `0-open/` with no `priority` set is ignored by the manager
+- `priority: ignore` also keeps a ticket out of active processing
+- `priority: immediate` makes a `0-open/` ticket actionable immediately and gives it the highest pickup priority
 
 ### `1-to_refine/`
 Research and shaping lane.
@@ -203,6 +213,10 @@ These keys belong in frontmatter:
 - `depends_on`
 - `minimum_thinking`
 
+Optional frontmatter key:
+
+- `priority` — `ignore` or `immediate`
+
 Everything else belongs in the Markdown body.
 
 Example:
@@ -258,13 +272,31 @@ If a ticket is blocked, state that clearly in the body as well.
 
 ## Priority rules
 
-Default priority order:
+Priority is an override on top of the lane system. Tickets still move through the same lanes normally.
+
+Priority order:
+
+1. `priority: immediate` tickets — highest user-requestable priority
+2. `reality-check` findings ticket and its derived cleanup stream
+3. other normal tickets
+4. `priority: ignore` tickets and `0-open/` tickets with no `priority` — not actionable
+
+Execution rules:
+
+- If any immediate tickets exist, the manager should finish the current active pass safely and then keep the system focused on immediate tickets until none remain.
+- Immediate tickets should be worked in series, not sprayed across the board speculatively.
+- Immediate tickets outrank both normal work and reality-check work.
+- Reality-check findings and their cleanup follow-ons outrank other normal work, but do not outrank immediate tickets.
+- A ticket with `priority: ignore` is ignored from processing until its priority changes.
+- A ticket in `0-open/` with no `priority` is also ignored from processing.
+- Outside `0-open/`, a ticket with no `priority` is treated as normal work.
+
+Within a given priority class, the manager should still preserve lane discipline:
 
 1. finish or reconcile active work already in `4-in_review/` and `3-in_progress/`
-2. if a `reality-check` findings ticket exists, prioritize it and the cleanup tickets derived from it ahead of unrelated new feature work
-3. keep `2-planned/` ordered so the next ready ticket is obvious
-4. when no clearer higher-priority active work exists, move the best ticket in `1-to_refine/` forward by starting a `refiner`
-5. when `1-to_refine/` is empty or drained, pull the next meaningful work from `0-open/` into refinement
+2. keep `2-planned/` ordered so the next ready ticket is obvious
+3. when no clearer higher-priority implementation or review task exists, move the best ticket in `1-to_refine/` forward by starting a `refiner`
+4. when the next best actionable work lives in `0-open/`, pull it forward into refinement first
 
 A reality-check child ticket should keep an explicit link back to the active findings ticket, preferably through `depends_on` or direct ticket references in the body.
 
@@ -368,7 +400,9 @@ The manager should ensure `reality-check` runs at least once every 2 hours or af
 
 Each `reality-check` run should rebuild fresh context, start from a fresh session without resuming old role-chat history, and update at most one findings ticket.
 
-If `reality-check` produces or updates a findings ticket, the manager should treat that findings ticket and its linked cleanup follow-ons as the highest-priority refinement/planning/implementation stream ahead of unrelated new work until the cleanup run has been properly shaped and advanced.
+If `reality-check` produces or updates a findings ticket, the manager should treat that findings ticket and its linked cleanup follow-ons as the highest-priority refinement/planning/implementation stream ahead of unrelated normal work until the cleanup run has been properly shaped and advanced.
+
+However, `priority: immediate` still outranks both the findings ticket and its cleanup follow-ons.
 
 ## Recovery
 
@@ -404,7 +438,7 @@ If the manager appears idle, the backbone may send:
 - a less-frequent `/compact`, followed by a periodic healthcheck prompt only after extended repeated idleness and subject to a separate compact cooldown
 - a periodic healthcheck prompt that explicitly calls out when `reality-check` is due by elapsed time or by completed-ticket count
 
-When `2-planned/`, `3-in_progress/`, and `4-in_review/` are empty and no managed worker pane remains active, the backbone switches to a special file-watch idle mode instead of repeatedly nudging the manager. In that mode it waits for lane-file changes under `0-open/`, `1-to_refine/`, `2-planned/`, `3-in_progress/`, or `4-in_review/` before waking the manager again.
+When there is no processable ticket left in `0-open/`, `1-to_refine/`, `2-planned/`, `3-in_progress/`, or `4-in_review/` and no managed worker pane remains active, the backbone switches to a special file-watch idle mode instead of repeatedly nudging the manager. In that mode it watches lane state changes, including priority changes that make a previously ignored ticket actionable, before waking the manager again.
 
 A periodic healthcheck prompt is meant to trigger one bounded reconciliation pass, not an open-ended self-driven loop. That pass may still launch the next clear worker immediately when the previous step just finished and queue state now makes the follow-on action obvious.
 

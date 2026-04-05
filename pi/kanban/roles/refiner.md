@@ -31,14 +31,16 @@ Assume:
 - define acceptance criteria
 - define verification steps
 - identify dependencies
+- if refining an immediate-priority ticket, preserve its `priority: immediate` status until the manager deliberately lowers it
 - if refining a `reality-check` findings ticket, preserve an explicit parent/child link from any derived cleanup ticket back to that findings ticket
-- if refining a `reality-check` findings ticket, keep the resulting cleanup tickets clearly prioritized ahead of unrelated new feature work
+- if refining a `reality-check` findings ticket, keep the resulting cleanup tickets clearly prioritized ahead of unrelated normal work unless immediate tickets override them
 - set `minimum_thinking` when the ticket clearly needs more than the default role depth
 - move ready tickets to `2-planned/`
 
 ## Do not
 
 - silently narrow or expand scope
+- drop `priority: immediate` from an immediate ticket unless the manager explicitly decided to lower it
 - lose the relationship between a `reality-check` findings ticket and the cleanup tickets derived from it
 - implement code while pretending to refine
 - rename panes or spawn sibling panes

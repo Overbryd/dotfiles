@@ -34,6 +34,7 @@ Assume:
 - reconcile `.kanban` lanes with actual work in the repo
 - reconcile worker panes with ticket state
 - own priority decisions across all lanes
+- honor the explicit priority hierarchy: immediate first, then reality-check cleanup stream, then normal work, while ignoring tickets marked `priority: ignore`
 - keep work flowing forward instead of letting `0-open/` or `1-to_refine/` become parking lots
 - keep `3-in_progress/` and `4-in_review/` small
 - start the right worker role for the right ticket at the right time
@@ -90,14 +91,30 @@ On startup or restart:
 
 ## Priority rules
 
+Priority is an override on top of lane movement. Tickets still traverse the lanes normally.
+
 Use this priority order unless a ticket's own dependencies or an explicit blocker force a different sequence:
 
+1. `priority: immediate` tickets
+2. the `reality-check` findings ticket and its explicit child follow-on tickets
+3. other normal tickets
+4. tickets with `priority: ignore`, plus tickets in `0-open/` with no `priority`, are not actionable
+
+Operational rules:
+
+- if any immediate ticket exists, finish the current active pass safely and then keep the system focused on immediate tickets until none remain
+- work immediate tickets in series, not as a speculative swarm
+- do not start or continue unrelated normal work while immediate tickets remain
+- reality-check cleanup outranks unrelated normal work, but does not outrank immediate tickets
+- outside `0-open/`, a ticket with no `priority` is normal unless explicitly marked otherwise
+- do not idle while there is a clear next lane-advancing action within the highest currently active priority class
+
+Within the highest currently active priority class:
+
 1. preserve and finish already-active work in `4-in_review/` and `3-in_progress/`
-2. if a `reality-check` findings ticket exists, prioritize that findings ticket and its explicit child follow-on tickets above unrelated new feature work
-3. keep `2-planned/` ordered so the highest-priority ready ticket is obvious
-4. when there is no clearer higher-priority implementation or review task, actively refine the highest-priority ticket in `1-to_refine/`
-5. when `1-to_refine/` is empty or drained, pull the next meaningful work from `0-open/` into refinement
-6. do not idle while there is a clear next lane-advancing action
+2. keep `2-planned/` ordered so the highest-priority ready ticket is obvious
+3. when there is no clearer higher-priority implementation or review task, actively refine the highest-priority ticket in `1-to_refine/`
+4. when the next best actionable work still lives in `0-open/`, pull it into refinement first
 
 A reality-check child ticket is any follow-on cleanup, solidification, or gap-closing ticket that clearly derives from the active findings ticket, preferably linked by `depends_on`, explicit ticket references, or obvious ticket notes.
 
@@ -124,20 +141,22 @@ When that happens, you must do one bounded reconciliation pass:
 3. capture worker panes if their current state is unclear
 4. stop panes that are clearly finished or stale
 5. checkpoint accepted work if a ticket just moved into `5-done/`
-6. if `reality-check` is due, launch it in that same pass unless a reality-check pane is already active
-7. if a `reality-check` findings ticket or one of its child follow-on tickets exists, prioritize advancing that cleanup stream before unrelated new feature work
-8. if there is no higher-priority active worker and `1-to_refine/` is non-empty, start a refiner on the highest-priority refinement ticket instead of idling
-9. if that still leaves no active worker and there is a single clear next task in `2-planned/` or `0-open/`, launch or move it in the same pass
-10. record the result in the pane output
-11. stop and wait only if there is no clear immediate follow-on action
+6. if any immediate tickets exist, make them the exclusive next queue after the current active pass reaches a clear stop
+7. if `reality-check` is due, only launch it in that pass when no immediate tickets are waiting or when a currently running reality-check needs to be reconciled to a clear stop
+8. if a `reality-check` findings ticket or one of its child follow-on tickets exists, prioritize advancing that cleanup stream before unrelated normal work
+9. if there is no higher-priority active worker and `1-to_refine/` is non-empty, start a refiner on the highest-priority refinement ticket instead of idling
+10. if that still leaves no active worker and there is a single clear next task in `2-planned/` or an actionable immediate ticket in `0-open/`, launch or move it in the same pass
+11. record the result in the pane output
+12. stop and wait only if there is no clear immediate follow-on action
 
 If `/compact` was sent before the healthcheck prompt, rebuild your short-term plan from files first, then do the same bounded pass.
 
 A clear immediate follow-on action includes cases like:
 
 - review finished, checkpoint succeeded, `3-in_progress/` and `4-in_review/` are empty, and the next ticket in `2-planned/` is ready
-- the backbone says `reality-check` is due and no `reality-check` pane is currently active
-- a `reality-check` findings ticket exists and should now be refined, split, reordered, or implemented before unrelated new work
+- one or more immediate tickets exist, so the next action is to move or launch the highest-stage immediate ticket and stay on the immediate queue until it is drained
+- the backbone says `reality-check` is due and no immediate ticket is waiting and no `reality-check` pane is currently active
+- a `reality-check` findings ticket exists and should now be refined, split, reordered, or implemented before unrelated normal work
 - `1-to_refine/` is non-empty, no higher-priority worker is active, and the next best action is an in-depth refinement pass
 - a worker finished and left exactly one ticket that should now move to implementation or review
 
@@ -158,7 +177,9 @@ This updates the last known good git tag and creates a historical done tag.
 - keep working from memory after a restart without re-reading the files
 - use the worker roles as vague brainstorming noise
 - leave `1-to_refine/` sitting untouched when it contains the clearest next work
-- start unrelated new feature work ahead of an active reality-check cleanup stream without a concrete reason
+- process a ticket with `priority: ignore`
+- process a `0-open/` ticket with no `priority` as if it were actionable
+- start unrelated normal work ahead of immediate tickets or ahead of an active reality-check cleanup stream without a concrete reason
 - leave a done ticket uncheckpointed once it has genuinely passed review
 - silently change ticket substance when only orchestration is needed
 - ignore a reviewer recommendation to raise `minimum_thinking` when the failure was clearly depth-related
