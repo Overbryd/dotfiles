@@ -330,6 +330,29 @@ role_title() {
   printf '%s:%s\n' "$PROJECT_NAME" "$1"
 }
 
+role_is_backbone_managed() {
+  case "$1" in
+    operator)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+operator_session_dir() {
+  printf '%s/operator-sessions\n' "$STATE_DIR"
+}
+
+operator_blocker_file() {
+  printf '%s/operator-blocker.md\n' "$KANBAN_DIR"
+}
+
+operator_todo_file() {
+  printf '%s/operator-todo.md\n' "$KANBAN_DIR"
+}
+
 backbone_title() {
   role_title backbone
 }
@@ -366,16 +389,16 @@ project_custom_role_doc_path() {
 resolve_role_doc() {
   local role builtin_path custom_path
   role="$1"
-  builtin_path="$(builtin_role_doc_path "$role")"
+  custom_path="$(project_custom_role_doc_path "$role")"
 
-  if [[ -f "$builtin_path" ]]; then
-    printf '%s\n' "$builtin_path"
+  if [[ -f "$custom_path" ]]; then
+    printf '%s\n' "$custom_path"
     return 0
   fi
 
-  custom_path="$(project_custom_role_doc_path "$role")"
-  if [[ -f "$custom_path" ]]; then
-    printf '%s\n' "$custom_path"
+  builtin_path="$(builtin_role_doc_path "$role")"
+  if [[ -f "$builtin_path" ]]; then
+    printf '%s\n' "$builtin_path"
     return 0
   fi
 
@@ -1143,7 +1166,7 @@ reset_window_role_activity_state() {
 }
 
 capture_window_role_activity() {
-  local window_id backbone_pane_id backbone_pane_title pane_id pane_dead history_size pane_title
+  local window_id backbone_pane_id backbone_pane_title pane_id pane_dead history_size pane_title role
   window_id="$(tmux_target_window_id)"
   source_backbone_env
   backbone_pane_id="${KANBAN_TMUX_BACKBONE_PANE_ID:-}"
@@ -1151,7 +1174,11 @@ capture_window_role_activity() {
 
   while IFS=$'\t' read -r pane_id pane_dead history_size pane_title; do
     if [[ "$pane_dead" == "0" && "$pane_id" != "$backbone_pane_id" && "$pane_title" == "$PROJECT_NAME:"* && "$pane_title" != "$backbone_pane_title" ]]; then
-      printf '%s\t%s\n' "$pane_id" "$history_size"
+      role="${pane_title#${PROJECT_NAME}:}"
+
+      if role_is_backbone_managed "$role"; then
+        printf '%s\t%s\n' "$pane_id" "$history_size"
+      fi
     fi
   done < <(tmux list-panes -t "$window_id" -F $'#{pane_id}\t#{pane_dead}\t#{history_size}\t#{pane_title}')
 }

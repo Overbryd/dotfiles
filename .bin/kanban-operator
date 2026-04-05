@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source "$(cd -- "$(dirname -- "$0")" && pwd)/kanban"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  kanban operator [--pane|--window] [--vertical|--horizontal] [--provider <name>] [--model <id>] [--thinking <level>]
+
+Start a user-owned operator pi session in the current project.
+
+Behavior:
+- always starts from a fresh session
+- stores operator sessions under .kanban/runtime/state/operator-sessions/
+- defaults to a new pane when inside tmux
+- defaults to the current shell when outside tmux
+
+Examples:
+  kanban operator
+  kanban operator --window
+  kanban operator --vertical --thinking low
+  kanban operator --provider openai --model gpt-5.4
+EOF
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
+
+require_project_context
+require_cmd pi bash
+
+if [[ -n "${TMUX:-}" ]]; then
+  require_cmd tmux
+fi
+
+ensure_runtime_dirs
+
+mode="pane"
+split_flag="-h"
+provider_override=""
+model_override=""
+thinking_override=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pane)
+      mode="pane"
+      shift
+      ;;
+    --window)
+      mode="window"
+      shift
+      ;;
+    --vertical)
+      split_flag="-v"
+      shift
+      ;;
+    --horizontal)
+      split_flag="-h"
+      shift
+      ;;
+    --provider)
+      provider_override="${2:-}"
+      shift 2
+      ;;
+    --model)
+      model_override="${2:-}"
+      shift 2
+      ;;
+    --thinking)
+      thinking_override="${2:-}"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if ! role_doc="$(resolve_role_doc operator)"; then
+  echo "unknown role doc for role 'operator' (looked in $(builtin_role_doc_path operator) and $(project_custom_role_doc_path operator))" >&2
+  exit 1
+fi
+
+provider="${provider_override:-$(kanban_pi_primary_provider)}"
+model_id="${model_override:-$(kanban_pi_default_model)}"
+thinking_level="${thinking_override:-minimal}"
+
+if ! valid_thinking_level "$thinking_level"; then
+  echo "invalid thinking level: $thinking_level" >&2
+  exit 1
+fi
+
+session_dir="$(operator_session_dir)"
+mkdir -p "$session_dir"
+session_file="$session_dir/operator-$(date -u +"%Y%m%dT%H%M%SZ").jsonl"
+pane_title="$(role_title operator)"
+launch_script="$STATE_DIR/start-operator-$(date -u +"%Y%m%dT%H%M%SZ").sh"
+
+args=(
+  --provider "$provider"
+  --model "$model_id"
+  --thinking "$thinking_level"
+  --session-dir "$session_dir"
+  --session "$session_file"
+  --append-system-prompt "$role_doc"
+)
+
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'set -euo pipefail\n'
+  printf 'cd %q\n' "$PROJECT_ROOT"
+  printf 'pane_title=%q\n' "$pane_title"
+  printf 'if [[ -n "${TMUX_PANE:-}" ]]; then\n'
+  printf '  tmux set-window-option -t "$TMUX_PANE" allow-set-title off >/dev/null 2>&1 || true\n'
+  printf '  tmux select-pane -t "$TMUX_PANE" -T "$pane_title" >/dev/null 2>&1 || true\n'
+  printf 'fi\n'
+  printf 'exec pi'
+  for arg in "${args[@]}"; do
+    printf ' %q' "$arg"
+  done
+  printf '\n'
+} > "$launch_script"
+chmod +x "$launch_script"
+
+if [[ -z "${TMUX:-}" ]]; then
+  cd "$PROJECT_ROOT"
+  exec bash "$launch_script"
+fi
+
+if [[ "$mode" == "pane" ]]; then
+  if pane_id="$(find_role_pane operator 2>/dev/null)"; then
+    tmux select-pane -t "$pane_id"
+    echo "exists $pane_id"
+    exit 0
+  fi
+
+  window_id="$(tmux_target_window_id)"
+  command_string="bash $(printf '%q' "$launch_script")"
+  pane_id="$(tmux split-window "$split_flag" -P -F '#{pane_id}' -t "$window_id" -c "$PROJECT_ROOT" "$command_string")"
+  lock_pane_title_from_app_changes "$pane_id"
+  set_pane_title "$pane_id" "$pane_title"
+  record_role_pane operator "$pane_id"
+  tmux select-layout -t "$window_id" tiled >/dev/null || true
+  tmux select-pane -t "$pane_id"
+  echo "created $pane_id"
+  exit 0
+fi
+
+window_spec="$(tmux new-window -P -F '#{window_id}\t#{pane_id}' -n "${PROJECT_NAME}:operator" -c "$PROJECT_ROOT" "bash $(printf '%q' "$launch_script")")"
+operator_window_id="${window_spec%%$'\t'*}"
+operator_pane_id="${window_spec#*$'\t'}"
+
+tmux set-window-option -t "$operator_window_id" automatic-rename off >/dev/null
+tmux set-window-option -t "$operator_window_id" allow-rename off >/dev/null
+tmux set-window-option -t "$operator_window_id" allow-set-title off >/dev/null
+tmux set-window-option -t "$operator_window_id" pane-border-status top >/dev/null
+tmux set-window-option -t "$operator_window_id" pane-border-format '#{pane_title}' >/dev/null
+set_pane_title "$operator_pane_id" "$pane_title"
+tmux select-window -t "$operator_window_id"
+
+echo "created $operator_pane_id"

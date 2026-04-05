@@ -1,8 +1,8 @@
 # Kanban roles
 
-These are the built-in role files loaded directly from the kanban install. They are not meant to be copied into each project's `.kanban/roles/` directory.
+These are the built-in role files loaded directly from the kanban install.
 
-Project-local `.kanban/roles/` is reserved for additional custom roles that are not part of this built-in set.
+Project-local `.kanban/roles/` may override a built-in role by filename, and may also define additional custom roles.
 
 These role files describe how agents should interact with the file-based kanban under the tmux backbone model.
 
@@ -16,6 +16,7 @@ These role files describe how agents should interact with the file-based kanban 
 - `reviewer.md`
 - `manager.md`
 - `reality-check.md`
+- `operator.md`
 - `discussant.md`
 - `decider.md`
 - `recovery.md`
@@ -29,12 +30,14 @@ All roles must assume:
 - `.kanban/`, `.plans/`, git state, and checkpoint tags are authoritative
 - pane management belongs to the manager unless the role explicitly says otherwise
 
+The built-in `operator` role is the main exception: it is user-owned and started manually with `kanban operator`, not by the manager.
+
 ## Usage
 
 A fresh agent should:
 
 1. read `.kanban/README.md`
-2. read the relevant built-in or custom role file supplied with the launch
+2. read the relevant built-in or project-local override role file supplied with the launch
 3. read the ticket being worked on
 4. read any referenced `.plans/*` files before changing ticket state or code
 

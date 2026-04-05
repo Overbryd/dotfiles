@@ -54,8 +54,9 @@ sleep_seconds="${PI_BACKBONE_SLEEP_SECONDS:-30}"
 nudge_cooldown_seconds="${PI_BACKBONE_NUDGE_COOLDOWN_SECONDS:-300}"
 manager_compact_idle_count="${PI_BACKBONE_MANAGER_COMPACT_IDLE_COUNT:-8}"
 manager_compact_cooldown_seconds="${PI_BACKBONE_MANAGER_COMPACT_COOLDOWN_SECONDS:-1800}"
+send_role_timeout_seconds="${PI_KANBAN_SEND_ROLE_TIMEOUT_SECONDS:-10}"
 max_runtime_seconds="${PI_BACKBONE_MAX_RUNTIME_SECONDS:-28800}"
-base_healthcheck_prompt='Do your periodic healthcheck now. Re-read the current .kanban lanes including 0-open and 1-to_refine, inspect active worker panes with the kanban helper commands, do one bounded reconciliation pass, and adjust priorities as needed. Priority order is: immediate tickets first, then reality-check cleanup stream, then normal work. Keep work moving from 0-open to 1-to_refine to 2-planned to 3-in_progress to 4-in_review to 5-done. Tickets with priority: ignore are not actionable, and tickets in 0-open without a priority are also ignored. If a reality-check findings ticket or one of its cleanup follow-ons exists, prioritize that cleanup stream ahead of unrelated new work unless immediate tickets override it. If no higher-priority implementation or review should run first and 1-to_refine is non-empty, start a real refinement pass instead of idling. Report the result in the pane output, and if that pass reveals a single clear follow-on task launch it before stopping. Only wait when there is no clear immediate next action.'
+base_healthcheck_prompt='Do your periodic healthcheck now. Re-read the current .kanban lanes including 0-open and 1-to_refine, inspect active worker panes with the kanban helper commands, and inspect .kanban/operator-blocker.md and .kanban/operator-todo.md if they exist. Do one bounded reconciliation pass, and adjust priorities as needed. Priority order is: immediate tickets first, then reality-check cleanup stream, then normal work. Keep work moving from 0-open to 1-to_refine to 2-planned to 3-in_progress to 4-in_review to 5-done. Tickets with priority: ignore are not actionable, and tickets in 0-open without a priority are also ignored. If a reality-check findings ticket or one of its cleanup follow-ons exists, prioritize that cleanup stream ahead of unrelated new work unless immediate tickets override it. Keep the operator blocker and operator todo files clean whenever the system needs operator answers or operator review. If no higher-priority implementation or review should run first and 1-to_refine is non-empty, start a real refinement pass instead of idling. Report the result in the pane output, and if that pass reveals a single clear follow-on task launch it before stopping. Only wait when there is no clear immediate next action.'
 export KANBAN_LOG_FILE="$LOG_DIR/backbone.log"
 
 rotate_log_file "$KANBAN_LOG_FILE"
@@ -73,7 +74,7 @@ write_backbone_env "$session_id" "$window_id" "$backbone_pane_id"
 set_window_visuals "$window_id"
 ensure_single_backbone_pane "$backbone_pane_id"
 write_backbone_env "$session_id" "$window_id" "$backbone_pane_id"
-log "backbone start: pid=$$ session=$session_id window=$window_id pane=$backbone_pane_id sleep_seconds=$sleep_seconds nudge_cooldown_seconds=$nudge_cooldown_seconds manager_compact_idle_count=$manager_compact_idle_count manager_compact_cooldown_seconds=$manager_compact_cooldown_seconds max_runtime_seconds=$max_runtime_seconds deadline_at=$deadline_at"
+log "backbone start: pid=$$ session=$session_id window=$window_id pane=$backbone_pane_id sleep_seconds=$sleep_seconds nudge_cooldown_seconds=$nudge_cooldown_seconds manager_compact_idle_count=$manager_compact_idle_count manager_compact_cooldown_seconds=$manager_compact_cooldown_seconds send_role_timeout_seconds=$send_role_timeout_seconds max_runtime_seconds=$max_runtime_seconds deadline_at=$deadline_at"
 
 start_manager() {
   "$START_ROLE_CMD" manager >/dev/null
@@ -101,7 +102,7 @@ send_manager_healthcheck_prompt() {
   reason="$1"
   prompt="$(manager_healthcheck_prompt)"
 
-  if "$SEND_ROLE_CMD" manager "$prompt" >/dev/null 2>&1; then
+  if run_with_timeout "$send_role_timeout_seconds" "$SEND_ROLE_CMD" manager "$prompt" >/dev/null 2>&1; then
     record_manager_nudge "$reason"
     return 0
   fi
@@ -149,7 +150,7 @@ nudge_manager() {
 
   if (( idle_count >= manager_compact_idle_count )); then
     if manager_compact_due "$manager_compact_cooldown_seconds"; then
-      "$SEND_ROLE_CMD" manager '/compact' >/dev/null 2>&1 || true
+      run_with_timeout "$send_role_timeout_seconds" "$SEND_ROLE_CMD" manager '/compact' >/dev/null 2>&1 || true
       record_manager_compact
       log "manager healthcheck: idle (count=$idle_count); sent /compact before periodic healthcheck"
       sleep 2

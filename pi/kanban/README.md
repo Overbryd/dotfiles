@@ -49,7 +49,9 @@ It should not interpret tickets or make product decisions.
 
 ### Soft roles
 
-The soft roles are `pi` agents started in tmux panes by the manager.
+The soft roles are `pi` agents usually started in tmux panes by the manager.
+
+A special exception is the user-owned `operator` session, which is started manually with `kanban operator`.
 
 They are responsible for:
 
@@ -128,6 +130,21 @@ Runtime artifacts live under:
 ```
 
 This directory is for ephemeral or generated supervisor state.
+
+Operator chat sessions started with `kanban operator` are stored separately under:
+
+```text
+.kanban/runtime/state/operator-sessions/
+```
+
+## Operator coordination files
+
+If the system needs something from its operator, it may create and use these files:
+
+- `.kanban/operator-blocker.md` — the single current operator-facing blocker summary
+- `.kanban/operator-todo.md` — the clean actionable checklist for operator answers, review, or sign-off
+
+They are optional and should be created or updated only when needed. Keep them short, current, and authoritative.
 
 ## Lane model
 
@@ -311,6 +328,7 @@ Important commands:
 - `kanban start-role <role> [ticket]` — launch a role pane for a specific task
 - `kanban stop-role <role>` — stop a stale or completed role pane
 - `kanban send-role <role> <message>` — send a focused nudge to an existing role pane
+- `kanban operator` — start a fresh user-owned operator chat session for this project
 - `kanban checkpoint-ticket <ticket>` — create the done-state checkpoint after review acceptance
 - `kanban healthcheck-manager` — deterministic health signal used by the backbone
 - `kanban recover` / `kanban hard-reset` — recovery tools for bad states
@@ -341,6 +359,7 @@ Fallback policy:
 
 - `kanban setup` — create or refresh the project-local `.kanban/` skeleton
 - `kanban backbone` — start the hard supervisor loop in the current tmux window
+- `kanban operator [--pane|--window]` — start a fresh user-owned operator session for this project
 - `kanban start-role <role> [ticket] [--provider <name>] [--thinking <level>]` — start a role pane if it does not already exist
 - `kanban stop-role <role>` — stop a role pane
 - `kanban list-roles` — list active role panes in the project window
@@ -362,6 +381,7 @@ Fallback policy:
 - `PI_BACKBONE_NUDGE_COOLDOWN_SECONDS` — minimum seconds between manager nudges
 - `PI_BACKBONE_MANAGER_COMPACT_IDLE_COUNT` — minimum consecutive idle healthchecks before backbone may send `/compact`, default `8`
 - `PI_BACKBONE_MANAGER_COMPACT_COOLDOWN_SECONDS` — minimum seconds between backbone-issued manager `/compact` commands, default `1800`
+- `PI_KANBAN_SEND_ROLE_TIMEOUT_SECONDS` — timeout for backbone manager nudges sent through `kanban send-role`, default `10`
 - `PI_BACKBONE_MAX_RUNTIME_SECONDS` — maximum supervisor runtime before clean exit
 - `PI_BACKBONE_HEALTH_LINES` — manager pane lines captured for healthchecks
 - `PI_BACKBONE_STUCK_SUSPICION_SECONDS` — sustained suspicion window before hard reset
@@ -479,16 +499,20 @@ The manager must know how to respond to these nudges.
 - `decider`
 - `recovery`
 
+### User-owned manual assistant
+
+- `operator` — started manually with `kanban operator`; not a backbone-managed worker
+
 ## Roles
 
 Built-in role instructions are loaded from the kanban install, normally `/usr/local/dotfiles/pi/kanban/roles/`.
 
-Project-local `.kanban/roles/` is reserved for additional custom roles that are not part of the built-in kanban role set.
+Project-local `.kanban/roles/` may override a built-in role when a file with the same role name exists there, and may also define additional custom roles.
 
 Fresh agents should read, in order:
 
 1. `.kanban/README.md`
-2. the relevant built-in or custom role file supplied with the launch
+2. the relevant built-in or project-local override role file supplied with the launch
 3. the ticket they are acting on
 4. the referenced `.plans/*` files
 

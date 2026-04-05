@@ -205,21 +205,6 @@ seed_file "$assets_root/README.md" "$kanban_root/README.md"
 seed_file "$assets_root/templates/ticket.md" "$kanban_root/templates/ticket.md"
 seed_file "$assets_root/runtime/.gitignore" "$kanban_root/runtime/.gitignore"
 
-while IFS= read -r asset_file; do
-  frozen_role_copy="$kanban_root/roles/$(basename "$asset_file")"
-
-  if [[ ! -f "$frozen_role_copy" ]]; then
-    continue
-  fi
-
-  if [[ "$force" -eq 1 ]]; then
-    rm -f "$frozen_role_copy"
-    echo "removed frozen built-in role copy $frozen_role_copy"
-  else
-    echo "note: built-in roles are loaded from $assets_root/roles; ignoring project-local copy $frozen_role_copy"
-  fi
-done < <(find "$assets_root/roles" -maxdepth 1 -type f -name '*.md' ! -name 'README.md' | sort)
-
 if [[ "$seed_from_plans" -eq 1 ]]; then
   if kanban_has_ticket_files "$kanban_root"; then
     echo "skipped plan seeding because ticket files already exist under $kanban_root"

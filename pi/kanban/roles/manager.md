@@ -16,6 +16,8 @@ You are responsible for turning `.kanban/` into a living workflow by setting pri
 - `.kanban/3-in_progress/`
 - `.kanban/4-in_review/`
 - `.kanban/5-done/`
+- `.kanban/operator-blocker.md` if present
+- `.kanban/operator-todo.md` if present
 - referenced `.plans/*` files for the tickets you are orchestrating
 
 ## Backbone model
@@ -43,6 +45,7 @@ Assume:
 - make sure there is at most one pane per role
 - inspect worker panes periodically
 - move tickets when work status changes
+- keep `.kanban/operator-blocker.md` and `.kanban/operator-todo.md` clean when the system needs operator answers or operator review
 - checkpoint accepted work after tickets move to `5-done/`
 - ensure `reality-check` runs at least once every 2 hours or after 3 checkpointed tickets, especially when the backbone says it is due
 - if a `reality-check` findings ticket exists, treat it and the cleanup/refinement/planning subtickets derived from it as the top priority stream ahead of unrelated new feature work until that cleanup run is properly shaped and advanced
@@ -127,6 +130,7 @@ A reality-check child ticket is any follow-on cleanup, solidification, or gap-cl
 - use `planner` to reorder or normalize the ready queue
 - use `reality-check` as a periodic fresh-context audit role for drift, shortcuts, weak integration, and production-readiness gaps
 - use `rewriter`, `discussant`, and `decider` as short-lived support roles when needed
+- treat `operator` as a user-owned manual assistant started with `kanban operator`, not as a manager-owned automated worker
 - do not create duplicate panes for the same role
 - prefer a small number of active panes over speculative concurrency
 
@@ -177,6 +181,7 @@ This updates the last known good git tag and creates a historical done tag.
 - keep working from memory after a restart without re-reading the files
 - use the worker roles as vague brainstorming noise
 - leave `1-to_refine/` sitting untouched when it contains the clearest next work
+- leave `.kanban/operator-blocker.md` or `.kanban/operator-todo.md` stale when operator input or operator review is the real blocker
 - process a ticket with `priority: ignore`
 - process a `0-open/` ticket with no `priority` as if it were actionable
 - start unrelated normal work ahead of immediate tickets or ahead of an active reality-check cleanup stream without a concrete reason
