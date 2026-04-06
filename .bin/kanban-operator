@@ -123,11 +123,18 @@ args=(
   printf '  tmux set-window-option -t "$TMUX_PANE" allow-set-title off >/dev/null 2>&1 || true\n'
   printf '  tmux select-pane -t "$TMUX_PANE" -T "$pane_title" >/dev/null 2>&1 || true\n'
   printf 'fi\n'
-  printf 'exec pi'
+  printf 'set +e\n'
+  printf 'pi'
   for arg in "${args[@]}"; do
     printf ' %q' "$arg"
   done
   printf '\n'
+  printf 'status=$?\n'
+  printf 'set -e\n'
+  printf 'echo\n'
+  printf 'echo "[kanban] operator exited with status $status"\n'
+  printf 'echo "[kanban] leaving pane open in ${SHELL:-/bin/bash}"\n'
+  printf 'exec "${SHELL:-/bin/bash}" -i\n'
 } > "$launch_script"
 chmod +x "$launch_script"
 
