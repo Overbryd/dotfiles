@@ -32,6 +32,11 @@ require_cmd tmux
 
 message="$*"
 pane_id="$(find_role_pane "$role")"
+pane_in_mode="$(tmux display-message -p -t "$pane_id" '#{pane_in_mode}' 2>/dev/null || printf '0')"
+
+if [[ "$pane_in_mode" == "1" ]]; then
+  tmux send-keys -t "$pane_id" -X cancel >/dev/null 2>&1 || true
+fi
 
 tmux send-keys -t "$pane_id" -l "$message"
 tmux send-keys -t "$pane_id" Enter
