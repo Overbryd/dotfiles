@@ -304,6 +304,7 @@ Execution rules:
 - Immediate tickets should be worked in series, not sprayed across the board speculatively.
 - Immediate tickets outrank both normal work and reality-check work.
 - Reality-check findings and their cleanup follow-ons outrank other normal work, but do not outrank immediate tickets.
+- A due `reality-check` is periodic and non-preemptive: it never justifies stopping a still-useful running pane mid-pass, and should be deferred until a later backbone nudge after that pane reaches a clear stop.
 - A ticket with `priority: ignore` is ignored from processing until its priority changes.
 - A ticket in `0-open/` with no `priority` is also ignored from processing.
 - Outside `0-open/`, a ticket with no `priority` is treated as normal work.
@@ -377,8 +378,11 @@ Fallback policy:
 - `PI_KANBAN_DEFAULT_MODEL` — default model for new role launches
 - `PI_KANBAN_REALITY_CHECK_INTERVAL_SECONDS` — elapsed-time threshold for requiring a `reality-check` run, default `7200`
 - `PI_KANBAN_REALITY_CHECK_TICKET_INTERVAL` — completed-ticket threshold for requiring a `reality-check` run, default `3`
-- `PI_BACKBONE_SLEEP_SECONDS` — supervisor sleep between healthchecks
-- `PI_BACKBONE_NUDGE_COOLDOWN_SECONDS` — minimum seconds between manager nudges
+- `PI_BACKBONE_SLEEP_SECONDS` — supervisor sleep between healthchecks, default `10`
+- `PI_BACKBONE_STALE_NUDGE_COOLDOWN_SECONDS` — minimum seconds between stale-pane-triggered early nudges, default `120`
+- `PI_BACKBONE_NUDGE_COOLDOWN_SECONDS` — fallback periodic nudge interval when the manager remains idle, default `1800`
+- `PI_BACKBONE_STALE_PANE_LINES` — pane lines sampled for stale-pane detection, default `100`
+- `PI_BACKBONE_STALE_PANE_CONSECUTIVE_CHECKS` — unchanged consecutive checks required before a managed pane is considered stale, default `6`
 - `PI_BACKBONE_MANAGER_COMPACT_IDLE_COUNT` — minimum consecutive idle healthchecks before backbone may send `/compact`, default `8`
 - `PI_BACKBONE_MANAGER_COMPACT_COOLDOWN_SECONDS` — minimum seconds between backbone-issued manager `/compact` commands, default `1800`
 - `PI_KANBAN_SEND_ROLE_TIMEOUT_SECONDS` — timeout for backbone manager nudges sent through `kanban send-role`, default `10`
@@ -418,6 +422,8 @@ The broader `reality-check` role is used to catch drift, half-finished work, exc
 
 The manager should ensure `reality-check` runs at least once every 2 hours or after 3 checkpointed tickets, whichever comes first.
 
+A due `reality-check` is periodic and non-preemptive: if useful implementation, review, or refinement work is already running, the manager should not stop that pane just to satisfy the cadence. Instead, the manager should defer the `reality-check` launch until a later backbone nudge after the active pane reaches a clear stop.
+
 Each `reality-check` run should rebuild fresh context, start from a fresh session without resuming old role-chat history, and update at most one findings ticket.
 
 If `reality-check` produces or updates a findings ticket, the manager should treat that findings ticket and its linked cleanup follow-ons as the highest-priority refinement/planning/implementation stream ahead of unrelated normal work until the cleanup run has been properly shaped and advanced.
@@ -453,14 +459,18 @@ The healthcheck is deterministic. It relies on tmux history movement, manager pa
 
 If the manager appears idle, the backbone may send:
 
-- an earlier periodic healthcheck prompt when no managed worker pane remains active and the manager itself has gone idle
-- a periodic healthcheck prompt on the normal cooldown
+- an earlier periodic healthcheck prompt when all backbone-managed panes appear stale by repeated unchanged pane-output fingerprints
+- a fallback periodic healthcheck prompt only after the manager has gone un-nudged for the normal cooldown
 - a less-frequent `/compact`, followed by a periodic healthcheck prompt only after extended repeated idleness and subject to a separate compact cooldown
 - a periodic healthcheck prompt that explicitly calls out when `reality-check` is due by elapsed time or by completed-ticket count
 
 When there is no processable ticket left in `0-open/`, `1-to_refine/`, `2-planned/`, `3-in_progress/`, or `4-in_review/` and no managed worker pane remains active, the backbone switches to a special file-watch idle mode instead of repeatedly nudging the manager. In that mode it watches lane state changes, including priority changes that make a previously ignored ticket actionable, before waking the manager again.
 
 A periodic healthcheck prompt is meant to trigger one bounded reconciliation pass, not an open-ended self-driven loop. That pass may still launch the next clear worker immediately when the previous step just finished and queue state now makes the follow-on action obvious.
+
+To reduce interference, the backbone samples managed pane output frequently and suppresses repeated defer logs. If any managed pane is still changing, the backbone defers the early nudge; if all managed panes stay unchanged for the configured stale-window checks, it nudges the manager early once and then waits for fresh pane activity before repeating that early nudge.
+
+If `reality-check` becomes due while a still-useful worker pane is already running, the manager should defer launching `reality-check` until a later backbone nudge rather than stopping the active pane just to satisfy the cadence.
 
 The manager must know how to respond to these nudges.
 

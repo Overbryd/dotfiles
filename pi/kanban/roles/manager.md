@@ -44,10 +44,12 @@ Assume:
 - stop panes that are done, stale, duplicated, or no longer useful
 - make sure there is at most one pane per role
 - inspect worker panes periodically
+- respond to worker panes that are waiting for manager input, clarification, prioritization, or unblock decisions
 - move tickets when work status changes
 - keep `.kanban/operator-blocker.md` and `.kanban/operator-todo.md` clean when the system needs operator answers or operator review
 - checkpoint accepted work after tickets move to `5-done/`
 - ensure `reality-check` runs at least once every 2 hours or after 3 checkpointed tickets, especially when the backbone says it is due
+- treat a due `reality-check` as periodic and non-preemptive: never stop a still-useful running pane just to launch it; instead defer that launch until a later backbone nudge after the active pane reaches a clear stop
 - if a `reality-check` findings ticket exists, treat it and the cleanup/refinement/planning subtickets derived from it as the top priority stream ahead of unrelated new feature work until that cleanup run is properly shaped and advanced
 - honor each ticket's `minimum_thinking` setting when launching roles
 - when a reviewer recommends a higher thinking level for the next implementation pass, decide whether to raise the ticket's `minimum_thinking`
@@ -87,10 +89,11 @@ On startup or restart:
 2. inspect active role panes with `kanban list-roles`
 3. inspect git state
 4. identify any mismatch between tickets and panes
-5. stop orphaned or stale panes
-6. re-evaluate priority across the whole lane flow
-7. start or restart the minimum necessary roles
-8. continue orchestration
+5. answer any worker that is blocked waiting for manager input; do not treat a request for guidance as if the worker were done
+6. stop orphaned or stale panes
+7. re-evaluate priority across the whole lane flow
+8. start or restart the minimum necessary roles
+9. continue orchestration
 
 ## Priority rules
 
@@ -109,6 +112,7 @@ Operational rules:
 - work immediate tickets in series, not as a speculative swarm
 - do not start or continue unrelated normal work while immediate tickets remain
 - reality-check cleanup outranks unrelated normal work, but does not outrank immediate tickets
+- a due `reality-check` never justifies stopping a still-useful running pane mid-pass; defer it until a later nudge after that pane reaches a clear stop
 - outside `0-open/`, a ticket with no `priority` is normal unless explicitly marked otherwise
 - do not idle while there is a clear next lane-advancing action within the highest currently active priority class
 
@@ -143,15 +147,16 @@ When that happens, you must do one bounded reconciliation pass:
 1. inspect full `.kanban` lane state, including `0-open/` and `1-to_refine/`
 2. inspect active role panes
 3. capture worker panes if their current state is unclear
-4. stop panes that are clearly finished or stale
-5. checkpoint accepted work if a ticket just moved into `5-done/`
-6. if any immediate tickets exist, make them the exclusive next queue after the current active pass reaches a clear stop
-7. if `reality-check` is due, only launch it in that pass when no immediate tickets are waiting or when a currently running reality-check needs to be reconciled to a clear stop
-8. if a `reality-check` findings ticket or one of its child follow-on tickets exists, prioritize advancing that cleanup stream before unrelated normal work
-9. if there is no higher-priority active worker and `1-to_refine/` is non-empty, start a refiner on the highest-priority refinement ticket instead of idling
-10. if that still leaves no active worker and there is a single clear next task in `2-planned/` or an actionable immediate ticket in `0-open/`, launch or move it in the same pass
-11. record the result in the pane output
-12. stop and wait only if there is no clear immediate follow-on action
+4. if a worker is asking for manager input, answer it with `kanban send-role`, lane/ticket updates, or other orchestration; do not classify that worker as done solely because it handed a question back to you
+5. stop panes that are clearly finished or stale
+6. checkpoint accepted work if a ticket just moved into `5-done/`
+7. if any immediate tickets exist, make them the exclusive next queue after the current active pass reaches a clear stop
+8. if `reality-check` is due, never stop or replace a still-useful running pane just to satisfy that cadence; instead defer the launch until a later backbone nudge after the active pane reaches a clear stop, and only launch it in the current pass when no immediate tickets are waiting and no other still-useful worker should keep running, or when a currently running reality-check needs to be reconciled to a clear stop
+9. if a `reality-check` findings ticket or one of its child follow-on tickets exists, prioritize advancing that cleanup stream before unrelated normal work
+10. if there is no higher-priority active worker and `1-to_refine/` is non-empty, start a refiner on the highest-priority refinement ticket instead of idling
+11. if that still leaves no active worker and there is a single clear next task in `2-planned/` or an actionable immediate ticket in `0-open/`, launch or move it in the same pass
+12. record the result in the pane output
+13. stop and wait only if there is no clear immediate follow-on action
 
 If `/compact` was sent before the healthcheck prompt, rebuild your short-term plan from files first, then do the same bounded pass.
 
@@ -159,9 +164,10 @@ A clear immediate follow-on action includes cases like:
 
 - review finished, checkpoint succeeded, `3-in_progress/` and `4-in_review/` are empty, and the next ticket in `2-planned/` is ready
 - one or more immediate tickets exist, so the next action is to move or launch the highest-stage immediate ticket and stay on the immediate queue until it is drained
-- the backbone says `reality-check` is due and no immediate ticket is waiting and no `reality-check` pane is currently active
+- the backbone says `reality-check` is due, no immediate ticket is waiting, no `reality-check` pane is currently active, and no other still-useful worker should keep running first
 - a `reality-check` findings ticket exists and should now be refined, split, reordered, or implemented before unrelated normal work
 - `1-to_refine/` is non-empty, no higher-priority worker is active, and the next best action is an in-depth refinement pass
+- a worker is blocked and waiting for manager guidance, so the next action is to answer it and then let it continue or stop it explicitly if its role is truly complete
 - a worker finished and left exactly one ticket that should now move to implementation or review
 
 ## Checkpoint rule

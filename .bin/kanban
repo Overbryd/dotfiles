@@ -992,7 +992,7 @@ immediate_ticket_healthcheck_guidance() {
     summary+="; ..."
   fi
 
-  printf 'Immediate-priority tickets exist and override both reality-check work and normal work. Let the current active pass reach a clear stop, then keep the system focused on immediate tickets only until none remain. Work immediate tickets in series and let them traverse the lanes normally. Current immediate tickets: %s. Tickets with priority: ignore are not actionable, and tickets in 0-open without a priority are also ignored.\n' "$summary"
+  printf 'Immediate tickets exist. After the current active pass reaches a clear stop, focus only on immediate work until it is drained. Current immediate tickets: %s.\n' "$summary"
 }
 
 reality_check_healthcheck_guidance() {
@@ -1007,20 +1007,20 @@ reality_check_healthcheck_guidance() {
   fi
 
   if kanban_has_immediate_ticket_files "$KANBAN_DIR"; then
-    active_message='Immediate-priority tickets currently override reality-check work. Do not start a new reality-check until the immediate queue is drained. If a reality-check pane is already active, let it reach a clear stop, capture its findings, and then refocus on the immediate queue.'
+    active_message='Immediate work overrides it; do not start a new reality-check until the immediate queue is drained.'
   else
-    active_message='If no reality-check pane is active, launch `kanban start-role reality-check` during this pass. If one is already active, inspect it and reconcile its findings.'
+    active_message='If no still-useful worker should keep running first, launch or reconcile reality-check in this pass; otherwise defer it to the next nudge.'
   fi
 
   case "$due_reason" in
     time)
-      printf 'Reality-check is due because at least %ss have elapsed since the last reality-check baseline. %s\n' "$interval_seconds" "$active_message"
+      printf 'Reality-check is due by time (%ss). %s\n' "$interval_seconds" "$active_message"
       ;;
     ticket-count)
-      printf 'Reality-check is due because %s tickets have been checkpointed since the last reality-check. %s\n' "$ticket_interval" "$active_message"
+      printf 'Reality-check is due by completed ticket count (%s). %s\n' "$ticket_interval" "$active_message"
       ;;
     time-and-ticket-count)
-      printf 'Reality-check is due both by elapsed time (%ss) and by completed ticket count (%s). %s\n' "$interval_seconds" "$ticket_interval" "$active_message"
+      printf 'Reality-check is due by time (%ss) and completed ticket count (%s). %s\n' "$interval_seconds" "$ticket_interval" "$active_message"
       ;;
   esac
 }
@@ -1165,33 +1165,48 @@ reset_window_role_activity_state() {
   rm -f "$(window_role_activity_snapshot_file)" "$(window_role_idle_state_file)"
 }
 
+window_role_stale_lines() {
+  printf '%s\n' "${PI_BACKBONE_STALE_PANE_LINES:-100}"
+}
+
+window_role_stale_threshold_checks() {
+  printf '%s\n' "${PI_BACKBONE_STALE_PANE_CONSECUTIVE_CHECKS:-6}"
+}
+
+pane_activity_fingerprint() {
+  local pane_id lines snapshot
+  pane_id="$1"
+  lines="$2"
+  snapshot="$(capture_pane_lines "$pane_id" "$lines")"
+  printf '%s' "$snapshot" | cksum | awk '{print $1":"$2}'
+}
+
 capture_window_role_activity() {
-  local window_id backbone_pane_id backbone_pane_title pane_id pane_dead history_size pane_title role
+  local window_id backbone_pane_id backbone_pane_title pane_id pane_dead pane_title role lines fingerprint
   window_id="$(tmux_target_window_id)"
   source_backbone_env
   backbone_pane_id="${KANBAN_TMUX_BACKBONE_PANE_ID:-}"
   backbone_pane_title="$(backbone_title)"
+  lines="$(window_role_stale_lines)"
 
-  while IFS=$'\t' read -r pane_id pane_dead history_size pane_title; do
+  while IFS=$'\t' read -r pane_id pane_dead pane_title; do
     if [[ "$pane_dead" == "0" && "$pane_id" != "$backbone_pane_id" && "$pane_title" == "$PROJECT_NAME:"* && "$pane_title" != "$backbone_pane_title" ]]; then
       role="${pane_title#${PROJECT_NAME}:}"
 
       if role_is_backbone_managed "$role"; then
-        printf '%s\t%s\n' "$pane_id" "$history_size"
+        fingerprint="$(pane_activity_fingerprint "$pane_id" "$lines")"
+        printf '%s\t%s\t%s\n' "$pane_id" "$role" "$fingerprint"
       fi
     fi
-  done < <(tmux list-panes -t "$window_id" -F $'#{pane_id}\t#{pane_dead}\t#{history_size}\t#{pane_title}')
+  done < <(tmux list-panes -t "$window_id" -F $'#{pane_id}\t#{pane_dead}\t#{pane_title}')
 }
 
 capture_window_worker_role_activity() {
-  local pane_id history_size pane_title role
+  local pane_id role fingerprint
 
-  while IFS=$'\t' read -r pane_id history_size; do
-    pane_title="$(tmux display-message -p -t "$pane_id" '#{pane_title}')"
-    role="${pane_title#${PROJECT_NAME}:}"
-
+  while IFS=$'\t' read -r pane_id role fingerprint; do
     if [[ "$role" != "manager" ]]; then
-      printf '%s\t%s\n' "$pane_id" "$history_size"
+      printf '%s\t%s\t%s\n' "$pane_id" "$role" "$fingerprint"
     fi
   done < <(capture_window_role_activity)
 }
@@ -1201,36 +1216,49 @@ window_worker_role_count() {
 }
 
 window_role_panes_all_idle() {
-  local snapshot_file current_file current_count previous_count pane_id history_size all_idle
+  local snapshot_file current_file updated_file threshold all_idle pane_id role fingerprint previous_line previous_fingerprint previous_count count
   snapshot_file="$(window_role_activity_snapshot_file)"
   current_file="$(mktemp)"
+  updated_file="$(mktemp)"
+  threshold="$(window_role_stale_threshold_checks)"
   capture_window_role_activity > "$current_file"
 
   if [[ ! -s "$current_file" ]]; then
     mv "$current_file" "$snapshot_file"
+    rm -f "$updated_file"
     return 1
   fi
 
   all_idle=1
-  if [[ ! -f "$snapshot_file" ]]; then
-    all_idle=0
-  else
-    current_count="$(wc -l < "$current_file" | tr -d ' ')"
-    previous_count="$(wc -l < "$snapshot_file" | tr -d ' ')"
+  while IFS=$'\t' read -r pane_id role fingerprint; do
+    previous_line=""
+    previous_fingerprint=""
+    previous_count="0"
 
-    if [[ "$current_count" != "$previous_count" ]]; then
-      all_idle=0
-    else
-      while IFS=$'\t' read -r pane_id history_size; do
-        if ! grep -Fqx "$pane_id"$'\t'"$history_size" "$snapshot_file"; then
-          all_idle=0
-          break
-        fi
-      done < "$current_file"
+    if [[ -f "$snapshot_file" ]]; then
+      previous_line="$(awk -F $'\t' -v target="$pane_id" '$1 == target { print; exit }' "$snapshot_file")"
     fi
-  fi
 
-  mv "$current_file" "$snapshot_file"
+    if [[ -n "$previous_line" ]]; then
+      previous_fingerprint="$(printf '%s\n' "$previous_line" | awk -F $'\t' '{print $3}')"
+      previous_count="$(printf '%s\n' "$previous_line" | awk -F $'\t' '{print $4}')"
+    fi
+
+    if [[ "$fingerprint" == "$previous_fingerprint" ]]; then
+      count=$(( ${previous_count:-0} + 1 ))
+    else
+      count=1
+    fi
+
+    printf '%s\t%s\t%s\t%s\n' "$pane_id" "$role" "$fingerprint" "$count" >> "$updated_file"
+
+    if (( count < threshold )); then
+      all_idle=0
+    fi
+  done < "$current_file"
+
+  mv "$updated_file" "$snapshot_file"
+  rm -f "$current_file"
   (( all_idle == 1 ))
 }
 

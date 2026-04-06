@@ -50,13 +50,16 @@ HARD_RESET_CMD="$(kanban_subcommand_path hard-reset)"
 RECOVER_CMD="$(kanban_subcommand_path recover)"
 HEALTHCHECK_MANAGER_CMD="$(kanban_subcommand_path healthcheck-manager)"
 
-sleep_seconds="${PI_BACKBONE_SLEEP_SECONDS:-30}"
-nudge_cooldown_seconds="${PI_BACKBONE_NUDGE_COOLDOWN_SECONDS:-300}"
+sleep_seconds="${PI_BACKBONE_SLEEP_SECONDS:-10}"
+stale_nudge_cooldown_seconds="${PI_BACKBONE_STALE_NUDGE_COOLDOWN_SECONDS:-120}"
+nudge_cooldown_seconds="${PI_BACKBONE_NUDGE_COOLDOWN_SECONDS:-1800}"
 manager_compact_idle_count="${PI_BACKBONE_MANAGER_COMPACT_IDLE_COUNT:-8}"
 manager_compact_cooldown_seconds="${PI_BACKBONE_MANAGER_COMPACT_COOLDOWN_SECONDS:-1800}"
 send_role_timeout_seconds="${PI_KANBAN_SEND_ROLE_TIMEOUT_SECONDS:-10}"
 max_runtime_seconds="${PI_BACKBONE_MAX_RUNTIME_SECONDS:-28800}"
-base_healthcheck_prompt='Do your periodic healthcheck now. Re-read the current .kanban lanes including 0-open and 1-to_refine, inspect active worker panes with the kanban helper commands, and inspect .kanban/operator-blocker.md and .kanban/operator-todo.md if they exist. Do one bounded reconciliation pass, and adjust priorities as needed. Priority order is: immediate tickets first, then reality-check cleanup stream, then normal work. Keep work moving from 0-open to 1-to_refine to 2-planned to 3-in_progress to 4-in_review to 5-done. Tickets with priority: ignore are not actionable, and tickets in 0-open without a priority are also ignored. If a reality-check findings ticket or one of its cleanup follow-ons exists, prioritize that cleanup stream ahead of unrelated new work unless immediate tickets override it. Keep the operator blocker and operator todo files clean whenever the system needs operator answers or operator review. If no higher-priority implementation or review should run first and 1-to_refine is non-empty, start a real refinement pass instead of idling. Report the result in the pane output, and if that pass reveals a single clear follow-on task launch it before stopping. Only wait when there is no clear immediate next action.'
+stale_pane_lines="$(window_role_stale_lines)"
+stale_pane_threshold_checks="$(window_role_stale_threshold_checks)"
+base_healthcheck_prompt='Periodic healthcheck: do one bounded reconciliation pass per your manager instructions. Re-read the current .kanban lanes, inspect active roles with the kanban helper commands, inspect .kanban/operator-blocker.md and .kanban/operator-todo.md if they exist, report the result in the pane output, and launch at most one clear follow-on task before waiting.'
 export KANBAN_LOG_FILE="$LOG_DIR/backbone.log"
 
 rotate_log_file "$KANBAN_LOG_FILE"
@@ -74,11 +77,48 @@ write_backbone_env "$session_id" "$window_id" "$backbone_pane_id"
 set_window_visuals "$window_id"
 ensure_single_backbone_pane "$backbone_pane_id"
 write_backbone_env "$session_id" "$window_id" "$backbone_pane_id"
-log "backbone start: pid=$$ session=$session_id window=$window_id pane=$backbone_pane_id sleep_seconds=$sleep_seconds nudge_cooldown_seconds=$nudge_cooldown_seconds manager_compact_idle_count=$manager_compact_idle_count manager_compact_cooldown_seconds=$manager_compact_cooldown_seconds send_role_timeout_seconds=$send_role_timeout_seconds max_runtime_seconds=$max_runtime_seconds deadline_at=$deadline_at"
+log "backbone start: pid=$$ session=$session_id window=$window_id pane=$backbone_pane_id sleep_seconds=$sleep_seconds stale_nudge_cooldown_seconds=$stale_nudge_cooldown_seconds nudge_cooldown_seconds=$nudge_cooldown_seconds stale_pane_lines=$stale_pane_lines stale_pane_threshold_checks=$stale_pane_threshold_checks manager_compact_idle_count=$manager_compact_idle_count manager_compact_cooldown_seconds=$manager_compact_cooldown_seconds send_role_timeout_seconds=$send_role_timeout_seconds max_runtime_seconds=$max_runtime_seconds deadline_at=$deadline_at"
 
 start_manager() {
   "$START_ROLE_CMD" manager >/dev/null
 }
+
+backbone_status_state_file() {
+  printf '%s/backbone-status.env\n' "$STATE_DIR"
+}
+
+reset_backbone_status_state() {
+  rm -f "$(backbone_status_state_file)"
+}
+
+status_log() {
+  local key message repeat_seconds state_file now last_key last_logged_at
+  key="$1"
+  message="$2"
+  repeat_seconds="${3:-300}"
+  state_file="$(backbone_status_state_file)"
+  now="$(date +%s)"
+  last_key=""
+  last_logged_at="0"
+
+  if [[ -f "$state_file" ]]; then
+    # shellcheck disable=SC1090
+    source "$state_file"
+  fi
+
+  if [[ "$key" == "${last_key:-}" ]] && (( now - ${last_logged_at:-0} < repeat_seconds )); then
+    return 0
+  fi
+
+  {
+    printf 'last_key=%q\n' "$key"
+    printf 'last_logged_at=%q\n' "$now"
+  } > "$state_file"
+
+  log "$message"
+}
+
+reset_backbone_status_state
 
 manager_healthcheck_prompt() {
   local prompt immediate_guidance reality_check_guidance
@@ -111,13 +151,7 @@ send_manager_healthcheck_prompt() {
 }
 
 maybe_nudge_manager_early_on_all_idle() {
-  local worker_role_count
-  worker_role_count="$(window_worker_role_count)"
-
-  if [[ "$worker_role_count" != "0" ]]; then
-    set_window_role_idle_latch 0
-    return 1
-  fi
+  local seconds_remaining
 
   if ! window_role_panes_all_idle; then
     set_window_role_idle_latch 0
@@ -125,16 +159,23 @@ maybe_nudge_manager_early_on_all_idle() {
   fi
 
   if window_role_idle_latched; then
+    status_log 'all-managed-panes-stale-latched' 'manager healthcheck: idle; all managed panes appear stale; deferring repeat early nudge until pane output changes' 300
     return 1
   fi
 
-  if send_manager_healthcheck_prompt all-worker-panes-idle; then
+  if ! manager_nudge_due "$stale_nudge_cooldown_seconds"; then
+    seconds_remaining="$(seconds_until_manager_nudge "$stale_nudge_cooldown_seconds")"
+    status_log 'all-managed-panes-stale-cooldown' "manager healthcheck: idle; all managed panes appear stale; early nudge cooldown active (${seconds_remaining}s remaining)" 120
+    return 1
+  fi
+
+  if send_manager_healthcheck_prompt all-managed-panes-stale; then
     set_window_role_idle_latch 1
-    log 'manager healthcheck: idle; no managed worker pane remains active and manager is idle; nudged manager early'
+    log 'manager healthcheck: idle; all managed panes appear stale; nudged manager early'
     return 0
   fi
 
-  log 'manager healthcheck: idle; no managed worker pane remains active and manager is idle; early nudge failed because manager pane was unavailable'
+  log 'manager healthcheck: idle; all managed panes appear stale; early nudge failed because manager pane was unavailable'
   return 1
 }
 
@@ -144,7 +185,7 @@ nudge_manager() {
 
   if ! manager_nudge_due "$nudge_cooldown_seconds"; then
     seconds_remaining="$(seconds_until_manager_nudge "$nudge_cooldown_seconds")"
-    log "manager healthcheck: idle (count=$idle_count); nudge cooldown active (${seconds_remaining}s remaining)"
+    status_log 'idle-periodic-cooldown' "manager healthcheck: idle (count=$idle_count); periodic nudge deferred (${seconds_remaining}s remaining)" 300
     return 1
   fi
 
@@ -156,7 +197,7 @@ nudge_manager() {
       sleep 2
     else
       compact_seconds_remaining="$(seconds_until_manager_compact "$manager_compact_cooldown_seconds")"
-      log "manager healthcheck: idle (count=$idle_count); skipped /compact (${compact_seconds_remaining}s compact cooldown remaining)"
+      status_log 'idle-compact-cooldown' "manager healthcheck: idle (count=$idle_count); skipped /compact (${compact_seconds_remaining}s compact cooldown remaining)" 300
     fi
   fi
 
@@ -215,7 +256,7 @@ maybe_wake_manager_for_due_reality_check() {
 
   if ! manager_nudge_due "$nudge_cooldown_seconds"; then
     seconds_remaining="$(seconds_until_manager_nudge "$nudge_cooldown_seconds")"
-    log "manager healthcheck: idle; reality-check is due ($due_reason) but nudge cooldown is active (${seconds_remaining}s remaining)"
+    status_log 'reality-check-periodic-cooldown' "manager healthcheck: idle; reality-check is due ($due_reason) but periodic nudge is deferred (${seconds_remaining}s remaining)" 300
     return 1
   fi
 
@@ -293,7 +334,7 @@ while true; do
       empty_queue_watch_snapshot_cache=""
       set_window_role_idle_latch 0
       window_role_panes_all_idle >/dev/null 2>&1 || true
-      log 'manager healthcheck: working'
+      status_log 'manager-working' 'manager healthcheck: working' 300
       ;;
     missing)
       idle_count=0
@@ -325,7 +366,7 @@ while true; do
         # shellcheck disable=SC1090
         source "$STATE_DIR/manager-health.env"
       fi
-      log "manager healthcheck: suspect; reason=${suspicion_reason:-unknown} elapsed=${suspicion_elapsed_seconds:-0}s"
+      status_log "manager-suspect-${suspicion_reason:-unknown}" "manager healthcheck: suspect; reason=${suspicion_reason:-unknown} elapsed=${suspicion_elapsed_seconds:-0}s" 300
       ;;
     stuck|restart)
       idle_count=0
