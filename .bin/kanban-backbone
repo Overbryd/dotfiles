@@ -45,21 +45,23 @@ while [[ $# -gt 0 ]]; do
 done
 
 START_ROLE_CMD="$(kanban_subcommand_path start-role)"
+STOP_ROLE_CMD="$(kanban_subcommand_path stop-role)"
 SEND_ROLE_CMD="$(kanban_subcommand_path send-role)"
 HARD_RESET_CMD="$(kanban_subcommand_path hard-reset)"
 RECOVER_CMD="$(kanban_subcommand_path recover)"
 HEALTHCHECK_MANAGER_CMD="$(kanban_subcommand_path healthcheck-manager)"
 
 sleep_seconds="${PI_BACKBONE_SLEEP_SECONDS:-10}"
-stale_nudge_cooldown_seconds="${PI_BACKBONE_STALE_NUDGE_COOLDOWN_SECONDS:-120}"
-nudge_cooldown_seconds="${PI_BACKBONE_NUDGE_COOLDOWN_SECONDS:-1800}"
+stale_nudge_cooldown_seconds="${PI_BACKBONE_STALE_NUDGE_COOLDOWN_SECONDS:-300}"
+nudge_cooldown_seconds="${PI_BACKBONE_NUDGE_COOLDOWN_SECONDS:-3600}"
 manager_compact_idle_count="${PI_BACKBONE_MANAGER_COMPACT_IDLE_COUNT:-8}"
 manager_compact_cooldown_seconds="${PI_BACKBONE_MANAGER_COMPACT_COOLDOWN_SECONDS:-1800}"
 send_role_timeout_seconds="${PI_KANBAN_SEND_ROLE_TIMEOUT_SECONDS:-10}"
+critical_reconciliation_cooldown_seconds="${PI_BACKBONE_CRITICAL_RECONCILIATION_COOLDOWN_SECONDS:-120}"
 max_runtime_seconds="${PI_BACKBONE_MAX_RUNTIME_SECONDS:-28800}"
 stale_pane_lines="$(window_role_stale_lines)"
 stale_pane_threshold_checks="$(window_role_stale_threshold_checks)"
-base_healthcheck_prompt='Periodic healthcheck: do one bounded reconciliation pass per your manager instructions. Re-read the current .kanban lanes, inspect active roles with the kanban helper commands, inspect .kanban/operator-blocker.md and .kanban/operator-todo.md if they exist, report the result in the pane output, and launch at most one clear follow-on task before waiting.'
+base_healthcheck_prompt='Periodic healthcheck: do one bounded reconciliation pass. Trust ticket files, ticket handoff sections, operator files, and git state first. Only capture worker panes when file state is missing, contradictory, or stale. Launch at most one clear follow-on task before waiting.'
 export KANBAN_LOG_FILE="$LOG_DIR/backbone.log"
 
 rotate_log_file "$KANBAN_LOG_FILE"
@@ -120,11 +122,75 @@ status_log() {
 
 reset_backbone_status_state
 
+critical_reconciliation_state_file() {
+  printf '%s/critical-reconciliation.env\n' "$STATE_DIR"
+}
+
+reset_critical_reconciliation_state() {
+  rm -f "$(critical_reconciliation_state_file)"
+}
+
+reset_critical_reconciliation_state
+
+critical_reconciliation_due() {
+  local signature state_file now last_signature last_notified_at
+  signature="$1"
+  state_file="$(critical_reconciliation_state_file)"
+  now="$(date +%s)"
+  last_signature=""
+  last_notified_at="0"
+
+  if [[ -f "$state_file" ]]; then
+    # shellcheck disable=SC1090
+    source "$state_file"
+  fi
+
+  if [[ "$signature" != "${last_signature:-}" ]]; then
+    return 0
+  fi
+
+  (( now - ${last_notified_at:-0} >= critical_reconciliation_cooldown_seconds ))
+}
+
+record_critical_reconciliation_notice() {
+  local signature state_file now
+  signature="$1"
+  state_file="$(critical_reconciliation_state_file)"
+  now="$(date +%s)"
+
+  {
+    printf 'last_signature=%q\n' "$signature"
+    printf 'last_notified_at=%q\n' "$now"
+  } > "$state_file"
+}
+
+stop_orphaned_worker_roles() {
+  local in_progress_count in_review_count stopped_any
+  in_progress_count="$(kanban_lane_ticket_count "$KANBAN_DIR" "3-in_progress")"
+  in_review_count="$(kanban_lane_ticket_count "$KANBAN_DIR" "4-in_review")"
+  stopped_any=1
+
+  if role_is_active implementer && [[ "$in_progress_count" == "0" ]]; then
+    "$STOP_ROLE_CMD" implementer >/dev/null 2>&1 || true
+    log 'manager healthcheck: stopped orphaned implementer pane because there is no ticket in 3-in_progress'
+    stopped_any=0
+  fi
+
+  if role_is_active reviewer && [[ "$in_review_count" == "0" ]]; then
+    "$STOP_ROLE_CMD" reviewer >/dev/null 2>&1 || true
+    log 'manager healthcheck: stopped orphaned reviewer pane because there is no ticket in 4-in_review'
+    stopped_any=0
+  fi
+
+  return "$stopped_any"
+}
+
 manager_healthcheck_prompt() {
-  local prompt immediate_guidance reality_check_guidance
+  local prompt immediate_guidance reality_check_guidance critical_guidance
   prompt="$base_healthcheck_prompt"
   immediate_guidance="$(immediate_ticket_healthcheck_guidance || true)"
   reality_check_guidance="$(reality_check_healthcheck_guidance || true)"
+  critical_guidance="$(critical_reconciliation_guidance || true)"
 
   if [[ -n "$immediate_guidance" ]]; then
     prompt+=" ${immediate_guidance}"
@@ -132,6 +198,10 @@ manager_healthcheck_prompt() {
 
   if [[ -n "$reality_check_guidance" ]]; then
     prompt+=" ${reality_check_guidance}"
+  fi
+
+  if [[ -n "$critical_guidance" ]]; then
+    prompt+=" Critical reconciliation required: ${critical_guidance}"
   fi
 
   printf '%s\n' "$prompt"
@@ -147,6 +217,49 @@ send_manager_healthcheck_prompt() {
     return 0
   fi
 
+  return 1
+}
+
+maybe_wake_manager_on_state_change() {
+  if ! manager_idle_watch_state_changed; then
+    return 1
+  fi
+
+  set_window_role_idle_latch 0
+
+  if send_manager_healthcheck_prompt state-change; then
+    log 'manager healthcheck: idle; worker or ticket state changed; waking manager'
+    return 0
+  fi
+
+  log 'manager healthcheck: idle; worker or ticket state changed; wake-up failed because manager pane was unavailable'
+  return 1
+}
+
+maybe_handle_critical_reconciliation() {
+  local guidance signature
+
+  stop_orphaned_worker_roles || true
+  guidance="$(critical_reconciliation_guidance || true)"
+
+  if [[ -z "$guidance" ]]; then
+    reset_critical_reconciliation_state
+    return 1
+  fi
+
+  signature="$(printf '%s' "$guidance" | cksum | awk '{print $1":"$2}')"
+
+  if ! critical_reconciliation_due "$signature"; then
+    return 1
+  fi
+
+  if send_manager_healthcheck_prompt critical-reconciliation; then
+    record_critical_reconciliation_notice "$signature"
+    log "manager healthcheck: detected lane/worker mismatch; nudged manager (${guidance})"
+    return 0
+  fi
+
+  log 'manager healthcheck: lane/worker mismatch detected but manager pane was unavailable'
   return 1
 }
 
@@ -229,13 +342,8 @@ empty_queue_watch_snapshot() {
   while IFS= read -r file; do
     [[ -n "$file" ]] || continue
     effective_priority="$(ticket_effective_priority_from_file "$file")"
-
-    if [[ "$effective_priority" == "ignore" ]]; then
-      continue
-    fi
-
     printf '%s\t%s\n' "$effective_priority" "$(relative_to_project "$file")"
-  done < <(kanban_active_lane_ticket_files "$KANBAN_DIR")
+  done < <(kanban_processable_ticket_files "$KANBAN_DIR")
 }
 
 empty_queue_watch_applicable() {
@@ -333,7 +441,9 @@ while true; do
       empty_queue_watch_mode=0
       empty_queue_watch_snapshot_cache=""
       set_window_role_idle_latch 0
+      reset_manager_idle_watch_state
       window_role_panes_all_idle >/dev/null 2>&1 || true
+      maybe_handle_critical_reconciliation || true
       status_log 'manager-working' 'manager healthcheck: working' 300
       ;;
     missing)
@@ -342,11 +452,16 @@ while true; do
       empty_queue_watch_snapshot_cache=""
       set_window_role_idle_latch 0
       reset_window_role_activity_state
+      reset_critical_reconciliation_state
       log 'manager healthcheck: missing; starting manager'
       start_manager
       ;;
     idle)
-      if handle_empty_queue_idle; then
+      if maybe_handle_critical_reconciliation; then
+        idle_count=0
+      elif maybe_wake_manager_on_state_change; then
+        idle_count=0
+      elif handle_empty_queue_idle; then
         idle_count=0
       else
         idle_count=$((idle_count + 1))
@@ -362,6 +477,8 @@ while true; do
       empty_queue_watch_mode=0
       empty_queue_watch_snapshot_cache=""
       set_window_role_idle_latch 0
+      reset_manager_idle_watch_state
+      maybe_handle_critical_reconciliation || true
       if [[ -f "$STATE_DIR/manager-health.env" ]]; then
         # shellcheck disable=SC1090
         source "$STATE_DIR/manager-health.env"
@@ -374,6 +491,7 @@ while true; do
       empty_queue_watch_snapshot_cache=""
       set_window_role_idle_latch 0
       reset_window_role_activity_state
+      reset_critical_reconciliation_state
       log "manager healthcheck: $result; performing hard reset"
       recover_and_restart
       ;;
@@ -383,6 +501,7 @@ while true; do
       empty_queue_watch_snapshot_cache=""
       set_window_role_idle_latch 0
       reset_window_role_activity_state
+      reset_critical_reconciliation_state
       log "manager healthcheck: unknown result '$result'; performing hard reset"
       recover_and_restart
       ;;

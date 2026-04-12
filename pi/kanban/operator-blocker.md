@@ -1,14 +1,15 @@
 # Operator blocker
 
-Use this file as the single canonical blocker summary for work that currently needs operator attention.
+Single canonical blocker note for work that needs operator.
 
 ## Current blocker
 
 - none
 
-## How to use
+## Use
 
-- keep this short and current
-- summarize the single most important operator-facing blocker state
-- reference the affected tickets
-- point to `.kanban/operator-todo.md` for the actionable checklist
+- keep short
+- keep current
+- name single most important operator-facing blocker
+- point at affected tickets
+- point at `.kanban/operator-todo.md` for checklist

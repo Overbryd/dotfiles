@@ -97,6 +97,22 @@ seed_file() {
   echo "wrote $destination_path"
 }
 
+seed_runtime_state_file() {
+  local source_path destination_path
+  source_path="$1"
+  destination_path="$2"
+
+  mkdir -p "$(dirname "$destination_path")"
+
+  if [[ -f "$destination_path" ]]; then
+    echo "kept $destination_path"
+    return 0
+  fi
+
+  cp "$source_path" "$destination_path"
+  echo "wrote $destination_path"
+}
+
 create_gitkeep() {
   local path
   path="$1"
@@ -138,6 +154,10 @@ id: $ticket_id
 type: planning
 depends_on: []
 minimum_thinking: high
+operator_review_required: false
+operator_review_status: not_required
+plan_version: 0
+approved_plan_version:
 ---
 
 # Derive executable kanban tickets from $source_rel
@@ -202,6 +222,9 @@ create_gitkeep "$kanban_root/runtime/logs/.gitkeep"
 create_gitkeep "$kanban_root/runtime/recovery/.gitkeep"
 
 seed_file "$assets_root/README.md" "$kanban_root/README.md"
+seed_file "$assets_root/RUNTIME.md" "$kanban_root/RUNTIME.md"
+seed_runtime_state_file "$assets_root/operator-blocker.md" "$kanban_root/operator-blocker.md"
+seed_runtime_state_file "$assets_root/operator-todo.md" "$kanban_root/operator-todo.md"
 seed_file "$assets_root/templates/ticket.md" "$kanban_root/templates/ticket.md"
 seed_file "$assets_root/runtime/.gitignore" "$kanban_root/runtime/.gitignore"
 

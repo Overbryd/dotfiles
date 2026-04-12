@@ -1,15 +1,16 @@
 # Operator todo
 
-Use this file as the clean checklist of everything the system currently needs from its operator.
+Clean checklist for everything system needs from operator.
 
 ## Active items
 
 - none
 
-## How to use
+## Use
 
-- keep entries specific and actionable
-- include questions that need human answers
-- include review requests that need operator sign-off
-- include links to the relevant tickets or files
-- remove or update items as soon as they are no longer accurate
+- keep items specific
+- keep items actionable
+- include questions needing human answer
+- include review asks needing operator sign-off
+- link relevant tickets or files
+- remove or update item as soon as item goes stale

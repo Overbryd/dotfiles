@@ -1,10 +1,10 @@
 # Kanban roles
 
-These are the built-in role files loaded directly from the kanban install.
+These are built-in role files loaded straight from kanban install.
 
-Project-local `.kanban/roles/` may override a built-in role by filename, and may also define additional custom roles.
+Project-local `.kanban/roles/` may override built-in role by filename. Project-local dir may also define extra custom roles.
 
-These role files describe how agents should interact with the file-based kanban under the tmux backbone model.
+These files say how agents should work with file-based kanban under tmux backbone model.
 
 ## Roles
 
@@ -25,27 +25,29 @@ These role files describe how agents should interact with the file-based kanban 
 
 All roles must assume:
 
-- they may be restarted at any time
-- their memory is not authoritative
+- restart may happen any time
+- memory is not authoritative
 - `.kanban/`, `.plans/`, git state, and checkpoint tags are authoritative
-- pane management belongs to the manager unless the role explicitly says otherwise
+- pane management belongs to manager unless role file says otherwise
 
-The built-in `operator` role is the main exception: it is user-owned and started manually with `kanban operator`, not by the manager.
+Main exception:
+
+- built-in `operator` role is user-owned and started manually with `kanban operator`, not by manager
 
 ## Usage
 
-A fresh agent should:
+Fresh agent should:
 
-1. read `.kanban/README.md`
-2. read the relevant built-in or project-local override role file supplied with the launch
-3. read the ticket being worked on
-4. read any referenced `.plans/*` files before changing ticket state or code
+1. read `.kanban/RUNTIME.md` first (`.kanban/README.md` only for deeper reference)
+2. read relevant built-in or project-local override role file supplied with launch
+3. read ticket being worked
+4. read referenced `.plans/*` files before changing ticket state or code
 
 ## Important rule
 
-Role files guide behavior, but they do not override repo-wide instructions.
+Role files guide behavior. Role files do not override repo-wide instructions.
 
-If a role doc and a repo instruction ever disagree:
+If role doc and repo instruction disagree:
 
-- preserve the repo instruction
-- update the ticket or note the mismatch explicitly
+- keep repo instruction
+- update ticket or note mismatch explicitly

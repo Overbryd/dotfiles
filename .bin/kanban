@@ -386,6 +386,18 @@ project_custom_role_doc_path() {
   printf '%s/roles/%s.md\n' "$KANBAN_DIR" "$1"
 }
 
+kanban_runtime_doc_path() {
+  local runtime_path
+  runtime_path="$KANBAN_DIR/RUNTIME.md"
+
+  if [[ -f "$runtime_path" ]]; then
+    printf '%s\n' "$runtime_path"
+    return 0
+  fi
+
+  printf '%s/README.md\n' "$KANBAN_DIR"
+}
+
 resolve_role_doc() {
   local role builtin_path custom_path
   role="$1"
@@ -629,6 +641,64 @@ ticket_minimum_thinking_from_file() {
   ticket_frontmatter_scalar minimum_thinking "$1"
 }
 
+ticket_operator_review_required_from_file() {
+  local value
+  value="$(ticket_frontmatter_scalar operator_review_required "$1" | tr '[:upper:]' '[:lower:]')"
+
+  case "$value" in
+    true|yes|1)
+      printf 'true\n'
+      ;;
+    *)
+      printf 'false\n'
+      ;;
+  esac
+}
+
+ticket_operator_review_status_from_file() {
+  local file value
+  file="$1"
+  value="$(ticket_frontmatter_scalar operator_review_status "$file" | tr '[:upper:]' '[:lower:]')"
+
+  if [[ -n "$value" ]]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+
+  if [[ "$(ticket_operator_review_required_from_file "$file")" == "true" ]]; then
+    printf 'pending\n'
+  else
+    printf 'not_required\n'
+  fi
+}
+
+ticket_plan_version_from_file() {
+  ticket_frontmatter_scalar plan_version "$1"
+}
+
+ticket_approved_plan_version_from_file() {
+  ticket_frontmatter_scalar approved_plan_version "$1"
+}
+
+ticket_operator_review_ready_from_file() {
+  local file status plan_version approved_plan_version
+  file="$1"
+
+  if [[ "$(ticket_operator_review_required_from_file "$file")" != "true" ]]; then
+    return 0
+  fi
+
+  status="$(ticket_operator_review_status_from_file "$file")"
+  plan_version="$(ticket_plan_version_from_file "$file")"
+  approved_plan_version="$(ticket_approved_plan_version_from_file "$file")"
+
+  [[ "$status" == "approved" && -n "$plan_version" && "$approved_plan_version" == "$plan_version" ]]
+}
+
+ticket_waiting_operator_review_from_file() {
+  [[ "$(ticket_operator_review_required_from_file "$1")" == "true" ]] && ! ticket_operator_review_ready_from_file "$1"
+}
+
 ticket_title_from_file() {
   sed -n 's/^# //p' "$1" | head -n 1
 }
@@ -753,13 +823,19 @@ thinking_level_min() {
 role_default_thinking() {
   case "$1" in
     reviewer|refiner|reality-check)
-      printf 'xhigh\n'
-      ;;
-    manager|planner|recovery)
       printf 'high\n'
       ;;
-    *)
+    manager|planner|implementer|generic_intake)
+      printf 'off\n'
+      ;;
+    discussant|rewriter|decider)
+      printf 'minimal\n'
+      ;;
+    recovery)
       printf 'medium\n'
+      ;;
+    *)
+      printf 'low\n'
       ;;
   esac
 }
@@ -836,30 +912,19 @@ reality_check_state_file() {
   printf '%s/reality-check.env\n' "$STATE_DIR"
 }
 
-reality_check_interval_seconds() {
-  printf '%s\n' "${PI_KANBAN_REALITY_CHECK_INTERVAL_SECONDS:-7200}"
-}
-
 reality_check_ticket_interval() {
   printf '%s\n' "${PI_KANBAN_REALITY_CHECK_TICKET_INTERVAL:-3}"
 }
 
 ensure_reality_check_state() {
-  local state_file now tracking_started_at last_reality_check_started_at tickets_completed_since_reality_check last_reality_check_reason
+  local state_file tickets_completed_since_reality_check last_reality_check_reason
   state_file="$(reality_check_state_file)"
-  now="$(date +%s)"
-  tracking_started_at=""
-  last_reality_check_started_at=""
   tickets_completed_since_reality_check="0"
   last_reality_check_reason=""
 
   if [[ -f "$state_file" ]]; then
     # shellcheck disable=SC1090
     source "$state_file"
-  fi
-
-  if [[ -z "${tracking_started_at:-}" ]]; then
-    tracking_started_at="$now"
   fi
 
   if [[ -z "${tickets_completed_since_reality_check:-}" ]]; then
@@ -867,68 +932,61 @@ ensure_reality_check_state() {
   fi
 
   {
-    printf 'tracking_started_at=%q\n' "$tracking_started_at"
-    printf 'last_reality_check_started_at=%q\n' "${last_reality_check_started_at:-}"
     printf 'tickets_completed_since_reality_check=%q\n' "$tickets_completed_since_reality_check"
     printf 'last_reality_check_reason=%q\n' "${last_reality_check_reason:-}"
   } > "$state_file"
 }
 
 record_reality_check_launch() {
-  local reason state_file now tracking_started_at
+  local reason state_file
   reason="${1:-scheduled-healthcheck}"
   state_file="$(reality_check_state_file)"
-  now="$(date +%s)"
-  tracking_started_at="$now"
 
   if [[ -f "$state_file" ]]; then
     # shellcheck disable=SC1090
     source "$state_file"
   fi
 
-  tracking_started_at="${tracking_started_at:-$now}"
-
   {
-    printf 'tracking_started_at=%q\n' "$tracking_started_at"
-    printf 'last_reality_check_started_at=%q\n' "$now"
     printf 'tickets_completed_since_reality_check=%q\n' '0'
     printf 'last_reality_check_reason=%q\n' "$reason"
   } > "$state_file"
 }
 
 record_ticket_checkpoint_for_reality_check() {
-  local state_file now tracking_started_at last_reality_check_started_at tickets_completed_since_reality_check last_reality_check_reason
+  local ticket_file ticket_type state_file tickets_completed_since_reality_check last_reality_check_reason
+  ticket_file="${1:-}"
+  ticket_type=""
   state_file="$(reality_check_state_file)"
-  now="$(date +%s)"
-  tracking_started_at="$now"
-  last_reality_check_started_at=""
   tickets_completed_since_reality_check="0"
   last_reality_check_reason=""
+
+  if [[ -n "$ticket_file" && -f "$ticket_file" ]]; then
+    ticket_type="$(ticket_type_from_file "$ticket_file" | tr '[:upper:]' '[:lower:]')"
+  fi
+
+  if [[ "$ticket_type" == "reality-check" ]]; then
+    return 0
+  fi
 
   if [[ -f "$state_file" ]]; then
     # shellcheck disable=SC1090
     source "$state_file"
   fi
 
-  tracking_started_at="${tracking_started_at:-$now}"
   tickets_completed_since_reality_check="${tickets_completed_since_reality_check:-0}"
   tickets_completed_since_reality_check=$(( tickets_completed_since_reality_check + 1 ))
 
   {
-    printf 'tracking_started_at=%q\n' "$tracking_started_at"
-    printf 'last_reality_check_started_at=%q\n' "${last_reality_check_started_at:-}"
     printf 'tickets_completed_since_reality_check=%q\n' "$tickets_completed_since_reality_check"
     printf 'last_reality_check_reason=%q\n' "${last_reality_check_reason:-}"
   } > "$state_file"
 }
 
 reality_check_due_reason() {
-  local state_file now tracking_started_at last_reality_check_started_at tickets_completed_since_reality_check base_timestamp interval_seconds ticket_interval due_time due_tickets
+  local state_file tickets_completed_since_reality_check ticket_interval
   state_file="$(reality_check_state_file)"
   ensure_reality_check_state >/dev/null 2>&1 || true
-  now="$(date +%s)"
-  tracking_started_at=""
-  last_reality_check_started_at=""
   tickets_completed_since_reality_check="0"
 
   if [[ -f "$state_file" ]]; then
@@ -941,25 +999,9 @@ reality_check_due_reason() {
     return 0
   fi
 
-  base_timestamp="${last_reality_check_started_at:-${tracking_started_at:-}}"
-  interval_seconds="$(reality_check_interval_seconds)"
   ticket_interval="$(reality_check_ticket_interval)"
-  due_time=0
-  due_tickets=0
-
-  if [[ -n "$base_timestamp" ]] && (( now - base_timestamp >= interval_seconds )); then
-    due_time=1
-  fi
 
   if (( ${tickets_completed_since_reality_check:-0} >= ticket_interval )); then
-    due_tickets=1
-  fi
-
-  if (( due_time == 1 && due_tickets == 1 )); then
-    printf 'time-and-ticket-count\n'
-  elif (( due_time == 1 )); then
-    printf 'time\n'
-  elif (( due_tickets == 1 )); then
     printf 'ticket-count\n'
   else
     printf 'none\n'
@@ -996,11 +1038,9 @@ immediate_ticket_healthcheck_guidance() {
 }
 
 reality_check_healthcheck_guidance() {
-  local due_reason ticket_interval interval_seconds active_message immediate_override_note
+  local due_reason ticket_interval active_message
   due_reason="$(reality_check_due_reason)"
   ticket_interval="$(reality_check_ticket_interval)"
-  interval_seconds="$(reality_check_interval_seconds)"
-  immediate_override_note=''
 
   if [[ "$due_reason" == "none" ]]; then
     return 1
@@ -1012,17 +1052,7 @@ reality_check_healthcheck_guidance() {
     active_message='If no still-useful worker should keep running first, launch or reconcile reality-check in this pass; otherwise defer it to the next nudge.'
   fi
 
-  case "$due_reason" in
-    time)
-      printf 'Reality-check is due by time (%ss). %s\n' "$interval_seconds" "$active_message"
-      ;;
-    ticket-count)
-      printf 'Reality-check is due by completed ticket count (%s). %s\n' "$ticket_interval" "$active_message"
-      ;;
-    time-and-ticket-count)
-      printf 'Reality-check is due by time (%ss) and completed ticket count (%s). %s\n' "$interval_seconds" "$ticket_interval" "$active_message"
-      ;;
-  esac
+  printf 'Reality-check is due by completed non-reality-check ticket count (%s). %s\n' "$ticket_interval" "$active_message"
 }
 
 reset_manager_health_state() {
@@ -1161,8 +1191,17 @@ window_role_idle_state_file() {
   printf '%s/window-role-idle.env\n' "$STATE_DIR"
 }
 
+manager_idle_watch_snapshot_file() {
+  printf '%s/manager-idle-watch.snapshot\n' "$STATE_DIR"
+}
+
+reset_manager_idle_watch_state() {
+  rm -f "$(manager_idle_watch_snapshot_file)"
+}
+
 reset_window_role_activity_state() {
   rm -f "$(window_role_activity_snapshot_file)" "$(window_role_idle_state_file)"
+  reset_manager_idle_watch_state
 }
 
 window_role_stale_lines() {
@@ -1213,6 +1252,41 @@ capture_window_worker_role_activity() {
 
 window_worker_role_count() {
   capture_window_worker_role_activity | wc -l | tr -d ' '
+}
+
+capture_manager_idle_watch_snapshot() {
+  local file checksum pane_id role fingerprint
+
+  while IFS= read -r file; do
+    [[ -n "$file" ]] || continue
+    checksum="$(cksum < "$file" | awk '{print $1":"$2}')"
+    printf 'ticket\t%s\t%s\n' "$(relative_to_project "$file")" "$checksum"
+  done < <(kanban_processable_ticket_files "$KANBAN_DIR")
+
+  while IFS=$'\t' read -r pane_id role fingerprint; do
+    [[ -n "$pane_id" ]] || continue
+    printf 'worker\t%s\t%s\n' "$pane_id" "$role"
+  done < <(capture_window_worker_role_activity)
+}
+
+manager_idle_watch_state_changed() {
+  local snapshot_file current_file
+  snapshot_file="$(manager_idle_watch_snapshot_file)"
+  current_file="$(mktemp)"
+  capture_manager_idle_watch_snapshot | sort > "$current_file"
+
+  if [[ ! -f "$snapshot_file" ]]; then
+    mv "$current_file" "$snapshot_file"
+    return 1
+  fi
+
+  if cmp -s "$current_file" "$snapshot_file"; then
+    rm -f "$current_file"
+    return 1
+  fi
+
+  mv "$current_file" "$snapshot_file"
+  return 0
 }
 
 window_role_panes_all_idle() {
@@ -1361,6 +1435,50 @@ kanban_active_lane_ticket_files() {
     -maxdepth 1 -type f ! -name '.gitkeep' | sort
 }
 
+kanban_ticket_files_in_lane() {
+  local kanban_root lane_dir
+  kanban_root="$1"
+  lane_dir="$2"
+
+  find "$kanban_root/$lane_dir" -maxdepth 1 -type f ! -name '.gitkeep' | sort
+}
+
+kanban_lane_ticket_count() {
+  local kanban_root lane_dir
+  kanban_root="$1"
+  lane_dir="$2"
+
+  kanban_ticket_files_in_lane "$kanban_root" "$lane_dir" | wc -l | tr -d ' '
+}
+
+role_is_active() {
+  find_role_pane "$1" >/dev/null 2>&1
+}
+
+critical_reconciliation_guidance() {
+  local in_progress_count in_review_count messages=()
+  in_progress_count="$(kanban_lane_ticket_count "$KANBAN_DIR" "3-in_progress")"
+  in_review_count="$(kanban_lane_ticket_count "$KANBAN_DIR" "4-in_review")"
+
+  if role_is_active implementer && [[ "$in_progress_count" == "0" ]]; then
+    messages+=("Implementer pane is still running but there is no ticket in .kanban/3-in_progress; stop or reconcile implementer immediately.")
+  fi
+
+  if role_is_active reviewer && [[ "$in_review_count" == "0" ]]; then
+    messages+=("Reviewer pane is still running but there is no ticket in .kanban/4-in_review; stop or reconcile reviewer immediately.")
+  fi
+
+  if [[ "$in_review_count" != "0" ]] && ! role_is_active reviewer; then
+    messages+=("There is review work in .kanban/4-in_review but no reviewer pane; launch or relaunch reviewer.")
+  fi
+
+  if [[ ${#messages[@]} -eq 0 ]]; then
+    return 1
+  fi
+
+  printf '%s\n' "${messages[*]}"
+}
+
 kanban_processable_ticket_files() {
   local kanban_root file lane priority
   kanban_root="$1"
@@ -1375,6 +1493,10 @@ kanban_processable_ticket_files() {
     fi
 
     if [[ "$lane" == "0-open" && "$priority" != "immediate" ]]; then
+      continue
+    fi
+
+    if ticket_waiting_operator_review_from_file "$file"; then
       continue
     fi
 

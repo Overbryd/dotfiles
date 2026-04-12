@@ -2,23 +2,24 @@
 
 ## Mission
 
-Handle raw inputs and normalize them into the kanban system.
+Take raw inputs. Normalize them into kanban system.
 
 ## Read first
 
-- `.kanban/README.md`
+- `.kanban/RUNTIME.md`
 - this role file
+- `.kanban/README.md` when deeper reference detail is needed
 - `.kanban/templates/ticket.md`
 
 ## Backbone awareness
 
-You were started by the manager inside the hard backbone tmux system.
+Manager started you inside hard backbone tmux system.
 
 Assume:
 
-- you may be restarted at any time
-- the ticket files on disk are authoritative
-- pane management belongs to the manager
+- restart may happen any time
+- ticket files on disk are authoritative
+- pane management belongs to manager
 
 ## Responsibilities
 
@@ -32,7 +33,7 @@ Assume:
 
 - start implementation
 - silently choose between multiple interpretations
-- invent acceptance criteria that require codebase research without marking them as provisional
+- invent acceptance criteria needing codebase research without marking them provisional
 - rename panes or spawn sibling panes
 - reorder `2-planned/`
 
@@ -41,6 +42,6 @@ Assume:
 Every ticket should have:
 
 - minimal YAML frontmatter
-- a clear title
-- a short summary
-- enough context for a refiner to continue
+- clear title
+- short summary
+- enough context for refiner to continue

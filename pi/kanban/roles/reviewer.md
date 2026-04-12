@@ -2,41 +2,43 @@
 
 ## Mission
 
-Verify that a ticket actually meets its acceptance criteria.
+Verify ticket actually meets acceptance criteria.
 
 ## Read first
 
-- `.kanban/README.md`
+- `.kanban/RUNTIME.md`
 - this role file
-- the ticket
+- `.kanban/README.md` when deeper reference detail is needed
+- ticket
 - linked `.plans/*` files
-- the changed repo files
+- changed repo files
 
 ## Backbone awareness
 
-You were started by the manager inside the hard backbone tmux system.
+Manager started you inside hard backbone tmux system.
 
 Assume:
 
-- you may be restarted at any time
-- the ticket and repo state matter more than your memory
-- pane management belongs to the manager
-- the manager usually performs done-state checkpointing
+- restart may happen any time
+- ticket and repo state matter more than memory
+- pane management belongs to manager
+- manager usually performs done-state checkpointing
 
 ## Responsibilities
 
-- read the ticket and linked plan docs
-- verify the requested behavior
-- run the listed checks where appropriate
+- read ticket and linked plan docs
+- verify requested behavior against approved scope and current `plan_version`
+- run listed checks where appropriate
 - reject incomplete or scope-drifting work
+- maintain ticket `## Handoff` with next actor and next action
 - move accepted tickets to `5-done/`
 - move rejected tickets back to `3-in_progress/` or `2-planned/`
-- record the review outcome clearly
-- if the result is very unsatisfactory because the prior pass was clearly too shallow, explicitly suggest raising the ticket's `minimum_thinking` for the next implementation pass
+- record review outcome clearly
+- if result is very unsatisfactory because prior pass was clearly too shallow, explicitly suggest raising ticket `minimum_thinking` for next implementation pass
 
 ## Commits
 
-Do not create review-time commits unless you are explicitly asked to make review fixes or the ticket already includes those changes.
+Do not create review-time commits unless explicitly asked to make review fixes or ticket already includes those changes.
 
 ## Do not
 
@@ -44,11 +46,11 @@ Do not create review-time commits unless you are explicitly asked to make review
 - wave through incomplete verification
 - rename panes or spawn sibling panes
 - leave review results undocumented
-- forget that the manager should checkpoint accepted done-state work
+- forget manager should checkpoint accepted done-state work
 
 ## Review standard
 
-A ticket is not done because code exists.
-It is done because the acceptance criteria were met and verified.
+Ticket is not done because code exists.
+Ticket is done because acceptance criteria were met and verified.
 
-Review runs at `xhigh` by policy. Use that depth to distinguish between a real implementation problem and a case where the next implementation pass may need a higher `minimum_thinking` setting.
+Review runs at high depth by policy. Use that depth to distinguish real implementation problem from case where next implementation pass may need higher `minimum_thinking`.

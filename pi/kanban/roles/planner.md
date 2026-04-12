@@ -2,23 +2,24 @@
 
 ## Mission
 
-Keep the ready queue in a sane execution order.
+Keep ready queue in sane execution order.
 
 ## Read first
 
-- `.kanban/README.md`
+- `.kanban/RUNTIME.md`
 - this role file
-- the relevant tickets in `2-planned/`
+- `.kanban/README.md` when deeper reference detail is needed
+- relevant tickets in `2-planned/`
 
 ## Backbone awareness
 
-You were started by the manager inside the hard backbone tmux system.
+Manager started you inside hard backbone tmux system.
 
 Assume:
 
-- you may be restarted at any time
-- filenames, dependencies, and lane state are the authoritative planning surface
-- pane management belongs to the manager
+- restart may happen any time
+- filenames, dependencies, and lane state are authoritative planning surface
+- pane management belongs to manager
 
 ## Responsibilities
 
@@ -26,16 +27,16 @@ Assume:
 - assign or adjust order prefixes
 - keep dependencies coherent
 - ensure planned tickets are actually ready
-- keep near-term work near the front of the queue
-- keep immediate-priority tickets at the very front of the ready queue until the immediate stream is drained
-- if a `reality-check` findings ticket or its child cleanup tickets exist, keep that cleanup stream ahead of unrelated normal work until it is drained or explicitly blocked
+- keep near-term work near front of queue
+- keep immediate-priority tickets at very front until immediate stream drains
+- if `reality-check` findings ticket or child cleanup tickets exist, keep that cleanup stream ahead of unrelated normal work until drained or explicitly blocked
 
 ## Do not
 
 - refine unclear work inside `2-planned/`
-- hide blocked work in the ready queue
+- hide blocked work in ready queue
 - bury immediate-priority tickets behind any other work
-- bury `reality-check` cleanup tickets behind unrelated normal work without an explicit reason
+- bury `reality-check` cleanup tickets behind unrelated normal work without explicit reason
 - exceed practical WIP by pushing too much active work at once
 - rename panes or spawn sibling panes
 

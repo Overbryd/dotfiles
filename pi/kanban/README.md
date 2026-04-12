@@ -1,13 +1,15 @@
 # File-based Kanban for `pi`
 
-This folder is the executable workflow layer for the repo.
-It is usually created or refreshed with `kanban setup`.
+This folder is execution layer for repo. `kanban setup` usually creates or refreshes it.
+
+Use `.kanban/RUNTIME.md` for short startup contract.
+Use this `README.md` for deeper reference.
 
 ## Purpose
 
-Use `.kanban/` to track work as tickets moving through explicit lanes.
+Use `.kanban/` for tickets moving through clear lanes.
 
-Use `.plans/` as the long-form reference layer for:
+Use `.plans/` as long-form reference layer for:
 
 - architecture
 - product intent
@@ -17,86 +19,86 @@ Use `.plans/` as the long-form reference layer for:
 - visual direction
 - delivery sequencing
 
-Do **not** copy `.plans/` documents verbatim into tickets.
+Do **not** paste `.plans/` docs into tickets.
 
 Instead:
 
 - `.plans/` stays canonical for reference and rationale
 - `.kanban/` holds executable tickets derived from those plans
-- tickets should link back to the relevant `.plans/*` files
+- tickets should link back to relevant `.plans/*` files
 
 ## Hard backbone vs soft roles
 
-This kanban is designed to work with a tmux-based supervisor.
+This kanban works with tmux-based supervisor.
 
 ### Hard backbone
 
-The hard backbone is a deterministic shell script started from a tmux pane:
+Hard backbone is deterministic shell script started from tmux pane:
 
 - `kanban backbone`
 
-It is responsible for:
+Backbone does this:
 
-- keeping the project tmux window alive
-- ensuring the manager pane exists
-- periodically healthchecking the manager
-- nudging the manager when it appears idle
-- hard-resetting role panes when the system is clearly stuck
-- running one-off recovery before restarting orchestration
+- keep project tmux window alive
+- ensure manager pane exists
+- healthcheck manager on cadence
+- nudge manager when manager looks idle
+- hard-reset role panes when system is clearly stuck
+- run one-off recovery before orchestration restart
 
-The backbone is intentionally dumb.
-It should not interpret tickets or make product decisions.
+Backbone stays dumb. Backbone must not interpret tickets or make product calls.
 
 ### Soft roles
 
-The soft roles are `pi` agents usually started in tmux panes by the manager.
+Soft roles are `pi` agents, usually started in tmux panes by manager.
 
-A special exception is the user-owned `operator` session, which is started manually with `kanban operator`.
+Exception:
 
-They are responsible for:
+- user-owned `operator` session starts manually with `kanban operator`
 
-- reading `.kanban/`
-- reading relevant `.plans/*`
-- doing research, planning, implementation, review, or recovery work
-- updating tickets and repo state
+Soft roles do this:
 
-Soft roles may be restarted at any time.
+- read `.kanban/`
+- read relevant `.plans/*`
+- do research, planning, implementation, review, or recovery
+- update tickets and repo state
+
+Soft roles may restart any time.
 
 ## Source of truth
 
-The source of truth is:
+Source of truth, in order:
 
 1. `.kanban/`
 2. git state
 3. checkpoint tags
 4. recovery notes in `.kanban/runtime/`
 
-Terminal output is **not** the source of truth.
-It is only a liveness and debugging signal.
+Terminal output is **not** source of truth. Only liveness and debug signal.
 
-If a role is restarted, it must rebuild context from files and git state, not from memory.
+After restart, role must rebuild context from files and git state, not memory.
 
 ## tmux model
 
-Start the system **inside an existing tmux window** by running:
+Start system **inside existing tmux window**:
 
 ```bash
 kanban backbone
 ```
 
-The backbone will:
+Backbone will:
 
-- treat the current pane as the backbone pane
-- rename the current window to the project folder name
-- title the backbone pane as `<project_name>:backbone`
-- enforce at most one backbone pane in that project window
-- enable pane border titles for the window
-- lock the project window against application-driven tmux title changes so managed pane titles stay stable
-- start the manager in a separate pane
+- treat current pane as backbone pane
+- rename current window to project folder name
+- title backbone pane as `<project_name>:backbone`
+- enforce at most one backbone pane in project window
+- enable pane border titles for window
+- lock project window against app-driven tmux title changes so managed pane titles stay stable
+- start manager in separate pane
 
 ### Pane naming
 
-Role panes are titled as:
+Role panes use this title shape:
 
 ```text
 <project_name>:<role>
@@ -109,13 +111,13 @@ my_project:backbone
 my_project:manager
 ```
 
-Kanban relies on these pane titles for role discovery and recovery. Because interactive `pi` tries to set the terminal title itself, the kanban scripts disable tmux `allow-set-title` for the managed project window and role panes so `pi` cannot overwrite the managed pane titles.
+Kanban uses these titles for role discovery and recovery. Interactive `pi` tries to set terminal title itself, so kanban scripts disable tmux `allow-set-title` for managed project window and role panes. `pi` must not overwrite managed pane titles.
 
 ### Uniqueness rule
 
-There must be **at most one active pane per role** in the project window.
+At most one active pane per role in project window.
 
-The manager should use helper scripts to enforce this.
+Manager should enforce this with helper scripts.
 
 ## Runtime layout
 
@@ -131,7 +133,7 @@ Runtime artifacts live under:
 
 This directory is for ephemeral or generated supervisor state.
 
-Operator chat sessions started with `kanban operator` are stored separately under:
+Operator chat sessions started with `kanban operator` live under:
 
 ```text
 .kanban/runtime/state/operator-sessions/
@@ -139,16 +141,17 @@ Operator chat sessions started with `kanban operator` are stored separately unde
 
 ## Operator coordination files
 
-If the system needs something from its operator, it may create and use these files:
+If system needs something from operator, system may use:
 
-- `.kanban/operator-blocker.md` — the single current operator-facing blocker summary
-- `.kanban/operator-todo.md` — the clean actionable checklist for operator answers, review, or sign-off
+- `.kanban/operator-blocker.md` — single current operator-facing blocker summary
+- `.kanban/operator-todo.md` — clean actionable checklist for operator answers, review, or sign-off
 
-They are optional and should be created or updated only when needed. Keep them short, current, and authoritative.
+`kanban setup` seeds both files. Keep both short, current, authoritative.
 
 ## Lane model
 
 ### `0-open/`
+
 Raw intake.
 
 Use for:
@@ -158,21 +161,22 @@ Use for:
 - bugs
 - questions
 - rough feature requests
-- user-owned prerequisites not yet incorporated into active work
-- review notes or draft tickets that are still being written
+- user-owned prerequisites not yet folded into active work
+- review notes or draft tickets still being written
 
-These files may be incomplete.
+Files here may be incomplete.
 
 Priority behavior in `0-open/`:
 
-- a ticket in `0-open/` with no `priority` set is ignored by the manager
-- `priority: ignore` also keeps a ticket out of active processing
-- `priority: immediate` makes a `0-open/` ticket actionable immediately and gives it the highest pickup priority
+- ticket with no `priority` is ignored by manager
+- `priority: ignore` also keeps ticket out of active processing
+- `priority: immediate` makes `0-open/` ticket actionable now and gives highest pickup priority
 
 ### `1-to_refine/`
+
 Research and shaping lane.
 
-Use for tickets that need:
+Use for tickets needing:
 
 - codebase research
 - scope clarification
@@ -182,59 +186,73 @@ Use for tickets that need:
 - design or architecture discussion
 
 ### `2-planned/`
+
 Ready and ordered work.
 
-Only put tickets here when they are refined enough to implement.
+Put ticket here only when refined enough to implement.
 
-Files in this lane must be prefixed with execution order, for example:
+Files in this lane must use order prefixes, for example:
 
 - `01-some-ticket.md`
 - `01a-follow-on-ticket.md`
 - `02-next-ticket.md`
 
 ### `3-in_progress/`
+
 Claimed work.
 
-This lane should have very low WIP.
-Usually one ticket, occasionally a few.
+Keep WIP very low. Usually one ticket. Sometimes few.
 
 ### `4-in_review/`
+
 Waiting for verification.
 
-Only tickets actively being reviewed belong here.
+Only tickets under active review belong here.
 
 ### `5-done/`
+
 Completed and verified work.
 
-A ticket belongs here only after its acceptance criteria were checked.
+Ticket belongs here only after acceptance criteria were checked.
 
 ## Stable identity
 
-Each ticket has a stable internal ID in YAML frontmatter, for example:
+Each ticket has stable internal YAML ID, for example:
 
 - `KB-0001`
 - `KB-0002`
 
-The stable ID is the real identity.
+Stable ID is real identity.
 
-Filename order is only a queue mechanism for `2-planned/`.
+Filename order is only queue mechanism for `2-planned/`.
 
 ## Ticket file format
 
 Use Markdown with minimal YAML frontmatter.
 
-These keys belong in frontmatter:
+Required frontmatter keys:
 
 - `id`
 - `type`
 - `depends_on`
 - `minimum_thinking`
+- `operator_review_required`
+- `operator_review_status`
+- `plan_version`
+- `approved_plan_version`
 
 Optional frontmatter key:
 
 - `priority` — `ignore` or `immediate`
 
-Everything else belongs in the Markdown body.
+Everything else belongs in Markdown body.
+
+Recommended meaning:
+
+- `operator_review_required: true` once refiner produced ready implementation plan
+- `operator_review_status: pending` while waiting for user/operator plan approval
+- `plan_version` increments when implementation plan changes materially
+- `approved_plan_version` must match `plan_version` before unattended implementation starts
 
 Example:
 
@@ -244,7 +262,11 @@ id: KB-0007
 type: feature
 depends_on:
   - KB-0006
-minimum_thinking: high
+minimum_thinking: low
+operator_review_required: true
+operator_review_status: pending
+plan_version: 2
+approved_plan_version:
 ---
 
 # Split compile-time and runtime config layout
@@ -264,7 +286,7 @@ Recommended naming:
 - `4-in_review/KB-0007-split-config-layout.md`
 - `5-done/KB-0001-reality-check-and-plan-alignment.md`
 
-When moving a planned ticket out of `2-planned/`, switch back to the stable-ID filename.
+When moving planned ticket out of `2-planned/`, switch back to stable-ID filename.
 
 ## Dependencies and blockers
 
@@ -273,65 +295,88 @@ Track dependencies in `depends_on`.
 Use:
 
 - ticket IDs like `KB-0007`
-- explicit external prerequisites when needed, such as `user:s3_credentials`
+- explicit external prerequisites when needed, like `user:s3_credentials`
 
-If a ticket is blocked, state that clearly in the body as well.
+If ticket is blocked, say so in body too.
 
 ## Movement rules
 
-- Use `git mv` when moving tickets between lanes.
-- Update the ticket body when the lane changes.
-- If implementation starts, the ticket must move to `3-in_progress/`.
-- If review fails, move it back to `3-in_progress/` or `2-planned/`.
-- Keep `3-in_progress/` and `4-in_review/` small and current.
-- The manager is responsible for continuously moving work forward across `0-open/` -> `1-to_refine/` -> `2-planned/` -> `3-in_progress/` -> `4-in_review/` -> `5-done/`.
-- `1-to_refine/` is not a parking lot. When no higher-priority implementation or review work should go first, the manager should launch a real refinement pass.
+- move tickets between lanes
+- update ticket body when lane changes
+- if implementation starts, ticket must move to `3-in_progress/`
+- if review fails, move ticket back to `3-in_progress/` or `2-planned/`
+- worker claim like "moved to review" counts only after ticket file actually lands in `4-in_review/`
+- if `4-in_review/` has work and no reviewer runs, manager should start or restart `reviewer` before unrelated new work
+- keep `3-in_progress/` and `4-in_review/` small and current
+- manager owns steady forward motion across `0-open/ -> 1-to_refine/ -> 2-planned/ -> 3-in_progress/ -> 4-in_review/ -> 5-done/`
+- `1-to_refine/` is not parking lot; when no higher-priority implementation or review should go first, manager should launch real refinement pass
+- every ticket entering `2-planned/` should carry concise implementation plan and explicit operator-review state
+- manager must not hand ticket from `2-planned/` to `implementer` until operator review is approved for current `plan_version`
+
+## Operator review gate
+
+Ticket is blocked for unattended implementation when all are true:
+
+- `operator_review_required: true`
+- `operator_review_status` is not `approved`
+- or `approved_plan_version` does not equal `plan_version`
+
+Normal refinement handoff into `2-planned/`:
+
+- set `operator_review_required: true`
+- set `operator_review_status: pending`
+- increment `plan_version`
+- clear or update `approved_plan_version`
+- update `.kanban/operator-blocker.md`
+- update `.kanban/operator-todo.md`
+
+Backbone and manager should treat ticket-file approval change as wake signal. Do not infer approval from pane output.
 
 ## Priority rules
 
-Priority is an override on top of the lane system. Tickets still move through the same lanes normally.
+Priority is override on top of lane system. Tickets still move through same lanes.
 
 Priority order:
 
 1. `priority: immediate` tickets — highest user-requestable priority
-2. `reality-check` findings ticket and its derived cleanup stream
+2. `reality-check` findings ticket and derived cleanup stream
 3. other normal tickets
 4. `priority: ignore` tickets and `0-open/` tickets with no `priority` — not actionable
 
 Execution rules:
 
-- If any immediate tickets exist, the manager should finish the current active pass safely and then keep the system focused on immediate tickets until none remain.
-- Immediate tickets should be worked in series, not sprayed across the board speculatively.
-- Immediate tickets outrank both normal work and reality-check work.
-- Reality-check findings and their cleanup follow-ons outrank other normal work, but do not outrank immediate tickets.
-- A due `reality-check` is periodic and non-preemptive: it never justifies stopping a still-useful running pane mid-pass, and should be deferred until a later backbone nudge after that pane reaches a clear stop.
-- A ticket with `priority: ignore` is ignored from processing until its priority changes.
-- A ticket in `0-open/` with no `priority` is also ignored from processing.
-- Outside `0-open/`, a ticket with no `priority` is treated as normal work.
+- if any immediate ticket exists, manager should finish current active pass safely, then keep system focused on immediate tickets until none remain
+- work immediate tickets in series, not speculative swarm
+- immediate tickets outrank normal work and reality-check work
+- reality-check findings and cleanup follow-ons outrank other normal work, but not immediate tickets
+- due `reality-check` is periodic and non-preemptive; never stop still-useful running pane mid-pass for cadence alone
+- ticket with `priority: ignore` stays ignored until priority changes
+- ticket in `0-open/` with no `priority` stays ignored
+- outside `0-open/`, ticket with no `priority` is normal work
 
-Within a given priority class, the manager should still preserve lane discipline:
+Inside given priority class, manager should still keep lane discipline:
 
 1. finish or reconcile active work already in `4-in_review/` and `3-in_progress/`
-2. keep `2-planned/` ordered so the next ready ticket is obvious
-3. when no clearer higher-priority implementation or review task exists, move the best ticket in `1-to_refine/` forward by starting a `refiner`
-4. when the next best actionable work lives in `0-open/`, pull it forward into refinement first
+2. keep `2-planned/` ordered so next ready ticket is obvious
+3. when no clearer higher-priority implementation or review task exists, move best ticket in `1-to_refine/` forward by starting `refiner`
+4. when next best actionable work lives in `0-open/`, pull it forward into refinement first
 
-A reality-check child ticket should keep an explicit link back to the active findings ticket, preferably through `depends_on` or direct ticket references in the body.
+Reality-check child ticket should keep explicit link back to active findings ticket, preferably through `depends_on` or direct ticket refs in body.
 
 ## Helper commands
 
-The manager and backbone should prefer the `kanban` helper commands over ad hoc tmux manipulation.
+Manager and backbone should prefer `kanban` helper commands over ad hoc tmux work.
 
 Important commands:
 
-- `kanban list-roles` — list active role panes in the project window
-- `kanban capture-role <role>` — inspect the latest output from a role pane
-- `kanban start-role <role> [ticket]` — launch a role pane for a specific task
-- `kanban stop-role <role>` — stop a stale or completed role pane
-- `kanban send-role <role> <message>` — send a focused nudge to an existing role pane
-- `kanban operator` — start a fresh user-owned operator chat session for this project
-- `kanban checkpoint-ticket <ticket>` — create the done-state checkpoint after review acceptance
-- `kanban healthcheck-manager` — deterministic health signal used by the backbone
+- `kanban list-roles` — list active role panes in project window
+- `kanban capture-role <role>` — inspect latest output from role pane
+- `kanban start-role <role> [ticket]` — launch role pane for specific task
+- `kanban stop-role <role>` — stop stale or completed role pane
+- `kanban send-role <role> <message>` — send focused nudge to existing role pane
+- `kanban operator` — start fresh user-owned operator chat session for project
+- `kanban checkpoint-ticket <ticket>` — create done-state checkpoint after review acceptance
+- `kanban healthcheck-manager` — deterministic health signal used by backbone
 - `kanban recover` / `kanban hard-reset` — recovery tools for bad states
 
 ## Pi model and thinking policy
@@ -344,47 +389,48 @@ Role launches under `kanban start-role` use these defaults:
 
 Thinking policy:
 
-- `reviewer`, `refiner`, and `reality-check` always run at `xhigh`
-- `manager`, `planner`, and `recovery` default to `high`
-- other roles default to `medium`
+- default to low-cost execution; raise depth only when ticket truly needs it
+- `manager`, `planner`, `implementer`, and `generic_intake` default to `off`
+- `discussant`, `rewriter`, and `decider` default to `minimal`
+- `refiner`, `reviewer`, and `reality-check` default to `high`
+- `recovery` defaults to `medium`
 - non-review/refine/reality-check roles are capped at `high`
-- a ticket may raise the minimum required level through `minimum_thinking`
+- ticket may raise floor through `minimum_thinking`
 
 Fallback policy:
 
 - use `gpt-5.4 [openai-codex]` by default
-- only switch a role to `gpt-5.4 [openai]` when Codex is actually rate-limited
-- when a deliberate fallback is needed, restart that role with `kanban start-role ... --provider openai`
+- switch role to `gpt-5.4 [openai]` only when Codex is actually rate-limited
+- when deliberate fallback is needed, restart role with `kanban start-role ... --provider openai`
 
 ### Main commands
 
-- `kanban setup` — create or refresh the project-local `.kanban/` skeleton
-- `kanban backbone` — start the hard supervisor loop in the current tmux window
-- `kanban operator [--pane|--window]` — start a fresh user-owned operator session for this project
-- `kanban start-role <role> [ticket] [--provider <name>] [--thinking <level>]` — start a role pane if it does not already exist
-- `kanban stop-role <role>` — stop a role pane
-- `kanban list-roles` — list active role panes in the project window
-- `kanban capture-role <role>` — capture pane output for a role
-- `kanban send-role <role> <message>` — send a prompt or command into a role pane
+- `kanban setup` — create or refresh project-local `.kanban/` skeleton
+- `kanban backbone` — start hard supervisor loop in current tmux window
+- `kanban operator [--pane|--window]` — start fresh user-owned operator session for project
+- `kanban start-role <role> [ticket] [--provider <name>] [--thinking <level>]` — start role pane if role does not already exist
+- `kanban stop-role <role>` — stop role pane
+- `kanban list-roles` — list active role panes in project window
+- `kanban capture-role <role>` — capture pane output for role
+- `kanban send-role <role> <message>` — send prompt or command into role pane
 - `kanban healthcheck-manager` — classify manager health from deterministic tmux history and pane signals
-- `kanban hard-reset` — kill all role panes in the project window
+- `kanban hard-reset` — kill all role panes in project window
 - `kanban recover` — run one-off recovery in print mode
-- `kanban checkpoint-ticket <ticket>` — create a checkpoint commit/tag after a ticket is done
+- `kanban checkpoint-ticket <ticket>` — create checkpoint commit/tag after ticket is done
 
 ### Useful environment knobs
 
 - `PI_KANBAN_PRIMARY_PROVIDER` — default provider for new role launches
-- `PI_KANBAN_FALLBACK_PROVIDER` — provider to use only on deliberate rate-limit fallback restarts
+- `PI_KANBAN_FALLBACK_PROVIDER` — provider used only on deliberate rate-limit fallback restarts
 - `PI_KANBAN_DEFAULT_MODEL` — default model for new role launches
-- `PI_KANBAN_REALITY_CHECK_INTERVAL_SECONDS` — elapsed-time threshold for requiring a `reality-check` run, default `7200`
-- `PI_KANBAN_REALITY_CHECK_TICKET_INTERVAL` — completed-ticket threshold for requiring a `reality-check` run, default `3`
+- `PI_KANBAN_REALITY_CHECK_TICKET_INTERVAL` — completed non-`reality-check` ticket threshold for requiring `reality-check`, default `3`
 - `PI_BACKBONE_SLEEP_SECONDS` — supervisor sleep between healthchecks, default `10`
-- `PI_BACKBONE_STALE_NUDGE_COOLDOWN_SECONDS` — minimum seconds between stale-pane-triggered early nudges, default `120`
-- `PI_BACKBONE_NUDGE_COOLDOWN_SECONDS` — fallback periodic nudge interval when the manager remains idle, default `1800`
+- `PI_BACKBONE_STALE_NUDGE_COOLDOWN_SECONDS` — minimum seconds between stale-pane early nudges, default `300`
+- `PI_BACKBONE_NUDGE_COOLDOWN_SECONDS` — fallback periodic nudge interval when manager stays idle, default `3600`
 - `PI_BACKBONE_STALE_PANE_LINES` — pane lines sampled for stale-pane detection, default `100`
-- `PI_BACKBONE_STALE_PANE_CONSECUTIVE_CHECKS` — unchanged consecutive checks required before a managed pane is considered stale, default `6`
+- `PI_BACKBONE_STALE_PANE_CONSECUTIVE_CHECKS` — unchanged consecutive checks needed before managed pane counts as stale, default `6`
 - `PI_BACKBONE_MANAGER_COMPACT_IDLE_COUNT` — minimum consecutive idle healthchecks before backbone may send `/compact`, default `8`
-- `PI_BACKBONE_MANAGER_COMPACT_COOLDOWN_SECONDS` — minimum seconds between backbone-issued manager `/compact` commands, default `1800`
+- `PI_BACKBONE_MANAGER_COMPACT_COOLDOWN_SECONDS` — minimum seconds between backbone-issued manager `/compact`, default `1800`
 - `PI_KANBAN_SEND_ROLE_TIMEOUT_SECONDS` — timeout for backbone manager nudges sent through `kanban send-role`, default `10`
 - `PI_BACKBONE_MAX_RUNTIME_SECONDS` — maximum supervisor runtime before clean exit
 - `PI_BACKBONE_HEALTH_LINES` — manager pane lines captured for healthchecks
@@ -394,11 +440,11 @@ Fallback policy:
 
 ## Checkpoints
 
-Done-state recovery is based on **commits plus tags**.
+Done-state recovery uses **commits plus tags**.
 
 ### Rule
 
-When a ticket is accepted and moved to `5-done/`, the manager should run:
+After ticket is accepted and moved to `5-done/`, manager should run:
 
 ```bash
 kanban checkpoint-ticket <path-to-done-ticket>
@@ -406,86 +452,86 @@ kanban checkpoint-ticket <path-to-done-ticket>
 
 ### What this does
 
-The checkpoint script will:
+Checkpoint script will:
 
-- create a git commit if the worktree is dirty
-- create a historical done tag for that ticket
-- update the moving tag `kanban/last-known-good`
+- create git commit if worktree is dirty
+- create historical done tag for ticket
+- update moving tag `kanban/last-known-good`
 
 ### Why
 
-This gives recovery a clear, boring, inspectable rollback point.
+This gives recovery clear, boring, inspectable rollback point.
 
 ## Reality-check cadence
 
-The broader `reality-check` role is used to catch drift, half-finished work, excessive mocks or stubs, and other signs that the system is becoming less real than it should be.
+Broader `reality-check` role catches drift, half-finished work, excessive mocks or stubs, and other signs system is getting less real than it should be.
 
-The manager should ensure `reality-check` runs at least once every 2 hours or after 3 checkpointed tickets, whichever comes first.
+Manager should ensure `reality-check` runs after 3 checkpointed non-`reality-check` tickets by default.
 
-A due `reality-check` is periodic and non-preemptive: if useful implementation, review, or refinement work is already running, the manager should not stop that pane just to satisfy the cadence. Instead, the manager should defer the `reality-check` launch until a later backbone nudge after the active pane reaches a clear stop.
+Due `reality-check` is periodic and non-preemptive. If useful implementation, review, or refinement work already runs, manager should not stop that pane just for cadence. Defer launch until later backbone nudge after active pane reaches clear stop.
 
-Each `reality-check` run should rebuild fresh context, start from a fresh session without resuming old role-chat history, and update at most one findings ticket.
+Each `reality-check` run should rebuild fresh context, start fresh session without resuming old role-chat history, and update at most one findings ticket.
 
-If `reality-check` produces or updates a findings ticket, the manager should treat that findings ticket and its linked cleanup follow-ons as the highest-priority refinement/planning/implementation stream ahead of unrelated normal work until the cleanup run has been properly shaped and advanced.
+If `reality-check` creates or updates findings ticket, manager should treat that findings ticket and linked cleanup follow-ons as highest-priority refinement/planning/implementation stream ahead of unrelated normal work until cleanup run is shaped and advanced.
 
-However, `priority: immediate` still outranks both the findings ticket and its cleanup follow-ons.
+`priority: immediate` still outranks findings ticket and cleanup follow-ons.
 
 ## Recovery
 
-A hard reset means:
+Hard reset means:
 
-1. kill all role panes in the project window
+1. kill all role panes in project window
 2. run one-off recovery in non-interactive `pi` print mode
-3. restart the manager from scratch
+3. restart manager from scratch
 
-Recovery should prefer the last known good checkpoint tag over guesswork.
+Recovery should prefer last known good checkpoint tag over guesswork.
 
 ## Healthchecks
 
-The backbone healthchecks the manager periodically.
+Backbone healthchecks manager on cadence.
 
 ### Outcomes
 
-- `working` — manager output is changing or clearly progressing
-- `idle` — manager looks alive but inactive enough to need a nudge
-- `suspect` — manager tail contains repeated error-like signals, but not long enough yet to justify a hard reset
+- `working` — manager output changes or clearly progresses
+- `idle` — manager looks alive but inactive enough to need nudge
+- `suspect` — manager tail shows repeated error-like signals, but not long enough yet for hard reset
 - `stuck` — manager looks blocked by sustained error-like failure and should be hard-reset
 - `missing` — manager pane is gone
 - `restart` — manager session looks corrupted enough that hard reset is safer
 
-The healthcheck is deterministic. It relies on tmux history movement, manager pane identity, and pane stability signals. Error-like output only escalates to `stuck` after a sustained suspicion window, which defaults to 15 minutes.
+Healthcheck is deterministic. It uses tmux history movement, manager pane identity, and pane stability signals. Error-like output escalates to `stuck` only after sustained suspicion window, default 15 minutes.
 
 ### Nudge behavior
 
-If the manager appears idle, the backbone may send:
+If manager looks idle, backbone may send:
 
-- an earlier periodic healthcheck prompt when all backbone-managed panes appear stale by repeated unchanged pane-output fingerprints
-- a fallback periodic healthcheck prompt only after the manager has gone un-nudged for the normal cooldown
-- a less-frequent `/compact`, followed by a periodic healthcheck prompt only after extended repeated idleness and subject to a separate compact cooldown
-- a periodic healthcheck prompt that explicitly calls out when `reality-check` is due by elapsed time or by completed-ticket count
+- earlier periodic healthcheck prompt when all backbone-managed panes look stale by repeated unchanged pane-output fingerprints
+- fallback periodic healthcheck prompt only after manager has gone un-nudged for normal cooldown
+- less-frequent `/compact`, followed by periodic healthcheck prompt only after extended repeated idleness and separate compact cooldown
+- periodic healthcheck prompt that explicitly calls out when `reality-check` is due by completed non-`reality-check` ticket count
 
-When there is no processable ticket left in `0-open/`, `1-to_refine/`, `2-planned/`, `3-in_progress/`, or `4-in_review/` and no managed worker pane remains active, the backbone switches to a special file-watch idle mode instead of repeatedly nudging the manager. In that mode it watches lane state changes, including priority changes that make a previously ignored ticket actionable, before waking the manager again.
+When no processable ticket remains in `0-open/`, `1-to_refine/`, `2-planned/`, `3-in_progress/`, or `4-in_review/`, and no managed worker pane remains active, backbone switches to special file-watch idle mode instead of repeatedly nudging manager. In that mode backbone watches for changes that create actionable work, including priority changes that make previously ignored ticket actionable or operator approval changes that unblock planned ticket. Tickets waiting only for approval do not wake manager by themselves.
 
-A periodic healthcheck prompt is meant to trigger one bounded reconciliation pass, not an open-ended self-driven loop. That pass may still launch the next clear worker immediately when the previous step just finished and queue state now makes the follow-on action obvious.
+Periodic healthcheck prompt should trigger one bounded reconciliation pass, not open-ended self-driven loop. That pass may still launch next clear worker immediately when previous step just finished and queue state makes follow-on action obvious.
 
-To reduce interference, the backbone samples managed pane output frequently and suppresses repeated defer logs. If any managed pane is still changing, the backbone defers the early nudge; if all managed panes stay unchanged for the configured stale-window checks, it nudges the manager early once and then waits for fresh pane activity before repeating that early nudge.
+To reduce interference, backbone samples managed pane output often and suppresses repeated defer logs. If any managed pane still changes, backbone defers early nudge. If all managed panes stay unchanged for configured stale-window checks, backbone nudges manager early once, then waits for fresh pane activity before repeating early nudge.
 
-If `reality-check` becomes due while a still-useful worker pane is already running, the manager should defer launching `reality-check` until a later backbone nudge rather than stopping the active pane just to satisfy the cadence.
+If `reality-check` becomes due while still-useful worker pane already runs, manager should defer launching `reality-check` until later backbone nudge instead of stopping active pane just to satisfy cadence.
 
-The manager must know how to respond to these nudges.
+Manager must know how to answer these nudges.
 
 ## Agent loop
 
 1. backbone ensures manager exists
 2. manager reads `.kanban/` and current repo state
-3. manager sets priorities and keeps tickets moving across the lane flow
+3. manager sets priorities and keeps tickets moving across lane flow
 4. manager starts worker panes as needed
-5. workers perform scoped work and update tickets
+5. workers do scoped work and update tickets
 6. manager reconciles pane state with ticket state
 7. reviewer acceptance moves tickets to `5-done/`
 8. manager checkpoints done tickets
 9. manager periodically runs `reality-check` to catch drift and production-readiness gaps
-10. backbone restarts the system if it is clearly stuck
+10. backbone restarts system if system is clearly stuck
 
 ## Role lifecycle guidance
 
@@ -511,20 +557,21 @@ The manager must know how to respond to these nudges.
 
 ### User-owned manual assistant
 
-- `operator` — started manually with `kanban operator`; not a backbone-managed worker
+- `operator` — started manually with `kanban operator`; not backbone-managed worker
 
 ## Roles
 
-Built-in role instructions are loaded from the kanban install, normally `/usr/local/dotfiles/pi/kanban/roles/`.
+Built-in role instructions load from kanban install, usually `/usr/local/dotfiles/pi/kanban/roles/`.
 
-Project-local `.kanban/roles/` may override a built-in role when a file with the same role name exists there, and may also define additional custom roles.
+Project-local `.kanban/roles/` may override built-in role when file with same role name exists there. Project-local dir may also define extra custom roles.
 
 Fresh agents should read, in order:
 
-1. `.kanban/README.md`
-2. the relevant built-in or project-local override role file supplied with the launch
-3. the ticket they are acting on
-4. the referenced `.plans/*` files
+1. `.kanban/RUNTIME.md` (or `.kanban/README.md` in older setups without runtime file)
+2. relevant built-in or project-local override role file supplied with launch
+3. ticket being acted on
+4. referenced `.plans/*` files
+5. `.kanban/README.md` only when deeper background or reference detail is needed
 
 ## Template
 
@@ -532,7 +579,7 @@ Start new tickets from `.kanban/templates/ticket.md`.
 
 ## Initial seeding policy
 
-The initial kanban was derived from `.plans/`.
+Initial kanban was derived from `.plans/`.
 
 That means:
 
