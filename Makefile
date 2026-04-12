@@ -4,6 +4,7 @@ DOT_CONFIG_FILES := $(addprefix ~/, $(wildcard .config/*))
 PI_CONFIG_FILES := $(addprefix ~/.pi/agent/, $(notdir $(wildcard pi/*.json)))
 PI_EXTENSIONS := $(addprefix ~/.pi/agent/extensions/, $(notdir $(wildcard pi/extensions/*.ts)))
 PI_AGENT_FILES := ~/.pi/agent/AGENTS.md
+PI_AGENT_SKILLS := $(patsubst .agent/skills/%,~/.pi/agent/skills/%,$(wildcard .agent/skills/*/SKILL.md))
 LAUNCH_AGENTS := $(addprefix ~/Library/, $(wildcard LaunchAgents/*))
 
 DOTFILES_ROOT = $(HOME)/dotfiles
@@ -526,7 +527,8 @@ dotfiles: \
 	$(DOT_CONFIG_FILES) \
 	$(PI_CONFIG_FILES) \
 	$(PI_EXTENSIONS) \
-	$(PI_AGENT_FILES)
+	$(PI_AGENT_FILES) \
+	$(PI_AGENT_SKILLS)
 
 ~/dotfiles:
 	ln -s /usr/local/dotfiles ~/dotfiles
@@ -564,6 +566,13 @@ dotfiles: \
 	ln -svf $(DOTFILES_ROOT)/$< $@
 
 ~/.pi/agent/extensions:
+	mkdir -p $@
+
+~/.pi/agent/skills/%: .agent/skills/%
+	mkdir -p $(dir $@)
+	ln -svf $(DOTFILES_ROOT)/$< $@
+
+~/.pi/agent/skills:
 	mkdir -p $@
 
 ~/.%:
