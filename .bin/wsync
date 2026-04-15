@@ -44,6 +44,7 @@ DEFAULT_COMMON_EXCLUDES = [
 
 MAX_SCAN_DIRS = 10_000
 MAX_PREVIEW_LINES = 40
+DEFAULT_REPO_INCLUDES = [".peek/***"]
 
 REMOTE_OVERLAY_LIST_SCRIPT = r'''
 import fnmatch
@@ -524,8 +525,6 @@ def resolve_target(config: Config, raw_target: Optional[str]) -> Target:
 
     if looks_like_path(raw_target):
         path = expand_path(raw_target)
-        if not path.exists():
-            raise UserError("Path does not exist: {}".format(raw_target))
         base = workspace_anchor(path)
         git_root = find_git_root(base)
         resolved = git_root or base
@@ -1018,6 +1017,10 @@ def merge_excludes(config: Config, root: RootSpec) -> List[str]:
     return unique(merged)
 
 
+def merge_repo_includes(root: RootSpec) -> List[str]:
+    return unique(list(DEFAULT_REPO_INCLUDES) + list(root.includes))
+
+
 def plain_dir_preview(
     action: str,
     root_path: Path,
@@ -1047,18 +1050,20 @@ def repo_overlay_preview(
     ssh_host: Optional[str],
     rsync_path: Optional[str],
     work_dir: Path,
-) -> Tuple[List[str], Optional[str], Optional[RsyncPreview], Optional[List[str]]]:
+) -> Tuple[List[str], Optional[str], Optional[RsyncPreview], Optional[List[str]], List[str]]:
+    include_patterns = merge_repo_includes(root)
+
     if action == "pull":
         if not ssh_host:
-            return [], "peer host is unconfigured", None, None
-        overlay_paths, overlay_error = overlay_paths_remote(ssh_host, repo_root, root.includes)
+            return [], "peer host is unconfigured", None, None, include_patterns
+        overlay_paths, overlay_error = overlay_paths_remote(ssh_host, repo_root, include_patterns)
     else:
-        overlay_paths, overlay_error = overlay_paths_local(repo_root, root.includes)
+        overlay_paths, overlay_error = overlay_paths_local(repo_root, include_patterns)
 
     if overlay_error:
-        return [], overlay_error, None, None
+        return [], overlay_error, None, None, include_patterns
     if not overlay_paths:
-        return [], None, None, None
+        return [], None, None, None, include_patterns
 
     files_from_path = work_dir / ("repo-overlay-{}-files.txt".format(repo_root.name))
     write_list_file(files_from_path, overlay_paths)
@@ -1080,11 +1085,11 @@ def repo_overlay_preview(
         dry_run=False,
     )
     if preview_error or preview_command is None:
-        return overlay_paths, preview_error, None, apply_command
+        return overlay_paths, preview_error, None, apply_command, include_patterns
     if apply_error:
-        return overlay_paths, apply_error, run_rsync_preview(preview_command), None
+        return overlay_paths, apply_error, run_rsync_preview(preview_command), None, include_patterns
 
-    return overlay_paths, None, run_rsync_preview(preview_command), apply_command
+    return overlay_paths, None, run_rsync_preview(preview_command), apply_command, include_patterns
 
 
 def build_plan(action: str, target: Target, config: Config, ssh_host: Optional[str], plan_path: Path, run_id: str) -> Plan:
@@ -1093,7 +1098,7 @@ def build_plan(action: str, target: Target, config: Config, ssh_host: Optional[s
     rsync_path, rsync_version = resolve_rsync(config)
 
     for root in target.roots:
-        if not root.path.exists():
+        if not root.path.exists() and action != "pull":
             plan.chunks.append(
                 PlanChunk(
                     chunk_type="missing-path",
@@ -1105,6 +1110,10 @@ def build_plan(action: str, target: Target, config: Config, ssh_host: Optional[s
                     status="skipped",
                 )
             )
+            continue
+
+        if not root.path.exists() and action == "pull":
+            plan.chunks.extend(build_plain_chunks(action, root, config, ssh_host, rsync_path, rsync_version, work_dir))
             continue
 
         repo_root = find_git_root(root.path)
@@ -1149,7 +1158,7 @@ def build_git_chunks(
 ) -> List[PlanChunk]:
     excludes = merge_excludes(config, root)
     untracked_count, untracked_error = count_untracked_files(repo_root)
-    overlay_paths, overlay_error, overlay_preview, overlay_apply_command = repo_overlay_preview(
+    overlay_paths, overlay_error, overlay_preview, overlay_apply_command, include_patterns = repo_overlay_preview(
         action, root, repo_root, ssh_host, rsync_path, work_dir
     )
     local_snapshot = collect_git_snapshot_local(repo_root)
@@ -1161,7 +1170,7 @@ def build_git_chunks(
         "- source: {}".format(root.source),
         "- candidate untracked files: {}".format(untracked_count),
         "- overlay candidate paths from source side: {}".format(len(overlay_paths)),
-        "- explicit includes: {}".format(", ".join(root.includes) if root.includes else "none"),
+        "- include patterns: {}".format(", ".join(include_patterns) if include_patterns else "none"),
         "- merged excludes: {}".format(", ".join(excludes) if excludes else "none"),
         "- symlink policy: copy symlinks as symlinks, do not follow targets",
     ]
@@ -1257,6 +1266,7 @@ def build_plain_chunks(
     lines = [
         "- source: {}".format(root.source),
         "- peer host: {}".format(ssh_host or "unconfigured"),
+        "- local path exists: {}".format("yes" if root.path.exists() else "no (will be created on pull apply)"),
         "- merged excludes: {}".format(", ".join(excludes) if excludes else "none"),
         "- nested git roots excluded from plain-dir chunk: {}".format(len(nested_git_roots)),
         "- symlink policy: do not follow symlink targets",
@@ -1401,6 +1411,9 @@ def apply_rsync_chunk(chunk: PlanChunk, log_path: Path) -> Tuple[bool, str]:
     apply_command = [str(value) for value in chunk.metadata.get("apply_command", [])]
     if not apply_command:
         return False, "missing apply command"
+
+    if chunk.direction == "pull":
+        chunk.path.mkdir(parents=True, exist_ok=True)
 
     result = run_command(apply_command, timeout=600)
     log_command_result(log_path, "apply {} {}".format(chunk.chunk_type, chunk.path), apply_command, result)
