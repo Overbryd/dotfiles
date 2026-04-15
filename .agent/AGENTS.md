@@ -90,6 +90,8 @@ When editing `*.ex` or `*.exs`:
 - Prefer exact assertions with useful failure messages.
 - Good helper names: `reload/1`, `children_of/1`, `fields/1`, `expected_summary/1`.
 - Avoid type-encoded helper families unless truly needed.
+- Avoid semantic-light private helpers. No `defp` whose body is only a trivial passthrough, env getter, direct delegation, single query, simple formatter, or one-line boolean unless helper
+ clearly improves multiple call sites or enables pattern matching / recursion.
 
 ## Applies to
 
