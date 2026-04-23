@@ -5,6 +5,10 @@ PI_CONFIG_FILES := $(addprefix ~/.pi/agent/, $(notdir $(wildcard pi/*.json)))
 PI_EXTENSIONS := $(addprefix ~/.pi/agent/extensions/, $(notdir $(wildcard pi/extensions/*.ts)))
 PI_AGENT_FILES := ~/.pi/agent/AGENTS.md
 PI_AGENT_SKILLS := $(patsubst .agent/skills/%,~/.pi/agent/skills/%,$(wildcard .agent/skills/*/SKILL.md))
+PI_CODEX_PATCH = $(DOTFILES_ROOT)/patches/pi-openai-codex-previous-response-id.patch
+PI_CODEX_PATCH_TMP = /private/tmp/pi-openai-codex-previous-response-id.patch
+PI_CODEX_PATCH_TMPDIR = /private/tmp/pi-patch-tmp
+PI_CODEX_PROVIDER_FILE = /opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/node_modules/@mariozechner/pi-ai/dist/providers/openai-codex-responses.js
 LAUNCH_AGENTS := $(addprefix ~/Library/, $(wildcard LaunchAgents/*))
 
 DOTFILES_ROOT = $(HOME)/dotfiles
@@ -574,6 +578,21 @@ dotfiles: \
 
 ~/.pi/agent/skills:
 	mkdir -p $@
+
+pi-patch-codex-ws:
+	sudo cp $(PI_CODEX_PATCH) $(PI_CODEX_PATCH_TMP)
+	sudo chown _binary:_binary $(PI_CODEX_PATCH_TMP)
+	sudo install -d -o _binary -g _binary $(PI_CODEX_PATCH_TMPDIR)
+	sudo -u _binary env TMPDIR=$(PI_CODEX_PATCH_TMPDIR) patch -p1 -d / < $(PI_CODEX_PATCH_TMP)
+	rg -n "resolvePreviousResponseState|previous_response_id" $(PI_CODEX_PROVIDER_FILE)
+	node --check $(PI_CODEX_PROVIDER_FILE)
+
+pi-unpatch-codex-ws:
+	sudo cp $(PI_CODEX_PATCH) $(PI_CODEX_PATCH_TMP)
+	sudo chown _binary:_binary $(PI_CODEX_PATCH_TMP)
+	sudo install -d -o _binary -g _binary $(PI_CODEX_PATCH_TMPDIR)
+	sudo -u _binary env TMPDIR=$(PI_CODEX_PATCH_TMPDIR) patch -R -p1 -d / < $(PI_CODEX_PATCH_TMP)
+	node --check $(PI_CODEX_PROVIDER_FILE)
 
 ~/.%:
 	cd ~ && ln -svf $(DOTFILES_ROOT)/$(notdir $@) $@

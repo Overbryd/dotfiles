@@ -1,0 +1,58 @@
+--- a/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/node_modules/@mariozechner/pi-ai/dist/providers/openai-codex-responses.js
++++ b/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/node_modules/@mariozechner/pi-ai/dist/providers/openai-codex-responses.js
+@@ -203,8 +203,46 @@
+ // ============================================================================
+ // Request Building
+ // ============================================================================
++function resolvePreviousResponseState(model, context, options) {
++    if (options?.transport === "sse") {
++        return {
++            previousResponseId: undefined,
++            inputContext: context,
++        };
++    }
++    for (let i = context.messages.length - 1; i >= 0; i--) {
++        const message = context.messages[i];
++        if (message.role !== "assistant")
++            continue;
++        if (!message.responseId)
++            continue;
++        if (message.provider !== model.provider || message.api !== model.api || message.model !== model.id)
++            continue;
++        if (message.stopReason === "error" || message.stopReason === "aborted")
++            continue;
++        const trailingMessages = context.messages.slice(i + 1);
++        if (trailingMessages.length === 0) {
++            break;
++        }
++        if (trailingMessages.some((trailingMessage) => trailingMessage.role === "assistant")) {
++            break;
++        }
++        return {
++            previousResponseId: message.responseId,
++            inputContext: {
++                ...context,
++                messages: trailingMessages,
++            },
++        };
++    }
++    return {
++        previousResponseId: undefined,
++        inputContext: context,
++    };
++}
+ function buildRequestBody(model, context, options) {
+-    const messages = convertResponsesMessages(model, context, CODEX_TOOL_CALL_PROVIDERS, {
++    const { previousResponseId, inputContext } = resolvePreviousResponseState(model, context, options);
++    const messages = convertResponsesMessages(model, inputContext, CODEX_TOOL_CALL_PROVIDERS, {
+         includeSystemPrompt: false,
+     });
+     const body = {
+@@ -213,6 +251,7 @@
+         stream: true,
+         instructions: context.systemPrompt,
+         input: messages,
++        previous_response_id: previousResponseId,
+         text: { verbosity: options?.textVerbosity || "medium" },
+         include: ["reasoning.encrypted_content"],
+         prompt_cache_key: options?.sessionId,
