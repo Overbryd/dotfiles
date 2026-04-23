@@ -551,7 +551,7 @@ dotfiles: \
 ~/.pi/agent/AGENTS.md: .agent/AGENTS.md | ~/.pi/agent
 	ln -svf $(DOTFILES_ROOT)/$< $@
 
-~/.pi/agent/models.json: pi/models.json | ~/.pi/agent
+~/.pi/agent/%.json: pi/%.json | ~/.pi/agent
 	ln -svf $(DOTFILES_ROOT)/$< $@
 
 ~/.pi/agent:
