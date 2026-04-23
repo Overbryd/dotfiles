@@ -1,3 +1,5 @@
 {
-  "enableInstallTelemetry": false
+  "enableInstallTelemetry": false,
+  "defaultThinkingLevel": "high",
+  "transport": "websocket"
 }
