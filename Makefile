@@ -4,12 +4,13 @@ DOT_CONFIG_FILES := $(addprefix ~/, $(wildcard .config/*))
 PI_CONFIG_FILES := $(addprefix ~/.pi/agent/, $(notdir $(wildcard pi/*.json)))
 PI_EXTENSIONS := $(addprefix ~/.pi/agent/extensions/, $(notdir $(wildcard pi/extensions/*.ts)))
 PI_AGENT_FILES := ~/.pi/agent/AGENTS.md
-PI_AGENT_SKILLS := $(patsubst .agent/skills/%,~/.pi/agent/skills/%,$(wildcard .agent/skills/*/SKILL.md))
+PI_AGENT_SKILLS := $(patsubst .agent/skills/%,~/.pi/agent/skills/%,$(shell find .agent/skills -mindepth 2 -type f 2>/dev/null))
 PI_CODEX_PATCH = $(DOTFILES_ROOT)/patches/pi-openai-codex-previous-response-id.patch
 PI_CODEX_PATCH_TMP = /private/tmp/pi-openai-codex-previous-response-id.patch
 PI_CODEX_PATCH_TMPDIR = /private/tmp/pi-patch-tmp
 PI_CODEX_PROVIDER_FILE = /opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/node_modules/@mariozechner/pi-ai/dist/providers/openai-codex-responses.js
 LAUNCH_AGENTS := $(addprefix ~/Library/, $(wildcard LaunchAgents/*))
+PNPM_CONFIG_FILES := ~/Library/Preferences/pnpm/config.yaml
 
 DOTFILES_ROOT = $(HOME)/dotfiles
 BREW = $(DOTFILES_ROOT)/.bin/brew
@@ -532,7 +533,8 @@ dotfiles: \
 	$(PI_CONFIG_FILES) \
 	$(PI_EXTENSIONS) \
 	$(PI_AGENT_FILES) \
-	$(PI_AGENT_SKILLS)
+	$(PI_AGENT_SKILLS) \
+	$(PNPM_CONFIG_FILES)
 
 ~/dotfiles:
 	ln -s /usr/local/dotfiles ~/dotfiles
@@ -551,6 +553,10 @@ dotfiles: \
 
 ~/.config:
 	mkdir ~/.config
+
+~/Library/Preferences/pnpm/config.yaml: Library/Preferences/pnpm/config.yaml
+	mkdir -p $(dir $@)
+	ln -svf $(DOTFILES_ROOT)/$< $@
 
 ~/.pi/agent/AGENTS.md: .agent/AGENTS.md | ~/.pi/agent
 	ln -svf $(DOTFILES_ROOT)/$< $@

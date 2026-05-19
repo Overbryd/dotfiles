@@ -1,0 +1,3 @@
+[solver]
+# Poetry 2.4+ expects min-release-age in days.
+min-release-age = 1

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PI_PLAYWRIGHT_HOME="${PI_PLAYWRIGHT_HOME:-$HOME/.local/share/pi-playwright}"
+RUNNER="$HOME/dotfiles/.agent/skills/playwright-e2e/scripts/pi_playwright_e2e.py"
+
+if [ -x "$PI_PLAYWRIGHT_HOME/venv/bin/python" ]; then
+  exec "$PI_PLAYWRIGHT_HOME/venv/bin/python" "$RUNNER" "$@"
+fi
+
+exec python3 "$RUNNER" "$@"
