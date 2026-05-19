@@ -6,7 +6,8 @@ Current status:
 - Python CLI for pull/push/doctor
 - path/profile target resolution
 - Git root detection
-- mixed-tree planning with nested Git repos excluded from plain-dir chunks
+- mixed-tree planning with nested Git repos excluded from plain-dir chunks unless force-git is active
+- force-git rsync mode for whole-directory syncs including .git metadata
 - plan file generation in ~/.local/state/wsync/runs/<run-id>/plan.txt
 - doctor command for local/remote prerequisites
 - portable rsync dry-run previews for plain-dir and repo-overlay chunks
@@ -151,6 +152,7 @@ class UserError(Exception):
 class Command:
     action: str
     target: Optional[str] = None
+    force_git: bool = False
 
 
 @dataclass
@@ -404,41 +406,52 @@ def load_toml_file(path: Path) -> Dict[str, Any]:
 
 
 def parse_cli(argv: Sequence[str]) -> Command:
-    if not argv:
-        return Command(action="pull", target=None)
+    force_git = "--force-git" in argv
+    args = [arg for arg in argv if arg != "--force-git"]
 
-    first = argv[0]
+    if not args:
+        return Command(action="pull", target=None, force_git=force_git)
+
+    first = args[0]
     if first in ("-h", "--help", "help"):
         print_help()
         raise SystemExit(0)
 
+    if first.startswith("-"):
+        raise UserError("Unknown option: {}".format(first))
+
     if first == "doctor":
-        if len(argv) != 1:
+        if force_git:
+            raise UserError("--force-git cannot be used with doctor")
+        if len(args) != 1:
             raise UserError("Usage: wsync doctor")
         return Command(action="doctor")
 
     if first in ("pull", "push"):
-        if len(argv) > 2:
-            raise UserError("Usage: wsync {} [target]".format(first))
-        return Command(action=first, target=argv[1] if len(argv) == 2 else None)
+        if len(args) > 2:
+            raise UserError("Usage: wsync {} [--force-git] [target]".format(first))
+        return Command(action=first, target=args[1] if len(args) == 2 else None, force_git=force_git)
 
-    if len(argv) != 1:
-        raise UserError("Usage: wsync [target] | wsync pull [target] | wsync push [target] | wsync doctor")
+    if len(args) != 1:
+        raise UserError("Usage: wsync [--force-git] [target] | wsync pull [--force-git] [target] | wsync push [--force-git] [target] | wsync doctor")
 
-    return Command(action="pull", target=first)
+    return Command(action="pull", target=first, force_git=force_git)
 
 
 def print_help() -> None:
     print(
         "Usage:\n"
-        "  wsync\n"
-        "  wsync <path-or-profile>\n"
-        "  wsync pull [target]\n"
-        "  wsync push [target]\n"
+        "  wsync [--force-git]\n"
+        "  wsync [--force-git] <path-or-profile>\n"
+        "  wsync pull [--force-git] [target]\n"
+        "  wsync push [--force-git] [target]\n"
         "  wsync doctor\n\n"
+        "Options:\n"
+        "  --force-git  rsync whole directories, including .git metadata, instead of Git-aware chunks\n\n"
         "Current behavior:\n"
         "  - path/profile resolution\n"
         "  - plan generation\n"
+        "  - force-git whole-directory rsync mode\n"
         "  - doctor checks\n"
         "  - editable plan + confirm-to-apply\n"
     )
@@ -623,7 +636,7 @@ def build_plain_dir_rsync_command(
         except ValueError:
             continue
 
-    source = remote_path_spec(ssh_host, root_path) if action == "pull" else str(root_path) + "/"
+    source = remote_path_spec(ssh_host, root_path) + "/" if action == "pull" else str(root_path) + "/"
     dest = str(root_path) + "/" if action == "pull" else remote_path_spec(ssh_host, root_path)
     command.extend([source, dest])
     return command, None
@@ -1017,6 +1030,11 @@ def merge_excludes(config: Config, root: RootSpec) -> List[str]:
     return unique(merged)
 
 
+def is_git_metadata_exclude(pattern: str) -> bool:
+    normalized = pattern.replace("\\", "/").strip("/")
+    return any(part == ".git" for part in normalized.split("/"))
+
+
 def merge_repo_includes(root: RootSpec) -> List[str]:
     return unique(list(DEFAULT_REPO_INCLUDES) + list(root.includes))
 
@@ -1092,7 +1110,15 @@ def repo_overlay_preview(
     return overlay_paths, None, run_rsync_preview(preview_command), apply_command, include_patterns
 
 
-def build_plan(action: str, target: Target, config: Config, ssh_host: Optional[str], plan_path: Path, run_id: str) -> Plan:
+def build_plan(
+    action: str,
+    target: Target,
+    config: Config,
+    ssh_host: Optional[str],
+    plan_path: Path,
+    run_id: str,
+    force_git: bool = False,
+) -> Plan:
     plan = Plan(run_id=run_id, action=action, target_label=target.label, plan_path=plan_path)
     work_dir = plan_path.parent
     rsync_path, rsync_version = resolve_rsync(config)
@@ -1112,11 +1138,42 @@ def build_plan(action: str, target: Target, config: Config, ssh_host: Optional[s
             )
             continue
 
-        if not root.path.exists() and action == "pull":
-            plan.chunks.extend(build_plain_chunks(action, root, config, ssh_host, rsync_path, rsync_version, work_dir))
+        repo_root = find_git_root(root.path) if root.path.exists() else None
+        force_git_reason = force_git_reason_for_root(action, root, repo_root, force_git)
+        if force_git_reason:
+            if root.path.exists() and root.path.is_file():
+                plan.chunks.append(
+                    PlanChunk(
+                        chunk_type="unsupported-path",
+                        path=root.path,
+                        direction=action,
+                        summary="Skip file target outside a forced directory sync",
+                        lines=[
+                            "- source: {}".format(root.source),
+                            "- force-git: {}".format(force_git_reason),
+                            "- reason: force-git applies to directory targets only",
+                        ],
+                        applyable=False,
+                        status="skipped",
+                    )
+                )
+                continue
+
+            plan.chunks.extend(
+                build_plain_chunks(
+                    action,
+                    root,
+                    config,
+                    ssh_host,
+                    rsync_path,
+                    rsync_version,
+                    work_dir,
+                    force_git=True,
+                    force_git_reason=force_git_reason,
+                )
+            )
             continue
 
-        repo_root = find_git_root(root.path)
         if repo_root:
             plan.chunks.extend(build_git_chunks(action, root, repo_root, config, ssh_host, rsync_path, rsync_version, work_dir))
             continue
@@ -1144,6 +1201,21 @@ def build_plan(action: str, target: Target, config: Config, ssh_host: Optional[s
         chunk.chunk_id = "chunk-{:04d}".format(index)
 
     return plan
+
+
+def force_git_reason_for_root(
+    action: str,
+    root: RootSpec,
+    repo_root: Optional[Path],
+    requested: bool,
+) -> Optional[str]:
+    if requested:
+        return "requested by --force-git"
+    if action == "pull" and not root.path.exists():
+        return "auto (local target is missing)"
+    if root.path.is_dir() and repo_root is None:
+        return "auto (local target is not inside a Git repo)"
+    return None
 
 
 def build_git_chunks(
@@ -1249,9 +1321,16 @@ def build_plain_chunks(
     rsync_path: Optional[str],
     rsync_version: Optional[str],
     work_dir: Path,
+    force_git: bool = False,
+    force_git_reason: Optional[str] = None,
 ) -> List[PlanChunk]:
     excludes = merge_excludes(config, root)
-    nested_git_roots, truncated = scan_nested_git_roots(root.path)
+    if force_git:
+        excludes = [pattern for pattern in excludes if not is_git_metadata_exclude(pattern)]
+        nested_git_roots: List[Path] = []
+        truncated = False
+    else:
+        nested_git_roots, truncated = scan_nested_git_roots(root.path)
     preview = plain_dir_preview(action, root.path, ssh_host, rsync_path, excludes, nested_git_roots)
     apply_command, _apply_error = build_plain_dir_rsync_command(
         action,
@@ -1271,6 +1350,9 @@ def build_plain_chunks(
         "- nested git roots excluded from plain-dir chunk: {}".format(len(nested_git_roots)),
         "- symlink policy: do not follow symlink targets",
     ]
+    if force_git:
+        lines.append("- force-git: {}".format(force_git_reason or "yes"))
+        lines.append("- force-git scope: include .git metadata and nested Git repos in rsync payload")
     if rsync_version:
         lines.append("- rsync: {}{}".format(rsync_path or "rsync", " ({})".format(rsync_version)))
     if preview.available:
@@ -1298,12 +1380,19 @@ def build_plain_chunks(
             chunk_type="plain-dir",
             path=root.path,
             direction=action,
-            summary="Sync plain directory with nested Git repos handled separately",
+            summary=(
+                "Force-sync directory including Git metadata"
+                if force_git
+                else "Sync plain directory with nested Git repos handled separately"
+            ),
             lines=lines,
             applyable=bool(apply_command),
             metadata={"apply_command": apply_command or []},
         )
     ]
+
+    if force_git:
+        return chunks
 
     for nested_repo in nested_git_roots:
         nested_root = RootSpec(path=nested_repo, source="nested-git:{}".format(root.path))
@@ -1674,7 +1763,7 @@ def main(argv: Sequence[str]) -> int:
     target = resolve_target(config, command.target)
 
     run_id, _run_dir, plan_path = create_run_dir()
-    plan = build_plan(command.action, target, config, ssh_host, plan_path, run_id)
+    plan = build_plan(command.action, target, config, ssh_host, plan_path, run_id, force_git=command.force_git)
     write_plan(plan)
     print_plan_summary(plan)
 
