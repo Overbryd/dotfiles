@@ -24,9 +24,12 @@
 
 ## Test first
 
+- Existing codebase: use test-first red/green by default for behavior changes and bug fixes.
 - Before coding, decide how to verify.
-- Prefer one failing test at a time.
-- See expected failure, implement, make it pass, refactor.
+- Prefer one clean failing test at a time.
+- Run the test and see it fail for the expected reason. If failure is wrong or test passes, fix the test and rerun until failure proves the intended gap.
+- Only after expected red failure, implement smallest change.
+- Run same test and see it pass green, then refactor only if needed.
 - After focused checks pass, run relevant full suite.
 
 ## Simplicity first

@@ -24,8 +24,8 @@ type ProfileState = {
 
 type PayloadRecord = Record<string, unknown>;
 
-const STATUS_KEY = "gpt54";
-const TARGET_MODEL_ID = "gpt-5.4";
+const STATUS_KEY = "openai-agent";
+const TARGET_MODEL_PATTERNS = [/^gpt-5\.[45](?:$|-)/, /codex/i];
 const SUPPORTED_APIS = new Set(["openai-responses", "openai-codex-responses", "azure-openai-responses"]);
 const REASONING_ORDER: ReasoningEffort[] = ["none", "low", "medium", "high", "xhigh"];
 const HIGH_STAKES_TERMS = [
@@ -135,7 +135,9 @@ function getCurrentModelInfo(ctx: ExtensionContext) {
 
 function isActiveForContext(ctx: ExtensionContext) {
 	const { modelId, api } = getCurrentModelInfo(ctx);
-	return modelId === TARGET_MODEL_ID && !!api && SUPPORTED_APIS.has(api);
+	return (
+		!!modelId && TARGET_MODEL_PATTERNS.some((pattern) => pattern.test(modelId)) && !!api && SUPPORTED_APIS.has(api)
+	);
 }
 
 function countMatches(text: string, patterns: RegExp[]) {
@@ -305,12 +307,20 @@ function sanitizeOrphanReasoningItems(input: unknown[]) {
 
 function buildSystemContract() {
 	return [
-		"GPT-5.4 caveman contract:",
+		"GPT-5/Codex caveman + tool contract:",
 		"- Talk terse like smart caveman. Technical substance stay. Fluff die.",
 		"- Active every response unless user says `stop caveman` or `normal mode`.",
 		"- Default direct execution. Keep scope tight. Short progress notes.",
 		"- Use tools decisively for implementation work. No long narrated reasoning.",
 		"- Ask only when blocked by ambiguity or risk.",
+		"- File edits: use edit for existing text files. Use write only for new files or full overwrite.",
+		"- Never use bash, Python, Perl, Ruby, Node, sed -i, tee, cat, echo, or redirection to mutate project files.",
+		"- Bash is for inspection, search, tests, formatters, package commands, and temp scratch files under /tmp only.",
+		"- If edit needs exact oldText, read the file or narrow region first, then call edit with path and edits[].",
+		"- edit oldText must match exactly once. For repeated snippets, include nearest stable parent/context lines before and after.",
+		"- If edit says oldText is not unique, immediately read that file region and retry edit with more surrounding context.",
+		"- If edit fails, read affected lines and retry edit. Do not switch to shell rewrite.",
+		"- Multiple changes in one file: one edit call with multiple edits[]. Each oldText must be unique; give each repeated block distinct context.",
 		"- Code changes: focused edits, validate when practical, brief result + follow-ups.",
 		"- Review/debug/plan/research: structured, concrete, still terse.",
 		"- Drop articles, filler, pleasantries, hedging. Fragments OK. Short words. Technical terms exact. Code blocks unchanged.",
@@ -326,7 +336,7 @@ function truncatePrompt(prompt: string | undefined, max = 120) {
 
 function buildStatusText(ctx: ExtensionContext, state: ProfileState) {
 	const theme = ctx.ui.theme;
-	const badge = theme.fg("accent", "g5.4");
+	const badge = theme.fg("accent", "g5/codex");
 	if (!state.active) return undefined;
 	if (!state.mode || !state.reasoningEffort || !state.verbosity) {
 		return `${badge}${theme.fg("dim", " ready")}`;
@@ -341,9 +351,29 @@ function applyStatus(ctx: ExtensionContext, state: ProfileState) {
 	ctx.ui.setStatus(STATUS_KEY, buildStatusText(ctx, state));
 }
 
+function isEditUniquenessError(content: unknown) {
+	const text = Array.isArray(content)
+		? content.map((item) => (isRecord(item) && typeof item.text === "string" ? item.text : "")).join("\n")
+		: "";
+
+	return text.includes("Each oldText must be unique") || text.includes("oldText must match a unique");
+}
+
+function appendEditRetryHint(content: unknown) {
+	const hint = {
+		type: "text",
+		text: [
+			"Next action: use read on this file around the repeated matches, then retry edit with oldText that includes enough surrounding context to match exactly once.",
+			"Do not use bash, Python, Perl, Ruby, Node, sed, tee, cat, echo, or redirection to edit the file.",
+		].join(" "),
+	};
+
+	return Array.isArray(content) ? [...content, hint] : [hint];
+}
+
 function buildReport(state: ProfileState) {
 	const lines = [
-		`gpt54 extension: ${state.active ? "active" : "inactive"}`,
+		`openai coding agent extension: ${state.active ? "active" : "inactive"}`,
 		`model: ${state.provider && state.modelId ? `${state.provider}/${state.modelId}` : "unknown"}`,
 		`api: ${state.api ?? "unknown"}`,
 		`agent run: ${state.agentRunActive ? "active" : "idle"}`,
@@ -360,7 +390,7 @@ function buildReport(state: ProfileState) {
 	return lines.join("\n");
 }
 
-export const __gpt54Internals = {
+export const __openaiCodingAgentInternals = {
 	classifyMode,
 	computeProfile,
 	sanitizeOrphanReasoningItems,
@@ -368,13 +398,15 @@ export const __gpt54Internals = {
 	setPayloadVerbosity,
 	getPayloadVerbosity,
 	buildSystemContract,
+	isEditUniquenessError,
+	appendEditRetryHint,
 	floorFromThinkingLevel,
 	bumpReasoning,
 	maxReasoning,
 	isHighStakes,
 };
 
-export default function gpt54CodingAgentExtension(pi: ExtensionAPI) {
+export default function openaiCodingAgentExtension(pi: ExtensionAPI) {
 	const state: ProfileState = {
 		active: false,
 		agentRunActive: false,
@@ -440,6 +472,12 @@ export default function gpt54CodingAgentExtension(pi: ExtensionAPI) {
 		applyStatus(ctx, state);
 	});
 
+	pi.on("tool_result", async (event) => {
+		if (event.toolName !== "edit" || !event.isError || !isEditUniquenessError(event.content)) return;
+
+		return { content: appendEditRetryHint(event.content) };
+	});
+
 	pi.on("before_provider_request", (event, ctx) => {
 		syncActivationState(ctx);
 		if (!state.active || !state.agentRunActive || !state.reasoningEffort || !state.verbosity) {
@@ -474,8 +512,8 @@ export default function gpt54CodingAgentExtension(pi: ExtensionAPI) {
 		return payload;
 	});
 
-	pi.registerCommand("gpt54", {
-		description: "Show GPT-5.4 extension status",
+	pi.registerCommand("openai-agent", {
+		description: "Show OpenAI coding agent extension status",
 		getArgumentCompletions: (prefix) => {
 			const items = ["status", "verbose"].filter((item) => item.startsWith(prefix));
 			return items.length > 0 ? items.map((item) => ({ value: item, label: item })) : null;
@@ -485,8 +523,8 @@ export default function gpt54CodingAgentExtension(pi: ExtensionAPI) {
 			const report = buildReport(state);
 			if (ctx.hasUI) {
 				const summary = state.active
-					? `g5.4 ${state.mode ?? "ready"} ${state.reasoningEffort ?? "n/a"}/${state.verbosity ?? "n/a"}`
-					: "g5.4 inactive";
+					? `openai-agent ${state.mode ?? "ready"} ${state.reasoningEffort ?? "n/a"}/${state.verbosity ?? "n/a"}`
+					: "openai-agent inactive";
 				ctx.ui.notify(summary, "info");
 			} else {
 				console.log(report);
