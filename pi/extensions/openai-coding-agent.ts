@@ -1,9 +1,9 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 type TurnMode = "execution" | "review" | "research" | "planning";
 type Verbosity = "low" | "medium" | "high";
-type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
-type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max";
+type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 type ProfileState = {
 	active: boolean;
@@ -25,9 +25,9 @@ type ProfileState = {
 type PayloadRecord = Record<string, unknown>;
 
 const STATUS_KEY = "openai-agent";
-const TARGET_MODEL_PATTERNS = [/^gpt-5\.[45](?:$|-)/, /codex/i];
+const TARGET_MODEL_PATTERNS = [/^gpt-5\.[456](?:$|-)/, /codex/i];
 const SUPPORTED_APIS = new Set(["openai-responses", "openai-codex-responses", "azure-openai-responses"]);
-const REASONING_ORDER: ReasoningEffort[] = ["none", "low", "medium", "high", "xhigh"];
+const REASONING_ORDER: ReasoningEffort[] = ["none", "low", "medium", "high", "xhigh", "max"];
 const HIGH_STAKES_TERMS = [
 	"security",
 	"authentication",
@@ -189,6 +189,8 @@ function floorFromThinkingLevel(level: ThinkingLevel): ReasoningEffort {
 			return "high";
 		case "xhigh":
 			return "xhigh";
+		case "max":
+			return "max";
 	}
 }
 
