@@ -23,6 +23,8 @@ const STORAGE_VERSION = 1;
 const MAX_ROTATION_RETRIES = 5;
 const USAGE_CACHE_TTL_MS = 5 * 60 * 1000;
 const USAGE_TIMEOUT_MS = 10 * 1000;
+const USAGE_MAX_ATTEMPTS = 3;
+const USAGE_RETRY_BASE_MS = 750;
 const QUOTA_COOLDOWN_MS = 60 * 60 * 1000;
 const HELP =
 	"Usage: /multicodex [show|accounts|add <email>|use <email>|refresh [email|all]|reauth <email>|remove <email>|reset [manual|quota|all]|path|help]";
@@ -70,6 +72,7 @@ type StorageData = {
 type UsageWindow = {
 	usedPercent?: number;
 	resetAt?: number;
+	limitWindowSeconds?: number;
 };
 
 type UsageSnapshot = {
@@ -81,6 +84,15 @@ type UsageSnapshot = {
 type ProviderLike = {
 	streamSimple(model: Model<Api>, context: Context, options?: SimpleStreamOptions): AsyncIterable<AssistantMessageEvent>;
 };
+
+class UsageHttpError extends Error {
+	constructor(
+		message: string,
+		readonly status: number,
+	) {
+		super(message);
+	}
+}
 
 function agentDir() {
 	return process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
@@ -210,23 +222,49 @@ function normalizeUsedPercent(value: unknown): number | undefined {
 
 function normalizeResetAt(value: unknown): number | undefined {
 	if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-	return value * 1000;
+	return value > 100_000_000_000 ? value : value * 1000;
+}
+
+function normalizeResetAfterSeconds(value: unknown): number | undefined {
+	if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+	return Date.now() + Math.max(0, value) * 1000;
+}
+
+function normalizeLimitWindowSeconds(value: unknown): number | undefined {
+	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
+	return value;
 }
 
 function parseUsageWindow(value: unknown): UsageWindow | undefined {
 	if (!isRecord(value)) return undefined;
 	const usedPercent = normalizeUsedPercent(value.used_percent);
-	const resetAt = normalizeResetAt(value.reset_at);
-	if (usedPercent === undefined && resetAt === undefined) return undefined;
-	return { usedPercent, resetAt };
+	const resetAt = normalizeResetAfterSeconds(value.reset_after_seconds) ?? normalizeResetAt(value.reset_at);
+	const limitWindowSeconds = normalizeLimitWindowSeconds(value.limit_window_seconds);
+	if (usedPercent === undefined && resetAt === undefined && limitWindowSeconds === undefined) return undefined;
+	return { usedPercent, resetAt, limitWindowSeconds };
+}
+
+function additionalRateLimits(value: unknown) {
+	if (!isRecord(value)) return [];
+	const raw = value.additional_rate_limits;
+	const values = Array.isArray(raw) ? raw : Object.values(isRecord(raw) ? raw : {});
+	return values
+		.map((entry) => (isRecord(entry) && isRecord(entry.rate_limit) ? entry.rate_limit : undefined))
+		.filter((entry): entry is Record<string, unknown> => Boolean(entry));
 }
 
 function parseUsageResponse(value: unknown): Omit<UsageSnapshot, "fetchedAt"> {
 	const rateLimit = isRecord(value) && isRecord(value.rate_limit) ? value.rate_limit : {};
-	return {
-		primary: parseUsageWindow(rateLimit.primary_window),
-		secondary: parseUsageWindow(rateLimit.secondary_window),
-	};
+	let primary = parseUsageWindow(rateLimit.primary_window);
+	let secondary = parseUsageWindow(rateLimit.secondary_window);
+
+	for (const extraRateLimit of additionalRateLimits(value)) {
+		primary = primary ?? parseUsageWindow(extraRateLimit.primary_window);
+		secondary = secondary ?? parseUsageWindow(extraRateLimit.secondary_window);
+		if (primary && secondary) break;
+	}
+
+	return { primary, secondary };
 }
 
 function getNextResetAt(usage?: UsageSnapshot): number | undefined {
@@ -414,20 +452,71 @@ async function loginOpenAICodexDeviceCode(onDeviceCode: (device: DeviceAuthInfo)
 	return exchangeOpenAICodexDeviceCode(token.authorizationCode, token.codeVerifier, signal);
 }
 
-async function fetchUsage(accessToken: string, accountId: string | undefined, signal?: AbortSignal): Promise<UsageSnapshot> {
-	const { controller, clear } = withLinkedTimeout(signal, USAGE_TIMEOUT_MS);
-	try {
-		const headers: Record<string, string> = {
-			Authorization: `Bearer ${accessToken}`,
-			Accept: "application/json",
-		};
-		if (accountId) headers["ChatGPT-Account-Id"] = accountId;
-		const response = await fetch("https://chatgpt.com/backend-api/wham/usage", { headers, signal: controller.signal });
-		if (!response.ok) throw new Error(`usage request failed: HTTP ${response.status}`);
-		return { ...parseUsageResponse(await response.json()), fetchedAt: Date.now() };
-	} finally {
-		clear();
+function isTransientUsageStatus(status: number) {
+	return [408, 409, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524].includes(status);
+}
+
+function retryAfterMs(headers: Headers): number | undefined {
+	const retryAfterMs = headers.get("retry-after-ms");
+	if (retryAfterMs) {
+		const millis = Number(retryAfterMs);
+		if (Number.isFinite(millis)) return Math.max(0, millis);
 	}
+
+	const retryAfter = headers.get("retry-after");
+	if (!retryAfter) return undefined;
+	const seconds = Number(retryAfter);
+	if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+	const date = Date.parse(retryAfter);
+	return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
+}
+
+function sleepForUsageRetry(ms: number, signal?: AbortSignal) {
+	return new Promise<void>((resolve, reject) => {
+		if (signal?.aborted) return reject(new Error("Usage request cancelled"));
+		const timeout = setTimeout(resolve, ms);
+		const abort = () => {
+			clearTimeout(timeout);
+			reject(new Error("Usage request cancelled"));
+		};
+		signal?.addEventListener("abort", abort, { once: true });
+	});
+}
+
+async function usageErrorFromResponse(response: Response) {
+	const text = await response.text().catch(() => "");
+	const snippet = text.trim().replace(/\s+/g, " ").slice(0, 160);
+	return new UsageHttpError(`usage request failed: HTTP ${response.status}${snippet ? ` ${snippet}` : ""}`, response.status);
+}
+
+async function fetchUsage(accessToken: string, accountId: string | undefined, signal?: AbortSignal): Promise<UsageSnapshot> {
+	let lastError: unknown;
+	for (let attempt = 0; attempt < USAGE_MAX_ATTEMPTS; attempt++) {
+		const { controller, clear } = withLinkedTimeout(signal, USAGE_TIMEOUT_MS);
+		try {
+			const headers: Record<string, string> = {
+				Authorization: `Bearer ${accessToken}`,
+				Accept: "application/json",
+				"User-Agent": "pi-multicodex",
+			};
+			if (accountId) headers["chatgpt-account-id"] = accountId;
+			const response = await fetch("https://chatgpt.com/backend-api/wham/usage", { headers, signal: controller.signal });
+			if (response.ok) return { ...parseUsageResponse(await response.json()), fetchedAt: Date.now() };
+
+			lastError = await usageErrorFromResponse(response);
+			if (!isTransientUsageStatus(response.status) || attempt === USAGE_MAX_ATTEMPTS - 1) throw lastError;
+			await sleepForUsageRetry(retryAfterMs(response.headers) ?? USAGE_RETRY_BASE_MS * 2 ** attempt, signal);
+		} catch (error) {
+			lastError = error;
+			if (signal?.aborted) throw error;
+			if (error instanceof UsageHttpError && !isTransientUsageStatus(error.status)) throw error;
+			if (attempt === USAGE_MAX_ATTEMPTS - 1) throw error;
+			await sleepForUsageRetry(USAGE_RETRY_BASE_MS * 2 ** attempt, signal);
+		} finally {
+			clear();
+		}
+	}
+	throw lastError instanceof Error ? lastError : new Error(messageFromUnknown(lastError));
 }
 
 function isQuotaErrorMessage(message: string): boolean {
@@ -462,11 +551,14 @@ class AccountManager {
 	private data = loadStorage();
 	private piAuthAccount: Account | undefined;
 	private usageCache = new Map<string, UsageSnapshot>();
+	private usageErrors = new Map<string, string>();
+	private usagePromises = new Map<string, Promise<UsageSnapshot | undefined>>();
 	private refreshPromises = new Map<string, Promise<string>>();
 	private manualEmail: string | undefined;
 	private stateChangeHandlers = new Set<() => void>();
 	private warningHandler: ((message: string) => void) | undefined;
 	private warnedAuthFailures = new Set<string>();
+	private warnedUsageFailures = new Map<string, string>();
 	private readyPromise: Promise<void> = Promise.resolve();
 	private readyResolve: (() => void) | undefined;
 
@@ -491,6 +583,7 @@ class AccountManager {
 
 	resetSessionWarnings() {
 		this.warnedAuthFailures.clear();
+		this.warnedUsageFailures.clear();
 	}
 
 	onStateChange(handler: () => void) {
@@ -638,6 +731,10 @@ class AccountManager {
 		return this.usageCache.get(email);
 	}
 
+	getLastUsageError(email: string) {
+		return this.usageErrors.get(email);
+	}
+
 	getAccountsNeedingReauth() {
 		return this.getAccounts().filter((account) => account.needsReauth);
 	}
@@ -701,16 +798,33 @@ class AccountManager {
 		const cached = this.usageCache.get(account.email);
 		if (cached && !options.force && Date.now() - cached.fetchedAt < USAGE_CACHE_TTL_MS) return cached;
 
-		try {
-			const token = await this.ensureValidToken(account);
-			const usage = await fetchUsage(token, account.accountId, options.signal);
-			this.usageCache.set(account.email, usage);
-			this.notifyStateChanged();
-			return usage;
-		} catch (error) {
-			this.warningHandler?.(`MultiCodex usage fetch failed for ${account.email}: ${messageFromUnknown(error)}`);
-			return cached;
-		}
+		const inflight = this.usagePromises.get(account.email);
+		if (inflight) return inflight;
+
+		const promise = (async () => {
+			try {
+				const token = await this.ensureValidToken(account);
+				const usage = await fetchUsage(token, account.accountId, options.signal);
+				this.usageCache.set(account.email, usage);
+				this.usageErrors.delete(account.email);
+				this.warnedUsageFailures.delete(account.email);
+				this.notifyStateChanged();
+				return usage;
+			} catch (error) {
+				const message = messageFromUnknown(error);
+				this.usageErrors.set(account.email, message);
+				if (options.force || this.warnedUsageFailures.get(account.email) !== message) {
+					this.warnedUsageFailures.set(account.email, message);
+					this.warningHandler?.(`MultiCodex usage fetch failed for ${account.email}: ${message}`);
+				}
+				return cached;
+			} finally {
+				this.usagePromises.delete(account.email);
+			}
+		})();
+
+		this.usagePromises.set(account.email, promise);
+		return promise;
 	}
 
 	async refreshUsageForAllAccounts(options: { force?: boolean; signal?: AbortSignal } = {}) {
@@ -865,11 +979,36 @@ function activeApiKey(accountManager: AccountManager) {
 	return accountManager.getAccounts().find((account) => !account.needsReauth && account.accessToken)?.accessToken || "pending-login";
 }
 
+function windowLabel(window: UsageWindow | undefined, fallback: string) {
+	if (!window?.limitWindowSeconds) return fallback;
+	const hours = Math.round(window.limitWindowSeconds / 3600);
+	if (hours >= 24 * 6) return "7d";
+	if (hours >= 24) return `${Math.round(hours / 24)}d`;
+	return `${hours}h`;
+}
+
+function secondaryWindowLabel(usage: UsageSnapshot | undefined) {
+	if (!usage?.secondary?.limitWindowSeconds) return "7d";
+	const hours = Math.round(usage.secondary.limitWindowSeconds / 3600);
+	if (hours < 24) return `${hours}h`;
+	if (hours >= 24 * 6) return "7d";
+	if (
+		typeof usage.secondary.resetAt === "number" &&
+		typeof usage.primary?.resetAt === "number" &&
+		usage.secondary.resetAt - usage.primary.resetAt >= 3 * 24 * 60 * 60 * 1000
+	) {
+		return "7d";
+	}
+	return `${Math.round(hours / 24)}d`;
+}
+
 function formatUsage(accountManager: AccountManager, account: Account) {
 	const usage = accountManager.getCachedUsage(account.email);
 	const primary = usage?.primary?.usedPercent === undefined ? "?" : `${Math.round(usage.primary.usedPercent)}%`;
 	const secondary = usage?.secondary?.usedPercent === undefined ? "?" : `${Math.round(usage.secondary.usedPercent)}%`;
-	return `5h ${primary} reset ${formatResetAt(usage?.primary?.resetAt)} · 7d ${secondary} reset ${formatResetAt(usage?.secondary?.resetAt)}`;
+	const error = accountManager.getLastUsageError(account.email);
+	const summary = `${windowLabel(usage?.primary, "5h")} ${primary} reset ${formatResetAt(usage?.primary?.resetAt)} · ${secondaryWindowLabel(usage)} ${secondary} reset ${formatResetAt(usage?.secondary?.resetAt)}`;
+	return error ? `${summary} · usage error: ${error}` : summary;
 }
 
 function formatAccount(accountManager: AccountManager, account: Account) {
@@ -890,6 +1029,10 @@ function notify(ctx: ExtensionCommandContext | ExtensionContext, message: string
 	else console.log(message);
 }
 
+function isStaleContextError(error: unknown) {
+	return messageFromUnknown(error).includes("ctx is stale");
+}
+
 function updateStatus(ctx: ExtensionContext, accountManager: AccountManager) {
 	if (!ctx.hasUI) return;
 	if (ctx.model?.provider !== PROVIDER_ID) {
@@ -904,16 +1047,27 @@ function updateStatus(ctx: ExtensionContext, accountManager: AccountManager) {
 	}
 
 	const usage = accountManager.getCachedUsage(account.email);
-	const fiveHourLeft = usage?.primary?.usedPercent === undefined ? "?" : `${Math.round(100 - usage.primary.usedPercent)}%`;
-	const weeklyLeft = usage?.secondary?.usedPercent === undefined ? "?" : `${Math.round(100 - usage.secondary.usedPercent)}%`;
-	ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("muted", `Codex ${account.email} · 5h ${fiveHourLeft} left · 7d ${weeklyLeft} left`));
+	const primaryLeft = usage?.primary?.usedPercent === undefined ? "?" : `${Math.round(100 - usage.primary.usedPercent)}%`;
+	const secondaryLeft = usage?.secondary?.usedPercent === undefined ? "?" : `${Math.round(100 - usage.secondary.usedPercent)}%`;
+	ctx.ui.setStatus(
+		STATUS_KEY,
+		ctx.ui.theme.fg("muted", `Codex ${account.email} · ${windowLabel(usage?.primary, "5h")} ${primaryLeft} left · ${secondaryWindowLabel(usage)} ${secondaryLeft} left`),
+	);
+}
+
+function safelyUpdateStatus(ctx: ExtensionContext, accountManager: AccountManager) {
+	try {
+		updateStatus(ctx, accountManager);
+	} catch (error) {
+		if (!isStaleContextError(error)) throw error;
+	}
 }
 
 async function refreshStatus(ctx: ExtensionContext, accountManager: AccountManager) {
-	updateStatus(ctx, accountManager);
+	safelyUpdateStatus(ctx, accountManager);
 	const account = accountManager.getActiveAccount();
 	if (account && ctx.model?.provider === PROVIDER_ID) await accountManager.refreshUsageForAccount(account);
-	updateStatus(ctx, accountManager);
+	safelyUpdateStatus(ctx, accountManager);
 }
 
 async function loginAndUse(_pi: ExtensionAPI, ctx: ExtensionCommandContext, accountManager: AccountManager, identifier: string) {
@@ -977,6 +1131,16 @@ async function chooseAccount(ctx: ExtensionCommandContext, accountManager: Accou
 	return selected?.split(" — ")[0]?.replace(/ \[.*$/, "");
 }
 
+function refreshResultMessage(accountManager: AccountManager, accounts: Account[]) {
+	const failures = accounts
+		.map((account) => {
+			const error = accountManager.getLastUsageError(account.email);
+			return error ? `${account.email}: ${error}` : undefined;
+		})
+		.filter(Boolean);
+	return failures.length > 0 ? `Refresh failed for ${failures.join("; ")}` : `Refreshed ${accounts.length} account${accounts.length === 1 ? "" : "s"}`;
+}
+
 export default function multicodex(pi: ExtensionAPI) {
 	const accountManager = new AccountManager();
 	const baseProvider = getApiProvider("openai-codex-responses") as ProviderLike | undefined;
@@ -986,11 +1150,16 @@ export default function multicodex(pi: ExtensionAPI) {
 	let refreshTimer: ReturnType<typeof setInterval> | undefined;
 
 	accountManager.setWarningHandler((message) => {
-		if (lastContext?.hasUI) lastContext.ui.notify(message, "warning");
-		else console.warn(message);
+		try {
+			if (lastContext?.hasUI) lastContext.ui.notify(message, "warning");
+			else console.warn(message);
+		} catch (error) {
+			if (!isStaleContextError(error)) throw error;
+			console.warn(message);
+		}
 	});
 	accountManager.onStateChange(() => {
-		if (lastContext) updateStatus(lastContext, accountManager);
+		if (lastContext) safelyUpdateStatus(lastContext, accountManager);
 	});
 
 	pi.registerProvider(PROVIDER_ID, {
@@ -1009,13 +1178,12 @@ export default function multicodex(pi: ExtensionAPI) {
 		try {
 			accountManager.loadPiAuth();
 			if (accountManager.getAccounts().length > 0) {
-				await accountManager.refreshUsageForAllAccounts({ force: true });
 				if (!accountManager.getAvailableManualAccount()) accountManager.clearManualAccount();
 				await accountManager.activateBestAccount();
 			}
 		} finally {
 			accountManager.markReady();
-			updateStatus(ctx, accountManager);
+			safelyUpdateStatus(ctx, accountManager);
 		}
 	}
 
@@ -1105,13 +1273,18 @@ export default function multicodex(pi: ExtensionAPI) {
 
 			if (command === "refresh") {
 				const target = rest || "all";
-				if (target === "all") await accountManager.refreshUsageForAllAccounts({ force: true });
-				else {
+				const refreshedAccounts: Account[] = [];
+				if (target === "all") {
+					refreshedAccounts.push(...accountManager.getAccounts());
+					await accountManager.refreshUsageForAllAccounts({ force: true });
+				} else {
 					const account = accountManager.getAccount(target);
 					if (!account) return notify(ctx, `Unknown account: ${target}`, "warning");
+					refreshedAccounts.push(account);
 					await accountManager.refreshUsageForAccount(account, { force: true });
 				}
-				notify(ctx, `Refreshed ${target}`, "info");
+				const failed = refreshedAccounts.some((account) => accountManager.getLastUsageError(account.email));
+				notify(ctx, refreshResultMessage(accountManager, refreshedAccounts), failed ? "warning" : "info");
 				if (lastContext) await refreshStatus(lastContext, accountManager);
 				return;
 			}
