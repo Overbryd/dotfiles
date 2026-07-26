@@ -194,6 +194,7 @@ class PlanChunk:
     summary: str
     lines: List[str] = field(default_factory=list)
     applyable: bool = False
+    apply_error: Optional[str] = None
     status: str = "planned"
     chunk_id: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict, repr=False)
@@ -209,6 +210,8 @@ class PlanChunk:
             "applyable = {}".format(applyable_value),
             "summary = {}".format(self.summary),
         ]
+        if self.apply_error:
+            body.append("apply error = {}".format(self.apply_error))
         if self.lines:
             body.append("")
             body.extend(self.lines)
@@ -1332,7 +1335,7 @@ def build_plain_chunks(
     else:
         nested_git_roots, truncated = scan_nested_git_roots(root.path)
     preview = plain_dir_preview(action, root.path, ssh_host, rsync_path, excludes, nested_git_roots)
-    apply_command, _apply_error = build_plain_dir_rsync_command(
+    apply_command, apply_error = build_plain_dir_rsync_command(
         action,
         root.path,
         ssh_host,
@@ -1387,6 +1390,7 @@ def build_plain_chunks(
             ),
             lines=lines,
             applyable=bool(apply_command),
+            apply_error=apply_error,
             metadata={"apply_command": apply_command or []},
         )
     ]
@@ -1437,6 +1441,17 @@ def selected_chunk_ids_from_plan(plan: Plan) -> List[str]:
     selected = extract_plan_chunk_ids(plan_text)
     known_ids = {chunk.chunk_id for chunk in plan.chunks}
     return [chunk_id for chunk_id in selected if chunk_id in known_ids]
+
+
+def selected_apply_errors(plan: Plan, selected_chunk_ids: Sequence[str]) -> List[str]:
+    selected = set(selected_chunk_ids)
+    return unique(
+        [
+            chunk.apply_error
+            for chunk in plan.chunks
+            if chunk.chunk_id in selected and chunk.apply_error
+        ]
+    )
 
 
 def maybe_edit_plan(plan: Plan) -> None:
@@ -1575,7 +1590,7 @@ def apply_selected_chunks(plan: Plan, ssh_host: Optional[str], selected_chunk_id
 
         if not chunk.applyable:
             chunk.status = "skipped"
-            detail = "not applyable in current environment"
+            detail = chunk.apply_error or "not applyable in current environment"
             skipped += 1
             chunk.lines.append("- apply result: {}".format(detail))
             print("[SKIPPED] {} {} -- {}".format(chunk.chunk_id, chunk.summary, detail))
@@ -1686,7 +1701,7 @@ def run_doctor(config: Config) -> int:
     )
 
     checks.append(DoctorCheck("peer", "ok" if peer else "warn", peer or "unconfigured"))
-    checks.append(DoctorCheck("ssh host", "ok" if ssh_host else "warn", ssh_host or "unconfigured"))
+    checks.append(DoctorCheck("ssh host", "ok" if ssh_host else "error", ssh_host or "unconfigured"))
 
     state = state_root()
     try:
@@ -1760,6 +1775,12 @@ def main(argv: Sequence[str]) -> int:
 
     hostname = current_hostname()
     ssh_host = config.ssh_host_for(hostname)
+    if not ssh_host:
+        raise UserError(
+            "No SSH peer configured for host {}. Add [machines.{}] with peer or ssh_host to {}.".format(
+                hostname, hostname, config.config_path
+            )
+        )
     target = resolve_target(config, command.target)
 
     run_id, _run_dir, plan_path = create_run_dir()
@@ -1776,6 +1797,13 @@ def main(argv: Sequence[str]) -> int:
 
     print("Selected chunks after plan review: {}".format(len(selected_chunk_ids)))
     print("Selected apply-capable chunks: {}".format(selected_applyable_count))
+    apply_errors = selected_apply_errors(plan, selected_chunk_ids)
+    if selected_chunk_ids and selected_applyable_count == 0 and apply_errors:
+        raise UserError(
+            "No selected chunks can be applied: {}. Run `wsync doctor` for details.".format(
+                "; ".join(apply_errors)
+            )
+        )
     if selected_applyable_count > 0 and not confirm_apply(selected_applyable_count, plan.plan_path):
         print("Apply canceled. Plan kept at {}".format(plan.plan_path))
         return 0

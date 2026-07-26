@@ -1,5 +1,9 @@
 {
   "enableInstallTelemetry": false,
   "defaultThinkingLevel": "high",
-  "transport": "websocket"
+  "transport": "websocket",
+  "lastChangelogVersion": "0.81.1",
+  "theme": "dark",
+  "defaultProvider": "openai",
+  "defaultModel": "gpt-5.6-sol"
 }
