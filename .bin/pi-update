@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PACKAGE="@earendil-works/pi-coding-agent"
+PREFIX="/opt/homebrew"
+
+if [[ $# -ne 0 ]]; then
+  printf 'Usage: pi-update\n' >&2
+  exit 64
+fi
+
+min_release_age=$(npm config get min-release-age)
+if [[ ! "$min_release_age" =~ ^[0-9]+$ ]]; then
+  printf 'pi-update: npm min-release-age must be a non-negative integer; got %q\n' "$min_release_age" >&2
+  exit 1
+fi
+
+current_version=$(pi --version)
+tmp_dir=$(mktemp -d /tmp/pi-update.XXXXXX)
+cleanup() {
+  rm -rf "$tmp_dir"
+}
+trap cleanup EXIT
+
+if ! resolver_output=$(
+  cd "$tmp_dir"
+  npm install \
+    --package-lock-only \
+    --ignore-scripts \
+    --min-release-age="$min_release_age" \
+    "$PACKAGE@>$current_version" 2>&1
+); then
+  if grep -Eq 'code ETARGET|No matching version found' <<< "$resolver_output"; then
+    printf 'No eligible pi update newer than %s (min-release-age=%s days)\n' "$current_version" "$min_release_age"
+    exit 0
+  fi
+
+  printf '%s\n' "$resolver_output" >&2
+  exit 1
+fi
+
+candidate_version=$(node -e '
+  const lock = require(process.argv[1]);
+  const version = lock.packages?.["node_modules/@earendil-works/pi-coding-agent"]?.version;
+  if (!version) process.exit(1);
+  process.stdout.write(version);
+' "$tmp_dir/package-lock.json")
+
+printf 'Updating pi from %s to eligible %s (min-release-age=%s days)\n' \
+  "$current_version" "$candidate_version" "$min_release_age"
+
+HOME="$PREFIX" sudo -Eu binary npm \
+  --prefix "$PREFIX" \
+  install \
+  -g \
+  --ignore-scripts \
+  --min-release-age="$min_release_age" \
+  "$PACKAGE@$candidate_version"
