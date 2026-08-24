@@ -61,7 +61,7 @@
 - Postgres runs locally. Use default user/password. One DB per project. `psql -hlocalhost` works.
 - `exa`: fast web search, one URL per line.
 - `curl`, `hurl`, `jq`, `yaml-to-json`, `json-to-yaml` available.
-- Prefer `saynice` over `say`.
+- Prefer `sayneat` over `say`.
 - More custom tools live in `~/.bin`.
 
 # Global coding preferences
@@ -106,4 +106,4 @@ When editing `*.ex` or `*.exs`:
 
 - You may run `terraform validate` and `terraform plan`.
 - Never use `-auto-approve`.
-- Ask before apply. Use `saynice` to get user attention.
+- Ask before apply. Use `sayneat` to get user attention.
