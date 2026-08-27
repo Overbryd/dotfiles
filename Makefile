@@ -521,8 +521,9 @@ defaults-Menubar:
 defaults-LaunchAgents: \
 	$(LAUNCH_AGENTS)
 
-~/Library/LaunchAgents/%:
-	cp -v ~/dotfiles/LaunchAgents/$(notdir $@) $@
+~/Library/LaunchAgents/%: LaunchAgents/%
+	cp -v $< $@
+	launchctl unload -w $@ 2>/dev/null || true
 	launchctl load -w $@
 
 dotfiles:
