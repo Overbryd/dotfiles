@@ -473,6 +473,7 @@ def run_command(
     cwd: Optional[Path] = None,
     check: bool = False,
     timeout: Optional[int] = None,
+    errors: str = "strict",
 ) -> subprocess.CompletedProcess:
     return subprocess.run(
         list(args),
@@ -481,6 +482,7 @@ def run_command(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        errors=errors,
         timeout=timeout,
     )
 
@@ -780,7 +782,7 @@ def write_list_file(path: Path, items: Sequence[str]) -> None:
 
 
 def run_rsync_preview(command: List[str]) -> RsyncPreview:
-    result = run_command(command, timeout=120)
+    result = run_command(command, timeout=120, errors="replace")
     stdout_lines = [line for line in result.stdout.splitlines() if line.strip()]
     changed_lines = [line for line in stdout_lines if not line.startswith("sending ") and not line.startswith("sent ")]
     if result.returncode in (0,):
@@ -1519,7 +1521,7 @@ def apply_rsync_chunk(chunk: PlanChunk, log_path: Path) -> Tuple[bool, str]:
     if chunk.direction == "pull":
         chunk.path.mkdir(parents=True, exist_ok=True)
 
-    result = run_command(apply_command, timeout=600)
+    result = run_command(apply_command, timeout=600, errors="replace")
     log_command_result(log_path, "apply {} {}".format(chunk.chunk_type, chunk.path), apply_command, result)
     if result.returncode != 0:
         detail = first_line(result.stderr) or first_line(result.stdout) or "rsync apply failed"
