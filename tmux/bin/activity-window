@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TMUX_CMD=${TMUX_CMD:-tmux}
+direction=${1:-}
+
+case "$direction" in
+  next) offset=1 ;;
+  previous) offset=-1 ;;
+  *) exit 2 ;;
+esac
+
+current=$("$TMUX_CMD" display-message -p '#{session_id}:#{window_id}')
+
+target=$(
+  "$TMUX_CMD" list-windows -a -F '#{session_id}:#{window_id}|#{window_activity_flag}' |
+    awk -F '|' -v current="$current" -v offset="$offset" '
+      {
+        count++
+        targets[count] = $1
+        active[count] = $2
+        if ($1 == current) current_index = count
+      }
+      END {
+        for (step = 1; current_index && step < count; step++) {
+          candidate = ((current_index - 1 + offset * step) % count + count) % count + 1
+          if (active[candidate] == 1) {
+            print targets[candidate]
+            exit
+          }
+        }
+      }
+    '
+)
+
+if [[ -z "$target" ]]; then
+  "$TMUX_CMD" display-message "No $direction window with activity"
+  exit 0
+fi
+
+"$TMUX_CMD" switch-client -t "${target%%:*}"
+"$TMUX_CMD" select-window -t "$target"
