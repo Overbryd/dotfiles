@@ -75,9 +75,31 @@ type UsageWindow = {
 	limitWindowSeconds?: number;
 };
 
+type CreditStatus = {
+	hasCredits?: boolean;
+	unlimited?: boolean;
+	balance?: string;
+};
+
+type SpendControlLimit = {
+	limit?: string;
+	used?: string;
+	remaining?: string;
+	remainingPercent?: number;
+	resetAt?: number;
+};
+
+type SpendControl = {
+	reached?: boolean;
+	individualLimit?: SpendControlLimit;
+};
+
 type UsageSnapshot = {
 	primary?: UsageWindow;
 	secondary?: UsageWindow;
+	credits?: CreditStatus;
+	spendControl?: SpendControl;
+	rateLimitReachedType?: string;
 	fetchedAt: number;
 };
 
@@ -244,6 +266,46 @@ function parseUsageWindow(value: unknown): UsageWindow | undefined {
 	return { usedPercent, resetAt, limitWindowSeconds };
 }
 
+function normalizeCreditAmount(value: unknown): string | undefined {
+	if (typeof value === "string" && value.trim()) return value.trim();
+	if (typeof value === "number" && Number.isFinite(value) && value >= 0) return String(value);
+	return undefined;
+}
+
+function parseCreditStatus(value: unknown): CreditStatus | undefined {
+	if (!isRecord(value)) return undefined;
+	const hasCredits = typeof value.has_credits === "boolean" ? value.has_credits : undefined;
+	const unlimited = typeof value.unlimited === "boolean" ? value.unlimited : undefined;
+	const balance = normalizeCreditAmount(value.balance);
+	if (hasCredits === undefined && unlimited === undefined && balance === undefined) return undefined;
+	return { hasCredits, unlimited, balance };
+}
+
+function parseSpendControlLimit(value: unknown): SpendControlLimit | undefined {
+	if (!isRecord(value)) return undefined;
+	const limit = normalizeCreditAmount(value.limit);
+	const used = normalizeCreditAmount(value.used);
+	const remaining = normalizeCreditAmount(value.remaining);
+	const remainingPercent = normalizeUsedPercent(value.remaining_percent);
+	const resetAt = normalizeResetAfterSeconds(value.reset_after_seconds) ?? normalizeResetAt(value.reset_at);
+	if (limit === undefined && used === undefined && remaining === undefined && remainingPercent === undefined && resetAt === undefined) return undefined;
+	return { limit, used, remaining, remainingPercent, resetAt };
+}
+
+function parseSpendControl(value: unknown): SpendControl | undefined {
+	if (!isRecord(value)) return undefined;
+	const reached = typeof value.reached === "boolean" ? value.reached : undefined;
+	const individualLimit = parseSpendControlLimit(value.individual_limit);
+	if (reached === undefined && individualLimit === undefined) return undefined;
+	return { reached, individualLimit };
+}
+
+function parseRateLimitReachedType(value: unknown): string | undefined {
+	if (typeof value === "string" && value.trim()) return value.trim();
+	if (!isRecord(value)) return undefined;
+	return typeof value.type === "string" && value.type.trim() ? value.type.trim() : undefined;
+}
+
 function additionalRateLimits(value: unknown) {
 	if (!isRecord(value)) return [];
 	const raw = value.additional_rate_limits;
@@ -253,7 +315,7 @@ function additionalRateLimits(value: unknown) {
 		.filter((entry): entry is Record<string, unknown> => Boolean(entry));
 }
 
-function parseUsageResponse(value: unknown): Omit<UsageSnapshot, "fetchedAt"> {
+export function parseUsageResponse(value: unknown): Omit<UsageSnapshot, "fetchedAt"> {
 	const rateLimit = isRecord(value) && isRecord(value.rate_limit) ? value.rate_limit : {};
 	let primary = parseUsageWindow(rateLimit.primary_window);
 	let secondary = parseUsageWindow(rateLimit.secondary_window);
@@ -264,11 +326,19 @@ function parseUsageResponse(value: unknown): Omit<UsageSnapshot, "fetchedAt"> {
 		if (primary && secondary) break;
 	}
 
-	return { primary, secondary };
+	return {
+		primary,
+		secondary,
+		credits: isRecord(value) ? parseCreditStatus(value.credits) : undefined,
+		spendControl: isRecord(value) ? parseSpendControl(value.spend_control) : undefined,
+		rateLimitReachedType: isRecord(value) ? parseRateLimitReachedType(value.rate_limit_reached_type) : undefined,
+	};
 }
 
 function getNextResetAt(usage?: UsageSnapshot): number | undefined {
-	const values = [usage?.primary?.resetAt, usage?.secondary?.resetAt].filter((value): value is number => typeof value === "number");
+	const values = [usage?.primary?.resetAt, usage?.secondary?.resetAt, usage?.spendControl?.individualLimit?.resetAt].filter(
+		(value): value is number => typeof value === "number",
+	);
 	return values.length > 0 ? Math.min(...values) : undefined;
 }
 
@@ -285,6 +355,50 @@ function getMaxUsedPercent(usage?: UsageSnapshot): number | undefined {
 
 function isUsageUntouched(usage?: UsageSnapshot): boolean {
 	return usage?.primary?.usedPercent === 0 && usage?.secondary?.usedPercent === 0;
+}
+
+const WORKSPACE_LIMIT_REACHED_TYPES = new Set([
+	"workspace_owner_credits_depleted",
+	"workspace_member_credits_depleted",
+	"workspace_owner_usage_limit_reached",
+	"workspace_member_usage_limit_reached",
+]);
+
+function isWorkspaceCreditExhausted(usage?: UsageSnapshot): boolean {
+	return usage?.spendControl?.reached === true || WORKSPACE_LIMIT_REACHED_TYPES.has(usage?.rateLimitReachedType || "");
+}
+
+function numericCreditAmount(value?: string): number {
+	if (value === undefined) return -1;
+	const amount = Number(value);
+	return Number.isFinite(amount) && amount >= 0 ? amount : -1;
+}
+
+function creditPriority(usage?: UsageSnapshot) {
+	return {
+		tier: usage?.credits?.unlimited ? 2 : usage?.credits?.hasCredits ? 1 : 0,
+		balance: numericCreditAmount(usage?.credits?.balance),
+		autoPurchaseRemaining: numericCreditAmount(usage?.spendControl?.individualLimit?.remaining),
+	};
+}
+
+export function formatWorkspaceCredits(usage?: UsageSnapshot): string {
+	const credits = usage?.credits?.unlimited
+		? "credits unlimited"
+		: usage?.credits?.hasCredits
+			? `credits ${usage.credits.balance || "available"}`
+			: usage?.credits?.hasCredits === false
+				? "credits none"
+				: "credits ?";
+	const autoPurchaseRemaining = usage?.spendControl?.individualLimit?.remaining;
+	const autoPurchase = isWorkspaceCreditExhausted(usage)
+		? "auto-purchase exhausted"
+		: autoPurchaseRemaining !== undefined
+			? `auto-purchase ${autoPurchaseRemaining} left`
+			: usage?.spendControl?.reached === false
+				? "auto-purchase available"
+				: "auto-purchase ?";
+	return `${credits} · ${autoPurchase}`;
 }
 
 function formatResetAt(resetAt?: number): string {
@@ -528,9 +642,14 @@ function isAccountAvailable(account: Account, now: number): boolean {
 	return !account.quotaExhaustedUntil || account.quotaExhaustedUntil <= now;
 }
 
-function pickBestAccount(accounts: Account[], usageByEmail: Map<string, UsageSnapshot>, excludeEmails = new Set<string>()): Account | undefined {
+export function pickBestAccount(accounts: Account[], usageByEmail: Map<string, UsageSnapshot>, excludeEmails = new Set<string>()): Account | undefined {
 	const now = Date.now();
-	const available = accounts.filter((account) => isAccountAvailable(account, now) && !excludeEmails.has(account.email));
+	const available = accounts.filter(
+		(account) =>
+			isAccountAvailable(account, now) &&
+			!excludeEmails.has(account.email) &&
+			!isWorkspaceCreditExhausted(usageByEmail.get(account.email)),
+	);
 	if (available.length === 0) return undefined;
 
 	const withUsage = available.filter((account) => usageByEmail.has(account.email));
@@ -539,12 +658,23 @@ function pickBestAccount(accounts: Account[], usageByEmail: Map<string, UsageSna
 	if (candidates.length === 0) return available[Math.floor(Math.random() * available.length)];
 
 	return candidates
-		.map((account) => ({
-			account,
-			used: getMaxUsedPercent(usageByEmail.get(account.email)) ?? 100,
-			weeklyReset: getWeeklyResetAt(usageByEmail.get(account.email)) ?? Number.MAX_SAFE_INTEGER,
-		}))
-		.sort((a, b) => a.used - b.used || a.weeklyReset - b.weeklyReset)[0]?.account;
+		.map((account) => {
+			const usage = usageByEmail.get(account.email);
+			return {
+				account,
+				used: getMaxUsedPercent(usage) ?? 100,
+				weeklyReset: getWeeklyResetAt(usage) ?? Number.MAX_SAFE_INTEGER,
+				...creditPriority(usage),
+			};
+		})
+		.sort(
+			(a, b) =>
+				a.used - b.used ||
+				b.tier - a.tier ||
+				b.balance - a.balance ||
+				b.autoPurchaseRemaining - a.autoPurchaseRemaining ||
+				a.weeklyReset - b.weeklyReset,
+		)[0]?.account;
 }
 
 class AccountManager {
@@ -853,7 +983,14 @@ class AccountManager {
 
 	getAvailableManualAccount(excludeEmails = new Set<string>()) {
 		const manual = this.getManualAccount();
-		if (!manual || excludeEmails.has(manual.email) || !isAccountAvailable(manual, Date.now())) return undefined;
+		if (
+			!manual ||
+			excludeEmails.has(manual.email) ||
+			!isAccountAvailable(manual, Date.now()) ||
+			isWorkspaceCreditExhausted(this.usageCache.get(manual.email))
+		) {
+			return undefined;
+		}
 		return manual;
 	}
 
@@ -1007,7 +1144,7 @@ function formatUsage(accountManager: AccountManager, account: Account) {
 	const primary = usage?.primary?.usedPercent === undefined ? "?" : `${Math.round(usage.primary.usedPercent)}%`;
 	const secondary = usage?.secondary?.usedPercent === undefined ? "?" : `${Math.round(usage.secondary.usedPercent)}%`;
 	const error = accountManager.getLastUsageError(account.email);
-	const summary = `${windowLabel(usage?.primary, "5h")} ${primary} reset ${formatResetAt(usage?.primary?.resetAt)} · ${secondaryWindowLabel(usage)} ${secondary} reset ${formatResetAt(usage?.secondary?.resetAt)}`;
+	const summary = `${windowLabel(usage?.primary, "5h")} ${primary} reset ${formatResetAt(usage?.primary?.resetAt)} · ${secondaryWindowLabel(usage)} ${secondary} reset ${formatResetAt(usage?.secondary?.resetAt)} · ${formatWorkspaceCredits(usage)}`;
 	return error ? `${summary} · usage error: ${error}` : summary;
 }
 
@@ -1051,7 +1188,10 @@ function updateStatus(ctx: ExtensionContext, accountManager: AccountManager) {
 	const secondaryLeft = usage?.secondary?.usedPercent === undefined ? "?" : `${Math.round(100 - usage.secondary.usedPercent)}%`;
 	ctx.ui.setStatus(
 		STATUS_KEY,
-		ctx.ui.theme.fg("muted", `Codex ${account.email} · ${windowLabel(usage?.primary, "5h")} ${primaryLeft} left · ${secondaryWindowLabel(usage)} ${secondaryLeft} left`),
+		ctx.ui.theme.fg(
+			"muted",
+			`Codex ${account.email} · ${windowLabel(usage?.primary, "5h")} ${primaryLeft} left · ${secondaryWindowLabel(usage)} ${secondaryLeft} left · ${formatWorkspaceCredits(usage)}`,
+		),
 	);
 }
 
@@ -1063,10 +1203,10 @@ function safelyUpdateStatus(ctx: ExtensionContext, accountManager: AccountManage
 	}
 }
 
-async function refreshStatus(ctx: ExtensionContext, accountManager: AccountManager) {
+async function refreshStatus(ctx: ExtensionContext, accountManager: AccountManager, force = false) {
 	safelyUpdateStatus(ctx, accountManager);
 	const account = accountManager.getActiveAccount();
-	if (account && ctx.model?.provider === PROVIDER_ID) await accountManager.refreshUsageForAccount(account);
+	if (account && ctx.model?.provider === PROVIDER_ID) await accountManager.refreshUsageForAccount(account, { force });
 	safelyUpdateStatus(ctx, accountManager);
 }
 
@@ -1201,9 +1341,9 @@ export default function multicodex(pi: ExtensionAPI) {
 		void refreshStatus(ctx, accountManager);
 	});
 
-	pi.on("turn_end", (_event, ctx) => {
+	pi.on("agent_settled", (_event, ctx) => {
 		lastContext = ctx;
-		void refreshStatus(ctx, accountManager);
+		void refreshStatus(ctx, accountManager, true);
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
