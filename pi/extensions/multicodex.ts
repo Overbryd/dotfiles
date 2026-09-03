@@ -448,7 +448,7 @@ function isWorkspaceCreditExhausted(usage?: UsageSnapshot): boolean {
 
 function numericCreditAmount(value?: string): number {
 	if (value === undefined) return -1;
-	const amount = Number(value);
+	const amount = Number(value.replace(/[$€£¥,\s]/g, ""));
 	return Number.isFinite(amount) && amount >= 0 ? amount : -1;
 }
 
@@ -1292,10 +1292,55 @@ function secondaryWindowLabel(usage: UsageSnapshot | undefined) {
 	return `${Math.round(hours / 24)}d`;
 }
 
-export function formatStatusUsage(usage?: UsageSnapshot) {
-	const primaryLeft = usage?.primary?.usedPercent === undefined ? "?" : `${Math.round(100 - usage.primary.usedPercent)}%`;
-	const secondaryLeft = usage?.secondary?.usedPercent === undefined ? "?" : `${Math.round(100 - usage.secondary.usedPercent)}%`;
-	return `${windowLabel(usage?.primary, "5h")} ${primaryLeft} · ${secondaryWindowLabel(usage)} ${secondaryLeft}`;
+function remainingPercent(window?: UsageWindow) {
+	return typeof window?.usedPercent === "number" ? Math.max(0, Math.min(100, 100 - window.usedPercent)) : undefined;
+}
+
+function creditRemainingPercent(usage?: UsageSnapshot) {
+	const limit = usage?.spendControl?.individualLimit;
+	if (typeof limit?.remainingPercent === "number") return Math.max(0, Math.min(100, limit.remainingPercent));
+	const total = numericCreditAmount(limit?.limit);
+	const remaining = numericCreditAmount(limit?.remaining);
+	return total > 0 && remaining >= 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : undefined;
+}
+
+function remainingBar(percent?: number) {
+	const filled = typeof percent === "number" ? Math.round((percent / 100) * 8) : 0;
+	return `${"█".repeat(filled)}${"░".repeat(8 - filled)}`;
+}
+
+function formatResetCountdown(resetAt: number | undefined, now: number) {
+	if (!resetAt) return "?";
+	const minutes = Math.max(0, Math.round((resetAt - now) / 60_000));
+	if (minutes === 0) return "now";
+	if (minutes < 60) return `${minutes}m`;
+	const hours = Math.floor(minutes / 60);
+	const remainingMinutes = minutes % 60;
+	if (hours < 24) return `${hours}h${remainingMinutes ? `${remainingMinutes}m` : ""}`;
+	const days = Math.floor(hours / 24);
+	const remainingHours = hours % 24;
+	return `${days}d${remainingHours ? `${remainingHours}h` : ""}`;
+}
+
+function formatConsumedCredits(value?: string) {
+	const amount = numericCreditAmount(value);
+	return amount < 0 ? "?" : Math.round(amount).toLocaleString("en-US");
+}
+
+function formatLimitBar(label: string, window: UsageWindow | undefined, now: number) {
+	const remaining = remainingPercent(window);
+	return `${label} ${remainingBar(remaining)} ${remaining === undefined ? "?" : Math.round(remaining)}% ${formatResetCountdown(window?.resetAt, now)}`;
+}
+
+export function formatAccountBar(email: string, usage?: UsageSnapshot, now = Date.now()) {
+	const credit = creditRemainingPercent(usage);
+	const creditLimit = usage?.spendControl?.individualLimit;
+	return [
+		email,
+		formatLimitBar(windowLabel(usage?.primary, "5h"), usage?.primary, now),
+		formatLimitBar(secondaryWindowLabel(usage), usage?.secondary, now),
+		`C ${remainingBar(credit)} ${formatConsumedCredits(creditLimit?.used)} ${formatResetCountdown(creditLimit?.resetAt, now)}`,
+	].join(" · ");
 }
 
 function formatUsage(accountManager: AccountManager, account: Account) {
@@ -1347,10 +1392,7 @@ function updateStatus(ctx: ExtensionContext, accountManager: AccountManager) {
 		ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("warning", `Codex DOWN · ${account.email} · ${OPENAI_STATUS_URL}`));
 		return;
 	}
-	ctx.ui.setStatus(
-		STATUS_KEY,
-		ctx.ui.theme.fg("muted", `Codex ${account.email} · ${formatStatusUsage(usage)} · ${formatWorkspaceCredits(usage)}`),
-	);
+	ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("muted", formatAccountBar(account.email, usage)));
 }
 
 function safelyUpdateStatus(ctx: ExtensionContext, accountManager: AccountManager) {

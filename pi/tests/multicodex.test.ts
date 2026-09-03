@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import multicodex, {
+	formatAccountBar,
 	formatOpenAIStatusAdvice,
-	formatStatusUsage,
 	formatWorkspaceCredits,
 	isCodexDownError,
 	isUsageStale,
@@ -215,14 +215,40 @@ test("isUsageStale refreshes when credit headroom resets", () => {
 	assert.equal(isUsageStale(snapshot, now), true);
 });
 
-test("formatStatusUsage omits left wording", () => {
+test("formatAccountBar renders remaining quota, spent credits, and precise resets", () => {
+	const now = Date.now();
 	assert.equal(
-		formatStatusUsage({
-			primary: { usedPercent: 40, limitWindowSeconds: 5 * 60 * 60 },
-			secondary: { usedPercent: 80, limitWindowSeconds: 7 * 24 * 60 * 60 },
-			fetchedAt: Date.now(),
-		}),
-		"5h 60% · 7d 20%",
+		formatAccountBar(
+			"email@account.com",
+			{
+				primary: { usedPercent: 72, resetAt: now + 72 * 60 * 1000, limitWindowSeconds: 5 * 60 * 60 },
+				secondary: { usedPercent: 38, resetAt: now + 76 * 60 * 60 * 1000, limitWindowSeconds: 7 * 24 * 60 * 60 },
+				spendControl: {
+					reached: false,
+					individualLimit: { used: "100", remainingPercent: 62, resetAt: now + 27 * 24 * 60 * 60 * 1000 },
+				},
+				fetchedAt: now,
+			},
+			now,
+		),
+		"email@account.com · 5h ██░░░░░░ 28% 1h12m · 7d █████░░░ 62% 3d4h · C █████░░░ 100 27d",
+	);
+});
+
+test("formatAccountBar rounds consumed credits to the nearest integer", () => {
+	const now = Date.now();
+	assert.match(
+		formatAccountBar(
+			"credits@example.com",
+			{
+				spendControl: {
+					individualLimit: { used: "1144.13", remainingPercent: 50, resetAt: now + 24 * 60 * 60 * 1000 },
+				},
+				fetchedAt: now,
+			},
+			now,
+		),
+		/C ████░░░░ 1,144 1d$/,
 	);
 });
 
