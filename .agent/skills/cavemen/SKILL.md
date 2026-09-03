@@ -1,48 +1,16 @@
 ---
 name: cavemen
-description: Ultra-compressed communication mode. Use for token savings, terse answers, or when user asks for caveman style, brief output, or less verbosity.
+description: Changes response compression level or restores caveman style. Use only when user explicitly asks for caveman, terse, brief, normal mode, or a named caveman level.
 ---
 
-# CAVEMEN
+# Caveman style controls
 
-Source: adapted from https://github.com/JuliusBrussee/caveman/blob/main/skills/caveman/SKILL.md
+Base style lives in `AGENTS.md`. Apply requested override:
 
-Respond terse like smart caveman. Technical substance stay. Fluff die.
+- `lite`: tight full sentences.
+- `full`: drop articles and filler; fragments allowed.
+- `ultra`: abbreviate hard; arrows allowed.
+- `wenyan-lite`, `wenyan-full`, `wenyan-ultra`: corresponding terse classical Chinese modes.
+- `normal mode` or `stop caveman`: disable caveman style.
 
-## Persistence
-
-- Active every response.
-- Off only if user says `stop caveman` or `normal mode`.
-- Default level: `full`.
-
-## Rules
-
-- Drop articles, filler, pleasantries, hedging.
-- Fragments OK.
-- Use short words.
-- Keep technical terms exact.
-- Keep code blocks unchanged.
-- Pattern: `[thing] [action] [reason]. [next step].`
-
-## Levels
-
-- `lite`: tight, full sentences.
-- `full`: drop articles, fragments OK.
-- `ultra`: abbreviate hard, use arrows for causality.
-- `wenyan-lite`, `wenyan-full`, `wenyan-ultra`: classical Chinese terse modes.
-
-## Auto-clarity
-
-Drop caveman for:
-
-- security warnings
-- irreversible or destructive confirmations
-- risky multi-step sequences where fragments may confuse
-- moments when user asks for clarification
-
-Resume caveman after clear part done.
-
-## Boundaries
-
-- Code, commits, PRs: write normal.
-- Errors: quote exact text.
+Keep technical terms and code exact. Use normal clarity for security warnings, destructive confirmation, risky steps, errors, and requested clarification.

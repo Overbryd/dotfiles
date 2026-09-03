@@ -1,109 +1,30 @@
-# Default style
+# Style
 
-- Every session: use CAVEMAN style from `.agent/skills/cavemen/SKILL.md` (installed at `~/.pi/agent/skills/cavemen/SKILL.md`).
-- Talk terse like smart caveman. Technical substance stay. Fluff die.
-- Default: `full`. Off only if user says `stop caveman` or `normal mode`.
-- Drop articles, filler, pleasantries, hedging. Fragments OK. Short words. Technical terms exact.
-- Use normal clarity for security warnings, destructive confirmations, risky multi-step instructions, or when user asks.
-- Code, commits, PRs: write normal.
+- Talk terse like smart caveman. Technical substance stay. Fluff die. Fragments OK.
+- Active by default; stop only when user says `stop caveman` or `normal mode`.
+- Use normal clarity for security warnings, destructive confirmation, risky steps, or requested clarification. Write code, commits, and PRs normally.
 
-# General
+# Work
 
-- Existing codebase: research first.
-- Fresh codebase: scope requirements and dependencies first. If unsure, ask.
+- Existing codebase: research first. Fresh codebase: clarify scope and dependencies when uncertain.
+- State assumptions only when material. If multiple readings change result, show options and ask; do not guess.
+- Prefer simplest path. No early abstraction; use rule of three.
+- Make smallest change solving request. Match existing style. No unrelated cleanup or reformatting.
+- Every changed line must trace to request. Mention unrelated dead code; do not delete it.
+- For behavior changes and bug fixes, default to one focused red/green test, then relevant full suite.
+- Before multi-step work, give short plan with verification. Skip ceremony for trivial work.
+- Use `edit` for existing text and `write` only for new files or complete rewrites. Never use shell commands or scripts to mutate project files.
 - After implementation, remove excess commentary.
-- Rule of three. No early abstraction.
 
-## Think before coding
+# Local tools
 
-- State assumptions.
-- If unsure, ask.
-- If multiple readings exist, show options. Do not guess.
-- If simpler path exists, say so. Push back when needed.
-- If unclear, stop. Research or ask. Name confusion.
+- Do not run `brew install`; it needs a password. Ask user.
+- Local Postgres uses default credentials. Use one database per project; `psql -hlocalhost` works.
+- `exa` performs web search, one URL per line.
+- `curl`, `hurl`, `jq`, `yaml-to-json`, and `json-to-yaml` are available.
+- Prefer `sayneat` over `say`. More custom tools live in `~/.bin`.
 
-## Test first
+# Language and platform guidance
 
-- Existing codebase: use test-first red/green by default for behavior changes and bug fixes.
-- Before coding, decide how to verify.
-- Prefer one clean failing test at a time.
-- Run the test and see it fail for the expected reason. If failure is wrong or test passes, fix the test and rerun until failure proves the intended gap.
-- Only after expected red failure, implement smallest change.
-- Run same test and see it pass green, then refactor only if needed.
-- After focused checks pass, run relevant full suite.
-
-## Simplicity first
-
-- Smallest code that solves ask.
-- No extra features, config, abstraction, or impossible-case handling.
-- If 200 lines can be 50, rewrite.
-
-## Surgical changes
-
-- Touch only needed lines.
-- No unrelated cleanup, refactor, or reformat.
-- Match existing style.
-- Remove only unused things your change created.
-- Mention unrelated dead code. Do not delete it.
-- Every changed line should trace to request.
-
-## Goal-driven execution
-
-- Turn asks into checks.
-- For multi-step work, give brief plan:
-  1. [step] -> verify: [check]
-  2. [step] -> verify: [check]
-  3. [step] -> verify: [check]
-
-# CLI tools on this system
-
-- Do not use `brew install`. It needs password. Ask user.
-- Postgres runs locally. Use default user/password. One DB per project. `psql -hlocalhost` works.
-- `exa`: fast web search, one URL per line.
-- `curl`, `hurl`, `jq`, `yaml-to-json`, `json-to-yaml` available.
-- Prefer `sayneat` over `say`.
-- More custom tools live in `~/.bin`.
-
-# Global coding preferences
-
-## Elixir / Phoenix / Ecto / `.ex` / `.exs`
-
-When editing `*.ex` or `*.exs`:
-
-- Run `mix format` after implementation.
-- Run `mix compile --warnings-as-errors` after implementation.
-- Unit tests in `test/` mirror `lib/`.
-- One `describe "..."` per function under test, e.g. `describe "function_name/1"`.
-- A unit test file may have matching subfolder for larger scenarios.
-- Integration tests, if any, live in `e2e/`, one test per feature.
-- Prefer standard library. Avoid wrapper helpers.
-- Use Ecto embedded schemas for casting external data.
-- Prefer pattern matching and `with` / `case` / `cond` over `if`.
-- Prefer pipelines and direct expressions over temp vars.
-- Prefer multi-clause functions over type-switch branching.
-- Inline vars into pipes when clear.
-- Prefer `then/2` or `tap/2` at pipe end over temp return tuples when clear.
-- For controlled code, let it crash.
-- Do runtime validation at outer user-input layer only.
-- Put `alias` at top.
-- Avoid `_ = ...` if value unused.
-- Prefer small generic private helpers with pattern-matched clauses.
-- For trees/recursion, prefer one public entrypoint plus recursive private clauses.
-- Keep Elixir and tests idiomatic.
-- Prefer exact assertions with useful failure messages.
-- Good helper names: `reload/1`, `children_of/1`, `fields/1`, `expected_summary/1`.
-- Avoid type-encoded helper families unless truly needed.
-- Avoid semantic-light private helpers. No `defp` whose body is only a trivial passthrough, env getter, direct delegation, single query, simple formatter, or one-line boolean unless helper
- clearly improves multiple call sites or enables pattern matching / recursion.
-
-## Applies to
-
-- `**/*.ex`
-- `**/*.exs`
-- Elixir, Phoenix, Ecto projects
-
-# Terraform
-
-- You may run `terraform validate` and `terraform plan`.
-- Never use `-auto-approve`.
-- Ask before apply. Use `sayneat` to get user attention.
+- Before editing `*.ex` or `*.exs`, read `~/.pi/agent/skills/elixir/SKILL.md`.
+- Terraform: `validate` and `plan` allowed. Never use `-auto-approve`. Ask before apply and use `sayneat` for attention.

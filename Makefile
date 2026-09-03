@@ -1,14 +1,11 @@
 EXCLUDED_DOTFILES := .git .git-crypt .gitattributes .gitignore .gitmodules .ssh
 DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 DOT_CONFIG_FILES := $(addprefix ~/, $(wildcard .config/*))
-PI_CONFIG_FILES := $(addprefix ~/.pi/agent/, $(notdir $(wildcard pi/*.json)))
+PI_CONFIG_SOURCES := $(filter-out pi/settings.json,$(wildcard pi/*.json))
+PI_CONFIG_FILES := $(addprefix ~/.pi/agent/, $(notdir $(PI_CONFIG_SOURCES)))
 PI_EXTENSIONS := $(addprefix ~/.pi/agent/extensions/, $(notdir $(wildcard pi/extensions/*.ts)))
 PI_AGENT_FILES := ~/.pi/agent/AGENTS.md
 PI_AGENT_SKILLS := $(patsubst .agent/skills/%,~/.pi/agent/skills/%,$(shell find .agent/skills -mindepth 2 -type f 2>/dev/null))
-PI_CODEX_PATCH = $(DOTFILES_ROOT)/patches/pi-openai-codex-previous-response-id.patch
-PI_CODEX_PATCH_TMP = /private/tmp/pi-openai-codex-previous-response-id.patch
-PI_CODEX_PATCH_TMPDIR = /private/tmp/pi-patch-tmp
-PI_CODEX_PROVIDER_FILE = /opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/node_modules/@mariozechner/pi-ai/dist/providers/openai-codex-responses.js
 LAUNCH_AGENTS := $(addprefix ~/Library/, $(wildcard LaunchAgents/*))
 PNPM_CONFIG_FILES := ~/Library/Preferences/pnpm/config.yaml
 
@@ -526,7 +523,8 @@ defaults-LaunchAgents: \
 	launchctl unload -w $@ 2>/dev/null || true
 	launchctl load -w $@
 
-dotfiles:
+.PHONY: dotfiles pi-settings
+
 dotfiles: \
 	~/dotfiles \
 	$(DOTFILES) \
@@ -535,7 +533,8 @@ dotfiles: \
 	$(PI_EXTENSIONS) \
 	$(PI_AGENT_FILES) \
 	$(PI_AGENT_SKILLS) \
-	$(PNPM_CONFIG_FILES)
+	$(PNPM_CONFIG_FILES) \
+	pi-settings
 
 ~/dotfiles:
 	ln -s /usr/local/dotfiles ~/dotfiles
@@ -563,7 +562,18 @@ dotfiles: \
 	ln -svf $(DOTFILES_ROOT)/$< $@
 
 ~/.pi/agent/%.json: pi/%.json | ~/.pi/agent
+	test "$(notdir $@)" != settings.json
 	ln -svf $(DOTFILES_ROOT)/$< $@
+
+pi-settings: pi/settings.json | ~/.pi/agent
+	tmp=$$(mktemp); \
+	if [ -f $(HOME)/.pi/agent/settings.json ]; then \
+		jq -s '.[0] * .[1]' $(HOME)/.pi/agent/settings.json $< > $$tmp; \
+	else \
+		cp $< $$tmp; \
+	fi; \
+	test ! -L $(HOME)/.pi/agent/settings.json || rm $(HOME)/.pi/agent/settings.json; \
+	mv $$tmp $(HOME)/.pi/agent/settings.json
 
 ~/.pi/agent:
 	if [ -L $$HOME/.pi ]; then
@@ -585,21 +595,6 @@ dotfiles: \
 
 ~/.pi/agent/skills:
 	mkdir -p $@
-
-pi-patch-codex-ws:
-	sudo cp $(PI_CODEX_PATCH) $(PI_CODEX_PATCH_TMP)
-	sudo chown _binary:_binary $(PI_CODEX_PATCH_TMP)
-	sudo install -d -o _binary -g _binary $(PI_CODEX_PATCH_TMPDIR)
-	sudo -u _binary env TMPDIR=$(PI_CODEX_PATCH_TMPDIR) patch -p1 -d / < $(PI_CODEX_PATCH_TMP)
-	rg -n "resolvePreviousResponseState|previous_response_id" $(PI_CODEX_PROVIDER_FILE)
-	node --check $(PI_CODEX_PROVIDER_FILE)
-
-pi-unpatch-codex-ws:
-	sudo cp $(PI_CODEX_PATCH) $(PI_CODEX_PATCH_TMP)
-	sudo chown _binary:_binary $(PI_CODEX_PATCH_TMP)
-	sudo install -d -o _binary -g _binary $(PI_CODEX_PATCH_TMPDIR)
-	sudo -u _binary env TMPDIR=$(PI_CODEX_PATCH_TMPDIR) patch -R -p1 -d / < $(PI_CODEX_PATCH_TMP)
-	node --check $(PI_CODEX_PROVIDER_FILE)
 
 ~/.%:
 	cd ~ && ln -svf $(DOTFILES_ROOT)/$(notdir $@) $@
