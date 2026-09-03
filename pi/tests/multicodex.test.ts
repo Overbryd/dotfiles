@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import multicodex, {
+	formatOpenAIStatusAdvice,
+	formatStatusUsage,
 	formatWorkspaceCredits,
+	isCodexDownError,
+	isUsageStale,
 	parseUsageResponse,
 	pickBestAccount,
 } from "../extensions/multicodex.ts";
@@ -81,10 +85,14 @@ test("parseUsageResponse reads workspace credits and spend control", () => {
 	);
 });
 
-test("formatWorkspaceCredits shows balance and auto-purchase headroom", () => {
+test("formatWorkspaceCredits shows balance, auto-purchase headroom, and reset", () => {
+	const withReset = {
+		...usage(100, "42.5", "57.5"),
+		spendControl: { reached: false, individualLimit: { remaining: "57.5", resetAt: Date.now() + 60 * 60 * 1000 } },
+	};
 	assert.equal(
-		formatWorkspaceCredits(usage(100, "42.5", "57.5")),
-		"credits 42.5 · auto-purchase 57.5 left",
+		formatWorkspaceCredits(withReset),
+		"credits 42.5 · auto-purchase 57.5 left reset 1h",
 	);
 	assert.equal(
 		formatWorkspaceCredits(usage(100, "0", "0", true)),
@@ -104,6 +112,20 @@ test("pickBestAccount keeps free quota priority", () => {
 	);
 
 	assert.equal(selected?.email, lowCredit.email);
+});
+
+test("pickBestAccount requires both 5h and weekly quota before avoiding credits", () => {
+	const weeklyExhausted = account("weekly@example.com");
+	const normalQuota = account("normal@example.com");
+	const selected = pickBestAccount(
+		[weeklyExhausted, normalQuota],
+		new Map([
+			[weeklyExhausted.email, { ...usage(50, "100", "100"), secondary: { usedPercent: 100 } }],
+			[normalQuota.email, usage(99, "0", "0")],
+		]),
+	);
+
+	assert.equal(selected?.email, normalQuota.email);
 });
 
 test("pickBestAccount balances exhausted quota by remaining credits", () => {
@@ -134,16 +156,91 @@ test("pickBestAccount uses auto-purchase headroom when credit balances tie", () 
 	assert.equal(selected?.email, highHeadroom.email);
 });
 
-test("pickBestAccount skips exhausted auto-purchase accounts", () => {
+test("pickBestAccount still uses normal quota when auto-purchase is exhausted", () => {
+	const normalQuota = account("normal@example.com");
+	const creditsOnly = account("credits@example.com");
+	const selected = pickBestAccount(
+		[normalQuota, creditsOnly],
+		new Map([
+			[normalQuota.email, usage(90, "0", "0", true)],
+			[creditsOnly.email, usage(100, "10", "10")],
+		]),
+	);
+
+	assert.equal(selected?.email, normalQuota.email);
+});
+
+test("pickBestAccount skips accounts with neither normal quota nor credits", () => {
 	const exhausted = account("exhausted@example.com");
 	const available = account("available@example.com");
 	const selected = pickBestAccount(
 		[exhausted, available],
 		new Map([
-			[exhausted.email, usage(90, "100", "0", true)],
+			[exhausted.email, usage(100, "0", "0", true)],
 			[available.email, usage(100, "10", "10")],
 		]),
 	);
 
 	assert.equal(selected?.email, available.email);
+});
+
+test("pickBestAccount compares total credit and auto-purchase capacity", () => {
+	const largerBalance = account("balance@example.com");
+	const largerTotal = account("total@example.com");
+	const selected = pickBestAccount(
+		[largerBalance, largerTotal],
+		new Map([
+			[largerBalance.email, usage(100, "40", "10")],
+			[largerTotal.email, usage(100, "30", "100")],
+		]),
+	);
+
+	assert.equal(selected?.email, largerTotal.email);
+});
+
+test("isUsageStale refreshes as soon as a normal quota window resets", () => {
+	const now = Date.now();
+	assert.equal(
+		isUsageStale({ ...usage(100, "10", "10"), primary: { usedPercent: 100, resetAt: now }, fetchedAt: now }, now),
+		true,
+	);
+});
+
+test("isUsageStale refreshes when credit headroom resets", () => {
+	const now = Date.now();
+	const snapshot = {
+		...usage(100, "10", "10"),
+		spendControl: { reached: false, individualLimit: { remaining: "10", resetAt: now } },
+	};
+	assert.equal(isUsageStale(snapshot, now), true);
+});
+
+test("formatStatusUsage omits left wording", () => {
+	assert.equal(
+		formatStatusUsage({
+			primary: { usedPercent: 40, limitWindowSeconds: 5 * 60 * 60 },
+			secondary: { usedPercent: 80, limitWindowSeconds: 7 * 24 * 60 * 60 },
+			fetchedAt: Date.now(),
+		}),
+		"5h 60% · 7d 20%",
+	);
+});
+
+test("isCodexDownError recognizes endpoint outage responses", () => {
+	assert.equal(isCodexDownError("usage request failed: HTTP 404"), true);
+	assert.equal(isCodexDownError("Not Found"), true);
+	assert.equal(isCodexDownError("You have hit your ChatGPT usage limit"), false);
+});
+
+test("formatOpenAIStatusAdvice reports Codex component state", () => {
+	assert.equal(
+		formatOpenAIStatusAdvice({
+			status: { description: "Minor Service Outage", indicator: "minor" },
+			components: [
+				{ name: "Codex API", status: "partial_outage" },
+				{ name: "ChatGPT", status: "operational" },
+			],
+		}),
+		"OpenAI status: Minor Service Outage; Codex API is partial outage. See https://status.openai.com/",
+	);
 });

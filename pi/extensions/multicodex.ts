@@ -25,6 +25,10 @@ const USAGE_CACHE_TTL_MS = 5 * 60 * 1000;
 const USAGE_TIMEOUT_MS = 10 * 1000;
 const USAGE_MAX_ATTEMPTS = 3;
 const USAGE_RETRY_BASE_MS = 750;
+const CODEX_DOWN_RETRY_MS = 60 * 1000;
+const OPENAI_STATUS_CACHE_TTL_MS = 5 * 60 * 1000;
+const OPENAI_STATUS_TIMEOUT_MS = 5 * 1000;
+const OPENAI_STATUS_URL = "https://status.openai.com/";
 const QUOTA_COOLDOWN_MS = 60 * 60 * 1000;
 const HELP =
 	"Usage: /multicodex [show|accounts|add <email>|use <email>|refresh [email|all]|reauth <email>|remove <email>|reset [manual|quota|all]|path|help]";
@@ -103,6 +107,11 @@ type UsageSnapshot = {
 	fetchedAt: number;
 };
 
+type OpenAIStatusSummary = {
+	status?: { description?: string; indicator?: string };
+	components?: Array<{ name?: string; status?: string }>;
+};
+
 type ProviderLike = {
 	streamSimple(model: Model<Api>, context: Context, options?: SimpleStreamOptions): AsyncIterable<AssistantMessageEvent>;
 };
@@ -129,6 +138,66 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function messageFromUnknown(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+function readableStatus(value: string) {
+	return value.replace(/_/g, " ");
+}
+
+export function formatOpenAIStatusAdvice(value: unknown): string {
+	const summary = isRecord(value) ? (value as OpenAIStatusSummary) : {};
+	const status = isRecord(summary.status) ? summary.status : {};
+	const components = Array.isArray(summary.components) ? summary.components : [];
+	const codexIssues = components.filter(
+		(component) =>
+			typeof component?.name === "string" &&
+			/codex/i.test(component.name) &&
+			typeof component.status === "string" &&
+			component.status !== "operational",
+	);
+	const description = typeof status.description === "string" ? status.description : undefined;
+
+	if (codexIssues.length > 0) {
+		const details = codexIssues.map((component) => `${component.name} is ${readableStatus(component.status || "unknown")}`).join(", ");
+		return `OpenAI status: ${description || "service issue"}; ${details}. See ${OPENAI_STATUS_URL}`;
+	}
+	if (status.indicator && status.indicator !== "none") {
+		return `OpenAI status: ${description || readableStatus(status.indicator)}. See ${OPENAI_STATUS_URL}`;
+	}
+	return `OpenAI status reports Codex operational; issue may be account/workspace-specific. See ${OPENAI_STATUS_URL}`;
+}
+
+let openAIStatusCache: { advice: string; fetchedAt: number } | undefined;
+let openAIStatusPromise: Promise<string> | undefined;
+
+async function getOpenAIStatusAdvice(signal?: AbortSignal): Promise<string> {
+	if (openAIStatusCache && Date.now() - openAIStatusCache.fetchedAt < OPENAI_STATUS_CACHE_TTL_MS) return openAIStatusCache.advice;
+	if (openAIStatusPromise) return openAIStatusPromise;
+
+	openAIStatusPromise = (async () => {
+		const { controller, clear } = withLinkedTimeout(signal, OPENAI_STATUS_TIMEOUT_MS);
+		try {
+			const [statusResponse, componentsResponse] = await Promise.all([
+				fetch(`${OPENAI_STATUS_URL}api/v2/status.json`, { signal: controller.signal }),
+				fetch(`${OPENAI_STATUS_URL}api/v2/components.json`, { signal: controller.signal }),
+			]);
+			if (!statusResponse.ok || !componentsResponse.ok) throw new Error("status request failed");
+			const status = await statusResponse.json();
+			const components = await componentsResponse.json();
+			const advice = formatOpenAIStatusAdvice({
+				status: isRecord(status) ? status.status : undefined,
+				components: isRecord(components) ? components.components : undefined,
+			});
+			openAIStatusCache = { advice, fetchedAt: Date.now() };
+			return advice;
+		} catch {
+			return `Check ${OPENAI_STATUS_URL} for service updates.`;
+		} finally {
+			clear();
+			openAIStatusPromise = undefined;
+		}
+	})();
+	return openAIStatusPromise;
 }
 
 function decodeJwtPayload(token: string): Record<string, unknown> | undefined {
@@ -346,15 +415,24 @@ function getWeeklyResetAt(usage?: UsageSnapshot): number | undefined {
 	return typeof usage?.secondary?.resetAt === "number" ? usage.secondary.resetAt : undefined;
 }
 
+function getNextStandardResetAt(usage?: UsageSnapshot): number | undefined {
+	const values = [usage?.primary?.resetAt, usage?.secondary?.resetAt].filter(
+		(value): value is number => typeof value === "number",
+	);
+	return values.length > 0 ? Math.min(...values) : undefined;
+}
+
+export function isUsageStale(usage: UsageSnapshot | undefined, now = Date.now()): boolean {
+	if (!usage || now - usage.fetchedAt >= USAGE_CACHE_TTL_MS) return true;
+	const resetAt = getNextResetAt(usage);
+	return typeof resetAt === "number" && resetAt <= now;
+}
+
 function getMaxUsedPercent(usage?: UsageSnapshot): number | undefined {
 	const values = [usage?.primary?.usedPercent, usage?.secondary?.usedPercent].filter(
 		(value): value is number => typeof value === "number",
 	);
 	return values.length > 0 ? Math.max(...values) : undefined;
-}
-
-function isUsageUntouched(usage?: UsageSnapshot): boolean {
-	return usage?.primary?.usedPercent === 0 && usage?.secondary?.usedPercent === 0;
 }
 
 const WORKSPACE_LIMIT_REACHED_TYPES = new Set([
@@ -374,12 +452,32 @@ function numericCreditAmount(value?: string): number {
 	return Number.isFinite(amount) && amount >= 0 ? amount : -1;
 }
 
-function creditPriority(usage?: UsageSnapshot) {
-	return {
-		tier: usage?.credits?.unlimited ? 2 : usage?.credits?.hasCredits ? 1 : 0,
-		balance: numericCreditAmount(usage?.credits?.balance),
-		autoPurchaseRemaining: numericCreditAmount(usage?.spendControl?.individualLimit?.remaining),
-	};
+function hasNormalQuota(usage?: UsageSnapshot) {
+	return (
+		typeof usage?.primary?.usedPercent === "number" &&
+		typeof usage.secondary?.usedPercent === "number" &&
+		usage.primary.usedPercent < 100 &&
+		usage.secondary.usedPercent < 100
+	);
+}
+
+function creditCapacity(usage?: UsageSnapshot) {
+	if (usage?.credits?.unlimited) return Number.POSITIVE_INFINITY;
+	const balance = Math.max(0, numericCreditAmount(usage?.credits?.balance));
+	const autoPurchaseRemaining = usage?.spendControl?.reached
+		? 0
+		: Math.max(0, numericCreditAmount(usage?.spendControl?.individualLimit?.remaining));
+	return balance + autoPurchaseRemaining;
+}
+
+function hasCreditCapacity(usage?: UsageSnapshot) {
+	return (
+		!isWorkspaceCreditExhausted(usage) &&
+		(usage?.credits?.unlimited === true ||
+			usage?.credits?.hasCredits === true ||
+			creditCapacity(usage) > 0 ||
+			usage?.spendControl?.reached === false)
+	);
 }
 
 export function formatWorkspaceCredits(usage?: UsageSnapshot): string {
@@ -398,7 +496,8 @@ export function formatWorkspaceCredits(usage?: UsageSnapshot): string {
 			: usage?.spendControl?.reached === false
 				? "auto-purchase available"
 				: "auto-purchase ?";
-	return `${credits} · ${autoPurchase}`;
+	const resetAt = usage?.spendControl?.individualLimit?.resetAt;
+	return `${credits} · ${autoPurchase}${resetAt ? ` reset ${formatResetAt(resetAt)}` : ""}`;
 }
 
 function formatResetAt(resetAt?: number): string {
@@ -637,6 +736,10 @@ function isQuotaErrorMessage(message: string): boolean {
 	return /\b429\b|quota|usage limit|rate.?limit|too many requests|limit reached/i.test(message);
 }
 
+export function isCodexDownError(error: unknown): boolean {
+	return /\bHTTP\s+(?:404|5\d\d)\b|\bnot found\b|service unavailable|bad gateway|gateway timeout/i.test(messageFromUnknown(error));
+}
+
 function isAccountAvailable(account: Account, now: number): boolean {
 	if (account.needsReauth) return false;
 	return !account.quotaExhaustedUntil || account.quotaExhaustedUntil <= now;
@@ -644,37 +747,32 @@ function isAccountAvailable(account: Account, now: number): boolean {
 
 export function pickBestAccount(accounts: Account[], usageByEmail: Map<string, UsageSnapshot>, excludeEmails = new Set<string>()): Account | undefined {
 	const now = Date.now();
-	const available = accounts.filter(
-		(account) =>
-			isAccountAvailable(account, now) &&
-			!excludeEmails.has(account.email) &&
-			!isWorkspaceCreditExhausted(usageByEmail.get(account.email)),
-	);
+	const available = accounts.filter((account) => isAccountAvailable(account, now) && !excludeEmails.has(account.email));
 	if (available.length === 0) return undefined;
 
-	const withUsage = available.filter((account) => usageByEmail.has(account.email));
-	const untouched = withUsage.filter((account) => isUsageUntouched(usageByEmail.get(account.email)));
-	const candidates = untouched.length > 0 ? untouched : withUsage;
-	if (candidates.length === 0) return available[Math.floor(Math.random() * available.length)];
+	const normalQuota = available
+		.filter((account) => hasNormalQuota(usageByEmail.get(account.email)))
+		.map((account) => ({
+			account,
+			used: getMaxUsedPercent(usageByEmail.get(account.email)) ?? 100,
+			weeklyReset: getWeeklyResetAt(usageByEmail.get(account.email)) ?? Number.MAX_SAFE_INTEGER,
+		}))
+		.sort((a, b) => a.used - b.used || a.weeklyReset - b.weeklyReset);
+	if (normalQuota[0]) return normalQuota[0].account;
 
-	return candidates
-		.map((account) => {
-			const usage = usageByEmail.get(account.email);
-			return {
-				account,
-				used: getMaxUsedPercent(usage) ?? 100,
-				weeklyReset: getWeeklyResetAt(usage) ?? Number.MAX_SAFE_INTEGER,
-				...creditPriority(usage),
-			};
-		})
-		.sort(
-			(a, b) =>
-				a.used - b.used ||
-				b.tier - a.tier ||
-				b.balance - a.balance ||
-				b.autoPurchaseRemaining - a.autoPurchaseRemaining ||
-				a.weeklyReset - b.weeklyReset,
-		)[0]?.account;
+	const creditFallback = available
+		.filter((account) => hasCreditCapacity(usageByEmail.get(account.email)))
+		.map((account) => ({
+			account,
+			capacity: creditCapacity(usageByEmail.get(account.email)),
+			balance: numericCreditAmount(usageByEmail.get(account.email)?.credits?.balance),
+			resetAt: getNextStandardResetAt(usageByEmail.get(account.email)) ?? Number.MAX_SAFE_INTEGER,
+		}))
+		.sort((a, b) => b.capacity - a.capacity || b.balance - a.balance || a.resetAt - b.resetAt);
+	if (creditFallback[0]) return creditFallback[0].account;
+
+	const unknown = available.filter((account) => !usageByEmail.has(account.email));
+	return unknown[Math.floor(Math.random() * unknown.length)];
 }
 
 class AccountManager {
@@ -689,6 +787,8 @@ class AccountManager {
 	private warningHandler: ((message: string) => void) | undefined;
 	private warnedAuthFailures = new Set<string>();
 	private warnedUsageFailures = new Map<string, string>();
+	private downUntil = new Map<string, number>();
+	private lastOpenAIStatusAdvice: string | undefined;
 	private readyPromise: Promise<void> = Promise.resolve();
 	private readyResolve: (() => void) | undefined;
 
@@ -793,6 +893,7 @@ class AccountManager {
 		if (this.data.activeEmail === email) this.data.activeEmail = this.data.accounts[0]?.email;
 		if (this.manualEmail === email) this.manualEmail = undefined;
 		this.usageCache.delete(email);
+		this.downUntil.delete(email);
 		this.save();
 		this.notifyStateChanged();
 		return true;
@@ -865,6 +966,41 @@ class AccountManager {
 		return this.usageErrors.get(email);
 	}
 
+	isDown(email: string) {
+		return (this.downUntil.get(email) || 0) > Date.now();
+	}
+
+	private downEmails() {
+		const now = Date.now();
+		return new Set(
+			this.getAccounts()
+				.filter((account) => (this.downUntil.get(account.email) || 0) > now)
+				.map((account) => account.email),
+		);
+	}
+
+	availabilityError() {
+		const down = this.downEmails();
+		if (down.size === 0) return "No available MultiCodex accounts. Use /multicodex add <email>.";
+		return `OpenAI Codex unavailable for ${down.size} account${down.size === 1 ? "" : "s"}. ${this.lastOpenAIStatusAdvice || `Check ${OPENAI_STATUS_URL}.`}`;
+	}
+
+	private async markDown(account: Account, error: unknown) {
+		this.downUntil.set(account.email, Date.now() + CODEX_DOWN_RETRY_MS);
+		this.lastOpenAIStatusAdvice = await getOpenAIStatusAdvice();
+		const message = `${messageFromUnknown(error)}. ${this.lastOpenAIStatusAdvice}`;
+		this.usageErrors.set(account.email, message);
+		if (this.warnedUsageFailures.get(account.email) !== message) {
+			this.warnedUsageFailures.set(account.email, message);
+			this.warningHandler?.(`MultiCodex marked ${account.email} unavailable: ${message}`);
+		}
+		this.notifyStateChanged();
+	}
+
+	async handleCodexDown(account: Account, error: unknown) {
+		await this.markDown(account, error);
+	}
+
 	getAccountsNeedingReauth() {
 		return this.getAccounts().filter((account) => account.needsReauth);
 	}
@@ -926,7 +1062,8 @@ class AccountManager {
 	async refreshUsageForAccount(account: Account, options: { force?: boolean; signal?: AbortSignal } = {}) {
 		if (account.needsReauth) return this.usageCache.get(account.email);
 		const cached = this.usageCache.get(account.email);
-		if (cached && !options.force && Date.now() - cached.fetchedAt < USAGE_CACHE_TTL_MS) return cached;
+		if (!options.force && this.isDown(account.email)) return cached;
+		if (!options.force && !isUsageStale(cached)) return cached;
 
 		const inflight = this.usagePromises.get(account.email);
 		if (inflight) return inflight;
@@ -938,9 +1075,14 @@ class AccountManager {
 				this.usageCache.set(account.email, usage);
 				this.usageErrors.delete(account.email);
 				this.warnedUsageFailures.delete(account.email);
+				this.downUntil.delete(account.email);
 				this.notifyStateChanged();
 				return usage;
 			} catch (error) {
+				if (isCodexDownError(error)) {
+					await this.markDown(account, error);
+					return cached;
+				}
 				const message = messageFromUnknown(error);
 				this.usageErrors.set(account.email, message);
 				if (options.force || this.warnedUsageFailures.get(account.email) !== message) {
@@ -962,18 +1104,16 @@ class AccountManager {
 	}
 
 	async refreshStaleUsage(accounts: Account[], signal?: AbortSignal) {
-		const stale = accounts.filter((account) => {
-			const cached = this.usageCache.get(account.email);
-			return !cached || Date.now() - cached.fetchedAt >= USAGE_CACHE_TTL_MS;
-		});
-		await Promise.all(stale.map((account) => this.refreshUsageForAccount(account, { force: true, signal })));
+		const stale = accounts.filter((account) => isUsageStale(this.usageCache.get(account.email)));
+		await Promise.all(stale.map((account) => this.refreshUsageForAccount(account, { signal })));
 	}
 
 	async activateBestAccount(options: { excludeEmails?: Set<string>; signal?: AbortSignal } = {}) {
 		this.clearExpiredExhaustion();
 		const accounts = this.getAccounts();
 		await this.refreshStaleUsage(accounts, options.signal);
-		const selected = pickBestAccount(accounts, this.usageCache, options.excludeEmails);
+		const excluded = new Set([...(options.excludeEmails || []), ...this.downEmails()]);
+		const selected = pickBestAccount(accounts, this.usageCache, excluded);
 		if (!selected) return undefined;
 		this.data.activeEmail = selected.email;
 		if (!this.isPiAuthAccount(selected)) this.save();
@@ -1037,7 +1177,7 @@ function createStreamWrapper(accountManager: AccountManager, baseProvider: Provi
 						if (accountManager.hasManualAccount()) accountManager.clearManualAccount();
 						account = await accountManager.activateBestAccount({ excludeEmails: excludedEmails, signal: options?.signal });
 					}
-					if (!account) throw new Error("No available MultiCodex accounts. Use /multicodex add <email>.");
+					if (!account) throw new Error(accountManager.availabilityError());
 
 					let token: string;
 					try {
@@ -1069,6 +1209,19 @@ function createStreamWrapper(accountManager: AccountManager, baseProvider: Provi
 								abortController.abort();
 								retry = true;
 								break;
+							}
+							if (isCodexDownError(message) && !forwardedAny) {
+								await accountManager.handleCodexDown(account, message);
+								if (usingManual) accountManager.clearManualAccount();
+								excludedEmails.add(account.email);
+								abortController.abort();
+								if (attempt < MAX_ROTATION_RETRIES) {
+									retry = true;
+									break;
+								}
+								stream.push(createErrorEvent(model, accountManager.availabilityError()));
+								stream.end();
+								return;
 							}
 							stream.push(event);
 							stream.end();
@@ -1139,6 +1292,12 @@ function secondaryWindowLabel(usage: UsageSnapshot | undefined) {
 	return `${Math.round(hours / 24)}d`;
 }
 
+export function formatStatusUsage(usage?: UsageSnapshot) {
+	const primaryLeft = usage?.primary?.usedPercent === undefined ? "?" : `${Math.round(100 - usage.primary.usedPercent)}%`;
+	const secondaryLeft = usage?.secondary?.usedPercent === undefined ? "?" : `${Math.round(100 - usage.secondary.usedPercent)}%`;
+	return `${windowLabel(usage?.primary, "5h")} ${primaryLeft} · ${secondaryWindowLabel(usage)} ${secondaryLeft}`;
+}
+
 function formatUsage(accountManager: AccountManager, account: Account) {
 	const usage = accountManager.getCachedUsage(account.email);
 	const primary = usage?.primary?.usedPercent === undefined ? "?" : `${Math.round(usage.primary.usedPercent)}%`;
@@ -1184,14 +1343,13 @@ function updateStatus(ctx: ExtensionContext, accountManager: AccountManager) {
 	}
 
 	const usage = accountManager.getCachedUsage(account.email);
-	const primaryLeft = usage?.primary?.usedPercent === undefined ? "?" : `${Math.round(100 - usage.primary.usedPercent)}%`;
-	const secondaryLeft = usage?.secondary?.usedPercent === undefined ? "?" : `${Math.round(100 - usage.secondary.usedPercent)}%`;
+	if (accountManager.isDown(account.email)) {
+		ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("warning", `Codex DOWN · ${account.email} · ${OPENAI_STATUS_URL}`));
+		return;
+	}
 	ctx.ui.setStatus(
 		STATUS_KEY,
-		ctx.ui.theme.fg(
-			"muted",
-			`Codex ${account.email} · ${windowLabel(usage?.primary, "5h")} ${primaryLeft} left · ${secondaryWindowLabel(usage)} ${secondaryLeft} left · ${formatWorkspaceCredits(usage)}`,
-		),
+		ctx.ui.theme.fg("muted", `Codex ${account.email} · ${formatStatusUsage(usage)} · ${formatWorkspaceCredits(usage)}`),
 	);
 }
 
@@ -1207,6 +1365,7 @@ async function refreshStatus(ctx: ExtensionContext, accountManager: AccountManag
 	safelyUpdateStatus(ctx, accountManager);
 	const account = accountManager.getActiveAccount();
 	if (account && ctx.model?.provider === PROVIDER_ID) await accountManager.refreshUsageForAccount(account, { force });
+	if (!accountManager.hasManualAccount() && ctx.model?.provider === PROVIDER_ID) await accountManager.activateBestAccount();
 	safelyUpdateStatus(ctx, accountManager);
 }
 
@@ -1332,7 +1491,7 @@ export default function multicodex(pi: ExtensionAPI) {
 		if (refreshTimer) clearInterval(refreshTimer);
 		refreshTimer = setInterval(() => {
 			if (lastContext) void refreshStatus(lastContext, accountManager);
-		}, 60_000);
+		}, CODEX_DOWN_RETRY_MS);
 		refreshTimer.unref?.();
 	});
 
