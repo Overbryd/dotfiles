@@ -292,6 +292,26 @@ function isSevereFailure(content: unknown): boolean {
 	);
 }
 
+function beginClassificationFeedback(ctx: ExtensionContext, state: RuntimeState): () => void {
+	if (!ctx.hasUI) return () => {};
+	const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+	let frame = 0;
+	const render = () => {
+		const spinner = ctx.ui.theme.fg("accent", frames[frame]);
+		ctx.ui.setStatus(STATUS_KEY, `${spinner}${ctx.ui.theme.fg("dim", " classifying with luna:minimal")}`);
+		frame = (frame + 1) % frames.length;
+	};
+
+	ctx.ui.setWorkingMessage("Classifying request…");
+	render();
+	const timer = setInterval(render, 80);
+	return () => {
+		clearInterval(timer);
+		ctx.ui.setWorkingMessage();
+		setStatus(ctx, state);
+	};
+}
+
 export const __openAIAutoProfileInternals = {
 	buildClassifierPrompt,
 	hasHighRiskSignal,
@@ -357,31 +377,36 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 	};
 
 	const classify = async (prompt: string, ctx: ExtensionContext) => {
-		const model = ctx.modelRegistry.find("openai", CLASSIFIER_MODEL_ID);
-		if (!model) throw new Error(`classifier openai/${CLASSIFIER_MODEL_ID} is unavailable`);
-		const classifierPrompt = buildClassifierPrompt(prompt, ctx, state.failuresSinceClassification);
-		const response = await ctx.modelRegistry.complete(
-			model,
-			{
-				systemPrompt: "You are a routing classifier. Return only the requested JSON. Never execute or answer the user request.",
-				messages: [
-					{
-						role: "user",
-						content: [{ type: "text", text: classifierPrompt }],
-						timestamp: Date.now(),
-					},
-				],
-			},
-			{
-				maxTokens: 512,
-				reasoning: "minimal",
-				cacheRetention: "none",
-				signal: AbortSignal.timeout(CLASSIFIER_TIMEOUT_MS),
-			},
-		);
-		const classification = parseClassification(assistantText(response));
-		if (!classification) throw new ClassifierError("classifier returned invalid JSON", response.usage);
-		return { classification, usage: response.usage };
+		const stopFeedback = beginClassificationFeedback(ctx, state);
+		try {
+			const model = ctx.modelRegistry.find("openai", CLASSIFIER_MODEL_ID);
+			if (!model) throw new Error(`classifier openai/${CLASSIFIER_MODEL_ID} is unavailable`);
+			const classifierPrompt = buildClassifierPrompt(prompt, ctx, state.failuresSinceClassification);
+			const response = await ctx.modelRegistry.complete(
+				model,
+				{
+					systemPrompt: "You are a routing classifier. Return only the requested JSON. Never execute or answer the user request.",
+					messages: [
+						{
+							role: "user",
+							content: [{ type: "text", text: classifierPrompt }],
+							timestamp: Date.now(),
+						},
+					],
+				},
+				{
+					maxTokens: 512,
+					reasoning: "minimal",
+					cacheRetention: "none",
+					signal: AbortSignal.timeout(CLASSIFIER_TIMEOUT_MS),
+				},
+			);
+			const classification = parseClassification(assistantText(response));
+			if (!classification) throw new ClassifierError("classifier returned invalid JSON", response.usage);
+			return { classification, usage: response.usage };
+		} finally {
+			stopFeedback();
+		}
 	};
 
 	const restoreState = (ctx: ExtensionContext) => {

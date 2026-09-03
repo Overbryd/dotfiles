@@ -24,12 +24,13 @@ function assistantClassification(task: string, confidence = 0.95) {
 	};
 }
 
-function harness(classifications = [assistantClassification("routine")]) {
+function harness(classifications: any[] = [assistantClassification("routine")]) {
 	const handlers = new Map<string, Handler>();
 	const commands = new Map<string, any>();
 	const entries: any[] = [];
 	const statuses: Array<[string, string | undefined]> = [];
 	const notifications: string[] = [];
+	const workingMessages: Array<string | undefined> = [];
 	const models = new Map(
 		["sol", "terra", "luna"].map((name) => [
 			`gpt-5.6-${name}`,
@@ -85,6 +86,9 @@ function harness(classifications = [assistantClassification("routine")]) {
 			notify(message: string) {
 				notifications.push(message);
 			},
+			setWorkingMessage(message?: string) {
+				workingMessages.push(message);
+			},
 		},
 		getContextUsage() {
 			return { tokens: 20_000, contextWindow: 272_000, percent: 7.4 };
@@ -121,6 +125,7 @@ function harness(classifications = [assistantClassification("routine")]) {
 		handlers,
 		notifications,
 		statuses,
+		workingMessages,
 		get classifierCalls() {
 			return classifierCalls;
 		},
@@ -189,6 +194,25 @@ test("classifies every turn, selects Terra first, then upgrades to Sol", async (
 	assert.equal(h.modelId, "gpt-5.6-sol");
 	assert.equal(h.thinkingLevel, "high");
 	assert.equal(h.entries.filter((entry) => entry.customType === "openai-auto-profile").length, 2);
+});
+
+test("shows animated classification feedback until routing completes", async () => {
+	let resolveClassification: (message: any) => void = () => {};
+	const pending = new Promise<any>((resolve) => {
+		resolveClassification = resolve;
+	});
+	const h = harness([pending]);
+	await h.handlers.get("session_start")?.({}, h.context);
+	const routing = h.handlers.get("before_agent_start")?.({ prompt: "Small change" }, h.context);
+	await Promise.resolve();
+
+	assert.match(h.statuses.at(-1)?.[1] ?? "", /classifying/i);
+	assert.match(h.workingMessages.at(-1) ?? "", /classifying/i);
+
+	resolveClassification(assistantClassification("routine"));
+	await routing;
+	assert.match(h.statuses.at(-1)?.[1] ?? "", /auto sol:medium/i);
+	assert.equal(h.workingMessages.at(-1), undefined);
 });
 
 test("falls back to Sol high when classifier output is invalid", async () => {
