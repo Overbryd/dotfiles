@@ -80,7 +80,8 @@ test("adds focused recovery guidance after edit uniqueness errors", async () => 
 });
 
 test("reports Pi thinking level without calling it a manual floor", async () => {
-	const { commands, context } = extensionHarness();
+	const { commands, context, handlers } = extensionHarness();
+	assert.equal(handlers.has("thinking_level_select"), true);
 	assert.equal(commands.has("openai-agent"), true);
 	assert.match(commands.get("openai-agent").description, /native/i);
 	await commands.get("openai-agent").handler("status", context);

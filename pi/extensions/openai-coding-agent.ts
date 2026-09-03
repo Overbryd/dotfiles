@@ -112,7 +112,7 @@ export default function openaiCodingAgentExtension(pi: ExtensionAPI) {
 		syncState(ctx);
 	});
 
-	pi.on("thinking_level_change", (_event, ctx) => {
+	pi.on("thinking_level_select", (_event, ctx) => {
 		syncState(ctx);
 	});
 
