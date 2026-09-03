@@ -10,6 +10,8 @@ module.exports = {
         // Google
         /.*\.?google\.com$/,
         /.*\.?google$/,
+        // AWS
+        /^oidc\.*\.amazonaws\.com$/,
         // Gitlab
         /.*\.?gitlab\.com$/,
         // Github
