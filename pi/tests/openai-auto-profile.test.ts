@@ -24,7 +24,7 @@ function assistantClassification(task: string, confidence = 0.95) {
 	};
 }
 
-function harness(classifications: any[] = [assistantClassification("routine")]) {
+function harness(classifications: any[] = [assistantClassification("routine")], initialProvider = "openai") {
 	const handlers = new Map<string, Handler>();
 	const commands = new Map<string, any>();
 	const entries: any[] = [];
@@ -32,20 +32,23 @@ function harness(classifications: any[] = [assistantClassification("routine")]) 
 	const notifications: string[] = [];
 	const workingMessages: Array<string | undefined> = [];
 	const models = new Map(
-		["sol", "terra", "luna"].map((name) => [
-			`gpt-5.6-${name}`,
-			{
-				id: `gpt-5.6-${name}`,
-				provider: "openai",
-				api: "openai-responses",
-				reasoning: true,
-			},
-		]),
+		["openai", "openai-codex"].flatMap((provider) =>
+			["sol", "terra", "luna"].map((name) => [
+				`${provider}/gpt-5.6-${name}`,
+				{
+					id: `gpt-5.6-${name}`,
+					provider,
+					api: provider === "openai" ? "openai-responses" : "openai-codex-responses",
+					reasoning: true,
+				},
+			]),
+		),
 	);
-	let currentModel = models.get("gpt-5.6-sol")!;
+	let currentModel = models.get(`${initialProvider}/gpt-5.6-sol`)!;
 	let thinkingLevel = "medium";
 	let responseIndex = 0;
 	let classifierCalls = 0;
+	const classifierProviders: string[] = [];
 
 	const pi = {
 		on(event: string, handler: Handler) {
@@ -103,10 +106,11 @@ function harness(classifications: any[] = [assistantClassification("routine")]) 
 		},
 		modelRegistry: {
 			find(provider: string, id: string) {
-				return provider === "openai" ? models.get(id) : undefined;
+				return models.get(`${provider}/${id}`);
 			},
 			async complete(model: any, requestContext: any, options: any) {
 				assert.equal(model.id, "gpt-5.6-luna");
+				classifierProviders.push(model.provider);
 				assert.equal(options.reasoning, "minimal");
 				assert.equal(options.maxTokens, 512);
 				assert.equal(options.cacheRetention, "none");
@@ -129,8 +133,12 @@ function harness(classifications: any[] = [assistantClassification("routine")]) 
 		get classifierCalls() {
 			return classifierCalls;
 		},
+		classifierProviders,
 		get modelId() {
 			return currentModel.id;
+		},
+		get providerId() {
+			return currentModel.provider;
 		},
 		get thinkingLevel() {
 			return thinkingLevel;
@@ -211,8 +219,29 @@ test("shows animated classification feedback until routing completes", async () 
 
 	resolveClassification(assistantClassification("routine"));
 	await routing;
-	assert.match(h.statuses.at(-1)?.[1] ?? "", /auto sol:medium/i);
+	assert.match(h.statuses.at(-1)?.[1] ?? "", /auto api\/sol:medium/i);
 	assert.equal(h.workingMessages.at(-1), undefined);
+});
+
+test("keeps Codex for both classification and selected main model", async () => {
+	const h = harness([assistantClassification("economy", 0.96)], "openai-codex");
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.handlers.get("before_agent_start")?.({ prompt: "Rename this variable" }, h.context);
+	assert.deepEqual(h.classifierProviders, ["openai-codex"]);
+	assert.equal(h.providerId, "openai-codex");
+	assert.equal(h.modelId, "gpt-5.6-terra");
+});
+
+test("session provider preference can explicitly switch locked API back to Codex auto", async () => {
+	const h = harness([assistantClassification("routine")], "openai");
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.handlers.get("thinking_level_select")?.({ level: "high", previousLevel: "medium" }, h.context);
+	await h.commands.get("profile").handler("auto codex", h.context);
+	assert.equal(h.providerId, "openai-codex");
+
+	await h.handlers.get("before_agent_start")?.({ prompt: "Focused implementation" }, h.context);
+	assert.deepEqual(h.classifierProviders, ["openai-codex"]);
+	assert.equal(h.providerId, "openai-codex");
 });
 
 test("falls back to Sol high when classifier output is invalid", async () => {
