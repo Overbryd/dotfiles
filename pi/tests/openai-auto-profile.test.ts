@@ -291,13 +291,54 @@ test("restores profile state when navigating session branches", async () => {
 	assert.equal(h.classifierCalls, 2);
 });
 
-test("repeated tool failures escalate effort and Terra model", async () => {
+test("expected red tests do not escalate until the same check stalls after two fixes", async () => {
 	const h = harness([assistantClassification("economy", 0.98)]);
+	const failedCheck = {
+		toolName: "bash",
+		input: { command: "python3 -m unittest discover -s tests -p 'test_*.py'" },
+		isError: true,
+		content: [{ type: "text", text: "FAILED (errors=1)\nCommand exited with code 1" }],
+	};
+	const successfulEdit = { toolName: "edit", input: {}, isError: false, content: [{ type: "text", text: "Updated file" }] };
+
 	await h.handlers.get("session_start")?.({}, h.context);
-	await h.handlers.get("before_agent_start")?.({ prompt: "Small test update" }, h.context);
+	await h.handlers.get("before_agent_start")?.({ prompt: "Use red/green TDD for this small change" }, h.context);
 	assert.equal(h.modelId, "gpt-5.6-terra");
 
-	await h.handlers.get("tool_result")?.({ toolName: "bash", isError: true, content: [{ type: "text", text: "test failed" }] }, h.context);
+	await h.handlers.get("tool_result")?.(failedCheck, h.context);
+	assert.equal(h.modelId, "gpt-5.6-terra");
+	assert.equal(h.thinkingLevel, "medium");
+
+	await h.handlers.get("tool_result")?.(successfulEdit, h.context);
+	await h.handlers.get("tool_result")?.(failedCheck, h.context);
+	assert.equal(h.modelId, "gpt-5.6-terra");
+
+	await h.handlers.get("tool_result")?.(successfulEdit, h.context);
+	await h.handlers.get("tool_result")?.(failedCheck, h.context);
 	assert.equal(h.modelId, "gpt-5.6-sol");
 	assert.equal(h.thinkingLevel, "high");
+	assert.equal(h.notifications.some((message) => /xhigh/.test(message)), false);
+});
+
+test("a passing verification resets stalled-check tracking", async () => {
+	const h = harness([assistantClassification("economy", 0.98)]);
+	const check = (isError: boolean) => ({
+		toolName: "bash",
+		input: { command: "npm test" },
+		isError,
+		content: [{ type: "text", text: isError ? "1 test failed" : "10 tests passed" }],
+	});
+	const edit = { toolName: "edit", input: {}, isError: false, content: [] };
+
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.handlers.get("before_agent_start")?.({ prompt: "Small tested change" }, h.context);
+	await h.handlers.get("tool_result")?.(check(true), h.context);
+	await h.handlers.get("tool_result")?.(edit, h.context);
+	await h.handlers.get("tool_result")?.(check(false), h.context);
+	await h.handlers.get("tool_result")?.(check(true), h.context);
+	await h.handlers.get("tool_result")?.(edit, h.context);
+	await h.handlers.get("tool_result")?.(check(true), h.context);
+
+	assert.equal(h.modelId, "gpt-5.6-terra");
+	assert.equal(h.thinkingLevel, "medium");
 });

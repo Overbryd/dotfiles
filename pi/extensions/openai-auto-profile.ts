@@ -256,7 +256,7 @@ Prefer routine over economy when scope is unclear. Prefer complex when investiga
 <session>
 cwd: ${ctx.cwd}
 context_tokens: ${usage?.tokens ?? "unknown"}
-recent_tool_failures: ${failures}
+failed_verification_fix_cycles: ${failures}
 ${context || "No prior conversation context."}
 </session>
 
@@ -302,10 +302,14 @@ function setStatus(ctx: ExtensionContext | ExtensionCommandContext, state: Runti
 	ctx.ui.setStatus(STATUS_KEY, `${ctx.ui.theme.fg("accent", mode)}${ctx.ui.theme.fg("dim", ` ${profile}`)}`);
 }
 
-function isSevereFailure(content: unknown): boolean {
-	return /\b(test(?:s| suite)? failed|failing tests?|assertionerror|fatal|panic|data loss)\b|exited with code [1-9]/i.test(
-		textFromContent(content),
-	);
+function verificationCommand(input: Record<string, unknown>): string | undefined {
+	if (typeof input.command !== "string") return undefined;
+	const command = input.command.replace(/\s+/g, " ").trim();
+	const verification =
+		/\b(pytest|unittest|rspec|mix test|go test|cargo test|mvn test|gradle test|test_\*\.py)\b/i.test(command) ||
+		/\b(npm|pnpm|yarn|bun)\s+(?:run\s+)?(test|check|lint|typecheck)\b/i.test(command) ||
+		/\b(make test|tsc\b)/i.test(command);
+	return verification ? command : undefined;
 }
 
 function beginClassificationFeedback(ctx: ExtensionContext, state: RuntimeState): () => void {
@@ -346,6 +350,15 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 	};
 	let expectedModelKey: string | undefined;
 	let expectedThinkingLevel: ThinkingLevel | undefined;
+	let stalledCheck: { command?: string; failedRuns: number; editsSinceFailure: number; escalated: boolean } = {
+		failedRuns: 0,
+		editsSinceFailure: 0,
+		escalated: false,
+	};
+
+	const resetStalledCheck = () => {
+		stalledCheck = { failedRuns: 0, editsSinceFailure: 0, escalated: false };
+	};
 
 	const persist = (classifierUsage?: Usage) => {
 		const data: PersistedProfile = {
@@ -432,6 +445,7 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 	const restoreState = (ctx: ExtensionContext) => {
 		const restored = latestPersisted(currentBranchEntries(ctx));
 		const level = pi.getThinkingLevel();
+		resetStalledCheck();
 		state = {
 			version: 1,
 			mode: restored?.mode ?? "auto",
@@ -485,6 +499,7 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 
 		if (state.mode === "locked") return;
 		state.failuresSinceClassification = 0;
+		resetStalledCheck();
 		try {
 			await applyDecision(decision, ctx);
 		} catch (error) {
@@ -502,26 +517,48 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_result", async (event, ctx) => {
-		if (state.mode !== "auto" || !event.isError) return;
-		state.failuresSinceClassification++;
-		const severe = isSevereFailure(event.content);
-		const currentEffort = state.effort ?? "medium";
-		let effort: ThinkingLevel | undefined;
-		if (currentEffort !== "xhigh" && state.failuresSinceClassification >= 4) effort = "xhigh";
-		else if ((currentEffort === "minimal" || currentEffort === "low" || currentEffort === "medium") && (severe || state.failuresSinceClassification >= 2)) effort = "high";
-		if (!effort) return;
+		if (state.mode !== "auto") return;
 
+		if ((event.toolName === "edit" || event.toolName === "write") && !event.isError) {
+			if (stalledCheck.failedRuns > 0) stalledCheck.editsSinceFailure++;
+			return;
+		}
+		if (event.toolName !== "bash") return;
+
+		const command = verificationCommand(event.input);
+		if (!command) return;
+		if (!event.isError) {
+			resetStalledCheck();
+			state.failuresSinceClassification = 0;
+			return;
+		}
+
+		if (stalledCheck.command !== command) {
+			stalledCheck = { command, failedRuns: 1, editsSinceFailure: 0, escalated: false };
+		} else if (stalledCheck.editsSinceFailure > 0) {
+			stalledCheck.failedRuns++;
+			stalledCheck.editsSinceFailure = 0;
+		}
+		state.failuresSinceClassification = Math.max(0, stalledCheck.failedRuns - 1);
+
+		const currentEffort = state.effort ?? "medium";
+		const canEscalateEffort = currentEffort === "minimal" || currentEffort === "low" || currentEffort === "medium";
+		if (stalledCheck.failedRuns < 3 || stalledCheck.escalated || (!canEscalateEffort && state.sessionModelId === SOL_MODEL_ID)) {
+			return;
+		}
+
+		stalledCheck.escalated = true;
 		const decision: AutoProfileDecision = {
 			providerId: state.providerId ?? "openai",
 			modelId: SOL_MODEL_ID,
-			effort,
+			effort: "high",
 			source: "escalation",
-			rationale: severe ? "tool or test failure" : `${state.failuresSinceClassification} tool failures`,
+			rationale: "same verification still failing after two edit and retest cycles",
 		};
 		try {
 			await applyDecision(decision, ctx);
 			persist();
-			if (ctx.hasUI) ctx.ui.notify(`Auto-profile escalated to sol:${effort}`, "warning");
+			if (ctx.hasUI) ctx.ui.notify("Auto-profile escalated to sol:high after a stalled verification loop", "warning");
 		} catch (error) {
 			if (ctx.hasUI) ctx.ui.notify(`Auto-profile escalation failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
 		}
