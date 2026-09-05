@@ -568,7 +568,7 @@ dotfiles: \
 pi-settings: pi/settings.json | ~/.pi/agent
 	tmp=$$(mktemp); \
 	if [ -f $(HOME)/.pi/agent/settings.json ]; then \
-		jq -s '.[0] * .[1]' $(HOME)/.pi/agent/settings.json $< > $$tmp; \
+		jq -s -f pi/settings-merge.jq $(HOME)/.pi/agent/settings.json $< > $$tmp; \
 	else \
 		cp $< $$tmp; \
 	fi; \

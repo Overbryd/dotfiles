@@ -6,10 +6,5 @@
   "theme": "dark",
   "defaultProvider": "openai",
   "defaultModel": "gpt-5.6-sol",
-  "enabledModels": [
-    "openai/gpt-5.6-sol:medium",
-    "openai/gpt-5.6-sol:high",
-    "openai/gpt-5.6-terra:medium",
-    "openai/gpt-5.6-luna:low"
-  ]
+  "enabledModels": []
 }

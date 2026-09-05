@@ -9,19 +9,23 @@ import type {
 const CUSTOM_TYPE = "openai-auto-profile";
 const STATUS_KEY = "auto-profile";
 const CLASSIFIER_MODEL_ID = "gpt-5.6-luna";
+const ASTRA_MODEL_ID = "gpt-6-astra";
 const SOL_MODEL_ID = "gpt-5.6-sol";
 const TERRA_MODEL_ID = "gpt-5.6-terra";
+const FAMILY_MODEL_IDS = new Set([CLASSIFIER_MODEL_ID, TERRA_MODEL_ID, SOL_MODEL_ID]);
 const CLASSIFIER_TIMEOUT_MS = 10_000;
 const MAX_REQUEST_CHARS = 12_000;
 const MAX_CONTEXT_CHARS = 4_000;
 
 const MODEL_ALIASES = {
+	astra: ASTRA_MODEL_ID,
 	sol: SOL_MODEL_ID,
 	terra: TERRA_MODEL_ID,
 	luna: CLASSIFIER_MODEL_ID,
 } as const;
 
 const MODEL_NAMES: Record<string, string> = {
+	[ASTRA_MODEL_ID]: "astra",
 	[SOL_MODEL_ID]: "sol",
 	[TERRA_MODEL_ID]: "terra",
 	[CLASSIFIER_MODEL_ID]: "luna",
@@ -32,6 +36,7 @@ const TASKS = new Set<AutoProfileTask>(["economy", "routine", "complex", "critic
 
 export type AutoProfileTask = "economy" | "routine" | "complex" | "critical";
 export type AutoProfileMode = "auto" | "locked";
+export type AutoProfileScope = "thinking" | "family";
 export type AutoProfileProvider = "openai" | "openai-codex";
 export type AutoProfileSource = "classifier" | "fallback" | "manual" | "escalation";
 
@@ -54,6 +59,7 @@ export type AutoProfileDecision = {
 type PersistedProfile = {
 	version: 1;
 	mode: AutoProfileMode;
+	autoScope?: AutoProfileScope;
 	providerId?: AutoProfileProvider;
 	sessionModelId?: string;
 	effort?: ThinkingLevel;
@@ -65,6 +71,7 @@ type PersistedProfile = {
 };
 
 type RuntimeState = PersistedProfile & {
+	autoScope: AutoProfileScope;
 	failuresSinceClassification: number;
 	failureWarningShown: boolean;
 };
@@ -88,6 +95,12 @@ function isThinkingLevel(value: unknown): value is ThinkingLevel {
 
 function isProfileProvider(value: unknown): value is AutoProfileProvider {
 	return value === "openai" || value === "openai-codex";
+}
+
+function parseProvider(value: string): AutoProfileProvider | undefined {
+	if (value === "api" || value === "openai") return "openai";
+	if (value === "codex" || value === "openai-codex") return "openai-codex";
+	return undefined;
 }
 
 function providerName(providerId: AutoProfileProvider | undefined): string {
@@ -142,6 +155,7 @@ export function resolveAutoDecision(
 	sessionModelId: string | undefined,
 	highRisk: boolean,
 	providerId: AutoProfileProvider = "openai",
+	autoScope: AutoProfileScope = "family",
 ): AutoProfileDecision {
 	let desiredModelId = SOL_MODEL_ID;
 	let effort: ThinkingLevel = "high";
@@ -160,9 +174,7 @@ export function resolveAutoDecision(
 		if (effort === "minimal" || effort === "low" || effort === "medium") effort = "high";
 	}
 
-	let modelId = desiredModelId;
-	if (sessionModelId === SOL_MODEL_ID && desiredModelId === TERRA_MODEL_ID) modelId = SOL_MODEL_ID;
-	if (sessionModelId === TERRA_MODEL_ID && desiredModelId === TERRA_MODEL_ID) modelId = TERRA_MODEL_ID;
+	const modelId = autoScope === "thinking" && sessionModelId ? sessionModelId : desiredModelId;
 
 	return {
 		providerId,
@@ -175,10 +187,10 @@ export function resolveAutoDecision(
 	};
 }
 
-function fallbackDecision(providerId: AutoProfileProvider, reason: string): AutoProfileDecision {
+function fallbackDecision(providerId: AutoProfileProvider, reason: string, sessionModelId?: string): AutoProfileDecision {
 	return {
 		providerId,
-		modelId: SOL_MODEL_ID,
+		modelId: sessionModelId ?? SOL_MODEL_ID,
 		effort: "high",
 		source: "fallback",
 		rationale: reason,
@@ -192,6 +204,9 @@ function normalizePersisted(value: unknown): PersistedProfile | undefined {
 	return {
 		version: 1,
 		mode: value.mode,
+		autoScope: value.autoScope === "thinking" || value.autoScope === "family"
+			? value.autoScope
+			: value.sessionModelId === ASTRA_MODEL_ID ? "thinking" : "family",
 		providerId: isProfileProvider(value.providerId) ? value.providerId : undefined,
 		sessionModelId: typeof value.sessionModelId === "string" ? value.sessionModelId : undefined,
 		effort: isThinkingLevel(value.effort) ? value.effort : undefined,
@@ -284,6 +299,7 @@ function stateReport(state: RuntimeState, ctx: ExtensionCommandContext): string 
 	const usage = profileUsage(currentBranchEntries(ctx));
 	return [
 		`profile: ${state.mode}`,
+		`auto scope: ${state.autoScope}`,
 		`provider preference: ${providerName(state.providerId)}`,
 		`selection: ${providerName(state.providerId)}/${modelName(state.sessionModelId)}:${state.effort ?? "unknown"}`,
 		`source: ${state.source}`,
@@ -297,7 +313,7 @@ function stateReport(state: RuntimeState, ctx: ExtensionCommandContext): string 
 
 function setStatus(ctx: ExtensionContext | ExtensionCommandContext, state: RuntimeState): void {
 	if (!ctx.hasUI) return;
-	const mode = state.mode === "locked" ? "locked" : "auto";
+	const mode = state.mode === "locked" ? "locked" : `auto-${state.autoScope}`;
 	const profile = `${providerName(state.providerId)}/${modelName(state.sessionModelId)}:${state.effort ?? "?"}`;
 	ctx.ui.setStatus(STATUS_KEY, `${ctx.ui.theme.fg("accent", mode)}${ctx.ui.theme.fg("dim", ` ${profile}`)}`);
 }
@@ -344,6 +360,7 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 	let state: RuntimeState = {
 		version: 1,
 		mode: "auto",
+		autoScope: "family",
 		source: "manual",
 		failuresSinceClassification: 0,
 		failureWarningShown: false,
@@ -364,6 +381,7 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 		const data: PersistedProfile = {
 			version: 1,
 			mode: state.mode,
+			autoScope: state.autoScope,
 			providerId: state.providerId,
 			sessionModelId: state.sessionModelId,
 			effort: state.effort,
@@ -400,7 +418,8 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 
 		state.providerId = decision.providerId;
 		state.sessionModelId = decision.modelId;
-		state.effort = decision.effort;
+		const effectiveLevel = pi.getThinkingLevel();
+		state.effort = isThinkingLevel(effectiveLevel) ? effectiveLevel : undefined;
 		state.source = decision.source;
 		state.task = decision.task;
 		state.confidence = decision.confidence;
@@ -449,8 +468,9 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 		state = {
 			version: 1,
 			mode: restored?.mode ?? "auto",
+			autoScope: restored?.autoScope ?? (ctx.model?.id === ASTRA_MODEL_ID ? "thinking" : "family"),
 			providerId: restored?.providerId ?? (isProfileProvider(ctx.model?.provider) ? ctx.model.provider : "openai"),
-			sessionModelId: restored?.sessionModelId,
+			sessionModelId: restored?.sessionModelId ?? (ctx.model?.id === ASTRA_MODEL_ID ? ASTRA_MODEL_ID : undefined),
 			effort: restored?.effort ?? (isThinkingLevel(level) ? level : undefined),
 			source: restored?.source ?? "manual",
 			task: restored?.task,
@@ -486,14 +506,19 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 				state.sessionModelId,
 				hasHighRiskSignal(event.prompt),
 				state.providerId ?? "openai",
+				state.autoScope,
 			);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			if (error instanceof ClassifierError) classifierUsage = error.usage;
-			decision = fallbackDecision(state.providerId ?? "openai", message);
+			decision = fallbackDecision(
+				state.providerId ?? "openai",
+				message,
+				state.autoScope === "thinking" ? state.sessionModelId : undefined,
+			);
 			if (ctx.hasUI && !state.failureWarningShown) {
 				state.failureWarningShown = true;
-				ctx.ui.notify(`Auto-profile classifier failed; using Sol high: ${message}`, "warning");
+				ctx.ui.notify(`Auto-profile classifier failed; using ${modelName(decision.modelId)} high: ${message}`, "warning");
 			}
 		}
 
@@ -543,14 +568,15 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 
 		const currentEffort = state.effort ?? "medium";
 		const canEscalateEffort = currentEffort === "minimal" || currentEffort === "low" || currentEffort === "medium";
-		if (stalledCheck.failedRuns < 3 || stalledCheck.escalated || (!canEscalateEffort && state.sessionModelId === SOL_MODEL_ID)) {
+		const modelId = state.autoScope === "thinking" && state.sessionModelId ? state.sessionModelId : SOL_MODEL_ID;
+		if (stalledCheck.failedRuns < 3 || stalledCheck.escalated || (!canEscalateEffort && state.sessionModelId === modelId)) {
 			return;
 		}
 
 		stalledCheck.escalated = true;
 		const decision: AutoProfileDecision = {
 			providerId: state.providerId ?? "openai",
-			modelId: SOL_MODEL_ID,
+			modelId,
 			effort: "high",
 			source: "escalation",
 			rationale: "same verification still failing after two edit and retest cycles",
@@ -558,14 +584,14 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 		try {
 			await applyDecision(decision, ctx);
 			persist();
-			if (ctx.hasUI) ctx.ui.notify("Auto-profile escalated to sol:high after a stalled verification loop", "warning");
+			if (ctx.hasUI) ctx.ui.notify(`Auto-profile escalated to ${modelName(modelId)}:high after a stalled verification loop`, "warning");
 		} catch (error) {
 			if (ctx.hasUI) ctx.ui.notify(`Auto-profile escalation failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
 		}
 	});
 
 	pi.on("thinking_level_select", (event, ctx) => {
-		if (expectedThinkingLevel === event.level) return;
+		if (expectedModelKey || expectedThinkingLevel !== undefined) return;
 		state.mode = "locked";
 		state.providerId = isProfileProvider(ctx.model?.provider) ? ctx.model.provider : state.providerId;
 		state.sessionModelId = ctx.model?.id;
@@ -599,33 +625,70 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 				else console.log(report);
 				return;
 			}
-			if (value === "auto" || value === "unlock") {
-				state.mode = "auto";
-				state.source = "manual";
-				state.rationale = "automatic routing enabled";
-				persist();
-				setStatus(ctx, state);
-				if (ctx.hasUI) ctx.ui.notify(`Auto-profile enabled on ${providerName(state.providerId)}; next prompt will be classified`, "info");
+			const autoMatch = value.match(/^auto(?: (\S+))?$/);
+			if (autoMatch || value === "unlock") {
+				const target = autoMatch?.[1];
+				let providerId = isProfileProvider(ctx.model?.provider) ? ctx.model.provider : undefined;
+				let modelId = ctx.model?.id;
+				let autoScope: AutoProfileScope = "thinking";
+
+				if (target) {
+					const pair = target.match(/^(api|openai|codex|openai-codex)\/([a-z0-9][a-z0-9._-]*)$/);
+					const familyProvider = target === "current" ? providerId : parseProvider(target);
+					if (pair) {
+						providerId = parseProvider(pair[1]);
+						modelId = Object.hasOwn(MODEL_ALIASES, pair[2])
+							? MODEL_ALIASES[pair[2] as keyof typeof MODEL_ALIASES]
+							: pair[2];
+					} else if (familyProvider) {
+						providerId = familyProvider;
+						autoScope = "family";
+						modelId = modelId && FAMILY_MODEL_IDS.has(modelId) ? modelId : SOL_MODEL_ID;
+					} else if (Object.hasOwn(MODEL_ALIASES, target)) {
+						modelId = MODEL_ALIASES[target as keyof typeof MODEL_ALIASES];
+					} else {
+						ctx.ui.notify("Usage: /profile auto [api|codex|<provider>/<model>]", "warning");
+						return;
+					}
+				}
+				if (!providerId || !modelId) {
+					ctx.ui.notify("Select an OpenAI API or OpenAI Codex model first", "warning");
+					return;
+				}
+
+				const level = pi.getThinkingLevel();
+				try {
+					await applyDecision({
+						providerId,
+						modelId,
+						effort: isThinkingLevel(level) ? level : "medium",
+						source: "manual",
+						rationale: autoScope === "thinking" ? "automatic thinking on selected model" : "automatic family routing",
+					}, ctx);
+					state.mode = "auto";
+					state.autoScope = autoScope;
+					state.failuresSinceClassification = 0;
+					resetStalledCheck();
+					persist();
+					setStatus(ctx, state);
+					if (ctx.hasUI) ctx.ui.notify(`Auto-${autoScope} enabled: ${providerName(providerId)}/${modelName(modelId)}`, "info");
+				} catch (error) {
+					if (ctx.hasUI) ctx.ui.notify(`Auto-profile selection failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+				}
 				return;
 			}
 
-			const providerMatch = value.match(/^(provider|auto) (api|openai|codex|current)$/);
+			const providerMatch = value.match(/^provider (api|openai|codex|openai-codex|current)$/);
 			if (providerMatch) {
-				const requested = providerMatch[2];
-				const providerId: AutoProfileProvider | undefined =
-					requested === "current"
-						? isProfileProvider(ctx.model?.provider)
-							? ctx.model.provider
-							: undefined
-						: requested === "codex"
-							? "openai-codex"
-							: "openai";
+				const requested = providerMatch[1];
+				const providerId = requested === "current"
+					? (isProfileProvider(ctx.model?.provider) ? ctx.model.provider : undefined)
+					: parseProvider(requested);
 				if (!providerId) {
 					ctx.ui.notify("Current model is not OpenAI API or OpenAI Codex", "warning");
 					return;
 				}
-				if (providerMatch[1] === "auto") state.mode = "auto";
-				const modelId = state.sessionModelId && MODEL_NAMES[state.sessionModelId] ? state.sessionModelId : SOL_MODEL_ID;
+				const modelId = ctx.model?.id ?? state.sessionModelId ?? SOL_MODEL_ID;
 				const level = pi.getThinkingLevel();
 				const decision: AutoProfileDecision = {
 					providerId,
@@ -636,6 +699,7 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 				};
 				try {
 					await applyDecision(decision, ctx);
+					setStatus(ctx, state);
 					persist();
 					if (ctx.hasUI) ctx.ui.notify(`Session provider preference: ${providerName(providerId)}`, "info");
 				} catch (error) {
@@ -663,10 +727,10 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			const match = value.match(/^(?:(api|codex)\/)?(sol|terra|luna):(minimal|low|medium|high|xhigh|max)$/);
+			const match = value.match(/^(?:(api|codex)\/)?(astra|sol|terra|luna):(minimal|low|medium|high|xhigh|max)$/);
 			if (!match) {
 				ctx.ui.notify(
-					"Usage: /profile [status|auto [api|codex]|lock|provider <api|codex|current>|[api/|codex/]sol:<effort>|terra:<effort>|luna:<effort>]",
+					"Usage: /profile auto (thinking only) | auto <provider> (family routing) | auto <provider>/<model> (thinking only) | [api/|codex/]<astra|sol|terra|luna>:<effort> | status | lock | provider <api|codex|current>",
 					"warning",
 				);
 				return;
@@ -680,10 +744,11 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 				rationale: "explicit profile selection",
 			};
 			try {
-				state.mode = "locked";
 				await applyDecision(decision, ctx);
+				state.mode = "locked";
+				setStatus(ctx, state);
 				persist();
-				if (ctx.hasUI) ctx.ui.notify(`Profile locked: ${providerName(providerId)}/${match[2]}:${match[3]}`, "info");
+				if (ctx.hasUI) ctx.ui.notify(`Profile locked: ${providerName(providerId)}/${match[2]}:${state.effort ?? "off"}`, "info");
 			} catch (error) {
 				if (ctx.hasUI) ctx.ui.notify(`Profile selection failed: ${error instanceof Error ? error.message : String(error)}`, "error");
 			}
