@@ -1521,7 +1521,7 @@ def apply_rsync_chunk(chunk: PlanChunk, log_path: Path) -> Tuple[bool, str]:
     if chunk.direction == "pull":
         chunk.path.mkdir(parents=True, exist_ok=True)
 
-    result = run_command(apply_command, timeout=600, errors="replace")
+    result = run_command(apply_command, errors="replace")
     log_command_result(log_path, "apply {} {}".format(chunk.chunk_type, chunk.path), apply_command, result)
     if result.returncode != 0:
         detail = first_line(result.stderr) or first_line(result.stdout) or "rsync apply failed"
