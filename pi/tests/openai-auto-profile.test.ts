@@ -580,12 +580,15 @@ test("manual profile locks model and effort until auto is restored", async () =>
 	assert.equal(h.thinkingLevel, "xhigh");
 });
 
-test("external thinking changes create a manual lock", async () => {
-	const h = harness();
-	await h.handlers.get("session_start")?.({}, h.context);
-	await h.handlers.get("thinking_level_select")?.({ level: "high", previousLevel: "medium" }, h.context);
-	await h.handlers.get("before_agent_start")?.({ prompt: "Tiny edit" }, h.context);
-	assert.equal(h.classifierCalls, 0);
+test("external thinking changes, including off, create a manual lock", async () => {
+	for (const level of ["high", "off"]) {
+		const h = harness();
+		await h.handlers.get("session_start")?.({}, h.context);
+		await h.handlers.get("thinking_level_select")?.({ level, previousLevel: "medium" }, h.context);
+		await h.handlers.get("before_agent_start")?.({ prompt: "Tiny edit" }, h.context);
+		assert.equal(h.classifierCalls, 0);
+		assert.equal(h.entries.at(-1).data.effort, level);
+	}
 });
 
 test("restores profile state when navigating session branches", async () => {

@@ -1,4 +1,4 @@
-import type { AssistantMessage, ThinkingLevel, Usage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ModelThinkingLevel, Usage } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
@@ -31,7 +31,7 @@ const MODEL_NAMES: Record<string, string> = {
 	[CLASSIFIER_MODEL_ID]: "luna",
 };
 
-const EXPLICIT_EFFORTS = new Set<ThinkingLevel>(["minimal", "low", "medium", "high", "xhigh", "max"]);
+const EXPLICIT_EFFORTS = new Set<ModelThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const TASKS = new Set<AutoProfileTask>(["economy", "routine", "complex", "critical"]);
 
 export type AutoProfileTask = "economy" | "routine" | "complex" | "critical";
@@ -49,7 +49,7 @@ export type AutoProfileClassification = {
 export type AutoProfileDecision = {
 	providerId: AutoProfileProvider;
 	modelId: string;
-	effort: ThinkingLevel;
+	effort: ModelThinkingLevel;
 	source: AutoProfileSource;
 	task?: AutoProfileTask;
 	confidence?: number;
@@ -62,7 +62,7 @@ type PersistedProfile = {
 	autoScope?: AutoProfileScope;
 	providerId?: AutoProfileProvider;
 	sessionModelId?: string;
-	effort?: ThinkingLevel;
+	effort?: ModelThinkingLevel;
 	source: AutoProfileSource;
 	task?: AutoProfileTask;
 	confidence?: number;
@@ -89,8 +89,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function isThinkingLevel(value: unknown): value is ThinkingLevel {
-	return typeof value === "string" && EXPLICIT_EFFORTS.has(value as ThinkingLevel);
+function isThinkingLevel(value: unknown): value is ModelThinkingLevel {
+	return typeof value === "string" && EXPLICIT_EFFORTS.has(value as ModelThinkingLevel);
 }
 
 function isProfileProvider(value: unknown): value is AutoProfileProvider {
@@ -158,7 +158,7 @@ export function resolveAutoDecision(
 	autoScope: AutoProfileScope = "family",
 ): AutoProfileDecision {
 	let desiredModelId = SOL_MODEL_ID;
-	let effort: ThinkingLevel = "high";
+	let effort: ModelThinkingLevel = "high";
 
 	if (classification.task === "economy" && classification.confidence >= 0.9 && !highRisk) {
 		desiredModelId = TERRA_MODEL_ID;
@@ -171,7 +171,7 @@ export function resolveAutoDecision(
 
 	if (highRisk) {
 		desiredModelId = SOL_MODEL_ID;
-		if (effort === "minimal" || effort === "low" || effort === "medium") effort = "high";
+		if (effort === "medium") effort = "high";
 	}
 
 	const modelId = autoScope === "thinking" && sessionModelId ? sessionModelId : desiredModelId;
@@ -366,7 +366,7 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 		failureWarningShown: false,
 	};
 	let expectedModelKey: string | undefined;
-	let expectedThinkingLevel: ThinkingLevel | undefined;
+	let expectedThinkingLevel: ModelThinkingLevel | undefined;
 	let stalledCheck: { command?: string; failedRuns: number; editsSinceFailure: number; escalated: boolean } = {
 		failedRuns: 0,
 		editsSinceFailure: 0,
@@ -490,8 +490,10 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 		restoreState(ctx);
 	});
 
+	const profileIsLocked = () => state.mode === "locked";
+
 	pi.on("before_agent_start", async (event, ctx) => {
-		if (state.mode === "locked") {
+		if (profileIsLocked()) {
 			setStatus(ctx, state);
 			return;
 		}
@@ -522,7 +524,7 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 			}
 		}
 
-		if (state.mode === "locked") return;
+		if (profileIsLocked()) return;
 		state.failuresSinceClassification = 0;
 		resetStalledCheck();
 		try {
@@ -739,7 +741,7 @@ export default function openAIAutoProfileExtension(pi: ExtensionAPI) {
 			const decision: AutoProfileDecision = {
 				providerId,
 				modelId: MODEL_ALIASES[match[2] as keyof typeof MODEL_ALIASES],
-				effort: match[3] as ThinkingLevel,
+				effort: match[3] as ModelThinkingLevel,
 				source: "manual",
 				rationale: "explicit profile selection",
 			};

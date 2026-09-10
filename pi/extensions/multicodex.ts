@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "n
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import { getApiProvider, getModels } from "@earendil-works/pi-ai/compat";
+import { getModels, openAICodexResponsesApi } from "@earendil-works/pi-ai/compat";
 import type {
 	Api,
 	AssistantMessageEvent,
@@ -112,9 +112,7 @@ type OpenAIStatusSummary = {
 	components?: Array<{ name?: string; status?: string }>;
 };
 
-type ProviderLike = {
-	streamSimple(model: Model<Api>, context: Context, options?: SimpleStreamOptions): AsyncIterable<AssistantMessageEvent>;
-};
+type StreamSimple = ReturnType<typeof openAICodexResponsesApi>["streamSimple"];
 
 class UsageHttpError extends Error {
 	constructor(
@@ -1161,7 +1159,7 @@ function createErrorEvent(model: Model<Api>, message: string): AssistantMessageE
 	} as AssistantMessageEvent;
 }
 
-function createStreamWrapper(accountManager: AccountManager, baseProvider: ProviderLike) {
+function createStreamWrapper(accountManager: AccountManager, baseStreamSimple: StreamSimple) {
 	return (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => {
 		const stream = createAssistantMessageEventStream();
 
@@ -1191,7 +1189,7 @@ function createStreamWrapper(accountManager: AccountManager, baseProvider: Provi
 					}
 
 					const abortController = createLinkedAbortController(options?.signal);
-					const inner = baseProvider.streamSimple(
+					const inner = baseStreamSimple(
 						{ ...model, provider: PROVIDER_ID, api: "openai-codex-responses", headers: { ...(model.headers || {}), "X-Multicodex-Account": account.email } },
 						context,
 						{ ...options, apiKey: token, signal: abortController.signal },
@@ -1484,8 +1482,6 @@ function refreshResultMessage(accountManager: AccountManager, accounts: Account[
 
 export default function multicodex(pi: ExtensionAPI) {
 	const accountManager = new AccountManager();
-	const baseProvider = getApiProvider("openai-codex-responses") as ProviderLike | undefined;
-	if (!baseProvider) throw new Error("OpenAI Codex API provider not available in this pi install");
 	const baseModels = getModels(PROVIDER_ID) as readonly Model<Api>[];
 	let lastContext: ExtensionContext | undefined;
 	let refreshTimer: ReturnType<typeof setInterval> | undefined;
@@ -1508,7 +1504,7 @@ export default function multicodex(pi: ExtensionAPI) {
 		baseUrl: "https://chatgpt.com/backend-api",
 		apiKey: activeApiKey(accountManager),
 		api: "openai-codex-responses",
-		streamSimple: createStreamWrapper(accountManager, baseProvider),
+		streamSimple: createStreamWrapper(accountManager, openAICodexResponsesApi().streamSimple),
 		models: toModelDefinitions(baseModels),
 	});
 
