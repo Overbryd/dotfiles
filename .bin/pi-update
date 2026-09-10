@@ -4,15 +4,26 @@ set -euo pipefail
 PACKAGE="@earendil-works/pi-coding-agent"
 PREFIX="/opt/homebrew"
 
-if [[ $# -ne 0 ]]; then
-  printf 'Usage: pi-update\n' >&2
+latest=false
+case "${1:-}" in
+  "") ;;
+  --latest) latest=true ;;
+  *)
+    printf 'Usage: pi-update [--latest]\n' >&2
+    exit 64
+    ;;
+esac
+if [[ $# -gt 1 ]]; then
+  printf 'Usage: pi-update [--latest]\n' >&2
   exit 64
 fi
 
-min_release_age=$(npm config get min-release-age)
-if [[ ! "$min_release_age" =~ ^[0-9]+$ ]]; then
-  printf 'pi-update: npm min-release-age must be a non-negative integer; got %q\n' "$min_release_age" >&2
-  exit 1
+if [[ "$latest" == false ]]; then
+  release_cutoff=$(npm config get before)
+  if [[ -z "$release_cutoff" || "$release_cutoff" == "null" ]]; then
+    printf 'pi-update: npm before cutoff is unavailable; configure min-release-age\n' >&2
+    exit 1
+  fi
 fi
 
 current_version=$(pi --version)
@@ -22,16 +33,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
+if [[ "$latest" == true ]]; then
+  policy="latest release"
+  resolver=(npm --userconfig=/dev/null install --package-lock-only --ignore-scripts "$PACKAGE@>$current_version")
+else
+  policy="release cutoff $release_cutoff"
+  resolver=(npm --userconfig=/dev/null install --package-lock-only --ignore-scripts --before="$release_cutoff" "$PACKAGE@>$current_version")
+fi
+
 if ! resolver_output=$(
   cd "$tmp_dir"
-  npm install \
-    --package-lock-only \
-    --ignore-scripts \
-    --min-release-age="$min_release_age" \
-    "$PACKAGE@>$current_version" 2>&1
+  "${resolver[@]}" 2>&1
 ); then
   if grep -Eq 'code ETARGET|No matching version found' <<< "$resolver_output"; then
-    printf 'No eligible pi update newer than %s (min-release-age=%s days)\n' "$current_version" "$min_release_age"
+    printf 'No pi update newer than %s matching %s\n' "$current_version" "$policy"
     exit 0
   fi
 
@@ -46,13 +61,17 @@ candidate_version=$(node -e '
   process.stdout.write(version);
 ' "$tmp_dir/package-lock.json")
 
-printf 'Updating pi from %s to eligible %s (min-release-age=%s days)\n' \
-  "$current_version" "$candidate_version" "$min_release_age"
+printf 'Updating pi from %s to %s (%s)\n' \
+  "$current_version" "$candidate_version" "$policy"
 
-HOME="$PREFIX" sudo -Eu binary npm \
+# The exact version was vetted above. Disable project npm age policy during the
+# privileged install so it cannot override an explicit --latest selection.
+sudo -Eu binary env \
+  HOME="$PREFIX" \
+  NPM_CONFIG_MIN_RELEASE_AGE=0 \
+  npm \
   --prefix "$PREFIX" \
   install \
   -g \
   --ignore-scripts \
-  --min-release-age="$min_release_age" \
   "$PACKAGE@$candidate_version"
