@@ -523,7 +523,7 @@ defaults-LaunchAgents: \
 	launchctl unload -w $@ 2>/dev/null || true
 	launchctl load -w $@
 
-.PHONY: dotfiles pi-settings
+.PHONY: dotfiles pi-settings pi-inspect
 
 dotfiles: \
 	~/dotfiles \
@@ -534,7 +534,8 @@ dotfiles: \
 	$(PI_AGENT_FILES) \
 	$(PI_AGENT_SKILLS) \
 	$(PNPM_CONFIG_FILES) \
-	pi-settings
+	pi-settings \
+	pi-inspect
 
 ~/dotfiles:
 	ln -s /usr/local/dotfiles ~/dotfiles
@@ -582,6 +583,16 @@ pi-settings: pi/settings.json | ~/.pi/agent
 		exit 1
 	fi
 	mkdir -p $@
+
+pi-inspect: \
+	pi-inspect/node_modules/.package-lock.json \
+	~/.pi/agent/extensions/pi-inspect
+
+pi-inspect/node_modules/.package-lock.json: pi-inspect/package.json pi-inspect/package-lock.json
+	npm ci --ignore-scripts --prefix pi-inspect
+
+~/.pi/agent/extensions/pi-inspect: pi-inspect/package.json | ~/.pi/agent/extensions
+	ln -svfn $(DOTFILES_ROOT)/pi-inspect $@
 
 ~/.pi/agent/extensions/%: pi/extensions/% | ~/.pi/agent/extensions
 	ln -svf $(DOTFILES_ROOT)/$< $@

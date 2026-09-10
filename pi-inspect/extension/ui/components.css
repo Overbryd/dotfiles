@@ -1,0 +1,113 @@
+/* Shared tokens. Loaded only in the extension document or its shadow roots. */
+:root, :host {
+  color-scheme: light;
+  font: 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --surface: #fff;
+  --toolbar: #f1f3f4;
+  --text: #202124;
+  --muted: #5f6368;
+  --border: #dadce0;
+  --hover: #e8eaed;
+  --accent: #1a73e8;
+  --accent-surface: #e8f0fe;
+  --accent-text: #174ea6;
+  --success: #188038;
+  --warning: #b06000;
+  --error: #c5221f;
+  --radius: 3px;
+  --shadow: 0 2px 8px rgb(0 0 0 / 20%);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+:root[data-theme="dark"], :host([data-theme="dark"]) {
+  color-scheme: dark;
+  --surface: #202124;
+  --toolbar: #292a2d;
+  --text: #e8eaed;
+  --muted: #9aa0a6;
+  --border: #3c4043;
+  --hover: #35363a;
+  --accent: #8ab4f8;
+  --accent-surface: #394457;
+  --accent-text: #d2e3fc;
+  --success: #81c995;
+  --warning: #fdd663;
+  --error: #f28b82;
+}
+* { box-sizing: border-box; }
+[hidden], .hidden, :host([hidden]) { display: none !important; }
+
+/* Controls: opt in by class, with one interaction contract everywhere. */
+.pi-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pi-button:hover:not(:disabled) { background: var(--hover); }
+.pi-button:active:not(:disabled) { background: var(--accent-surface); color: var(--accent-text); }
+.pi-button:disabled { cursor: default; opacity: 0.45; }
+.pi-button--toolbar { border-color: transparent; background: transparent; }
+.pi-button--icon { width: 24px; padding: 3px; }
+.pi-button--primary { background: var(--accent-surface); color: var(--accent-text); border-color: var(--accent); }
+.pi-button--danger { color: var(--error); }
+:is(.pi-button, .pi-input, .pi-textarea, .pi-checkbox):focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.pi-input, .pi-textarea {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 3px 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.pi-textarea { resize: vertical; }
+.pi-input::placeholder, .pi-textarea::placeholder { color: var(--muted); opacity: 1; }
+.pi-checkbox { width: 13px; height: 13px; margin: 0; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+.pi-checkbox:disabled { cursor: default; }
+.pi-icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; flex-shrink: 0; }
+
+/* In-page components. Host rules stay inside closed shadow roots. */
+:host { position: fixed; color: var(--text); }
+:host([data-pi-inspect="highlight"]) {
+  pointer-events: none;
+  z-index: 2147483647;
+  border: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-sizing: border-box;
+}
+:host([data-pi-inspect="notes"]) { inset: 0; z-index: 2147483646; pointer-events: none; }
+:host([data-pi-inspect="composer"]) { z-index: 2147483647; }
+:host([data-pi-inspect="notes"]) #notes { position: fixed; inset: 0; pointer-events: none; }
+:host([data-pi-inspect="notes"]) article { position: fixed; pointer-events: none; }
+:host([data-pi-inspect="notes"]) .pin { display: flex; align-items: center; gap: 4px; height: 12px; white-space: nowrap; }
+:host([data-pi-inspect="notes"]) .dot { width: 10px; height: 10px; flex: 0 0 10px; border: 2px solid var(--surface); border-radius: 50%; background: var(--accent); box-shadow: 0 1px 5px rgb(0 0 0 / 35%); }
+:host([data-pi-inspect="notes"]) .badge { color: var(--accent); font-weight: 600; text-shadow: 0 1px 2px var(--surface); }
+:host([data-pi-inspect="notes"]) .detail { position: absolute; display: none; top: 17px; left: 0; width: min(280px, calc(100vw - 24px)); padding: 8px 10px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+:host([data-pi-inspect="notes"]) article.expanded, :host([data-pi-inspect="notes"]) article.offscreen { pointer-events: auto; }
+:host([data-pi-inspect="notes"]) article.expanded .detail { display: block; }
+:host([data-pi-inspect="notes"]) article.offscreen .badge, :host([data-pi-inspect="notes"]) article.offscreen .detail { display: none; }
+:host([data-pi-inspect="notes"]) article.offscreen .dot { cursor: pointer; }
+:host([data-pi-inspect="notes"]) article.align-right .detail { right: 0; left: auto; }
+:host([data-pi-inspect="notes"]) article.align-bottom .detail { top: auto; bottom: 17px; }
+:host([data-pi-inspect="notes"]) strong, :host([data-pi-inspect="notes"]) small, :host([data-pi-inspect="notes"]) p { display: block; margin: 0; overflow-wrap: anywhere; }
+:host([data-pi-inspect="notes"]) strong { color: var(--accent); }
+:host([data-pi-inspect="notes"]) small { margin-top: 2px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:host([data-pi-inspect="notes"]) small.source { direction: rtl; text-align: left; }
+:host([data-pi-inspect="notes"]) p { margin-top: 6px; white-space: pre-wrap; cursor: text; }
+:host([data-pi-inspect="notes"]) .pi-textarea { width: 100%; min-height: 82px; margin-top: 7px; }
+:host([data-pi-inspect="notes"]) footer { display: flex; justify-content: flex-end; gap: 6px; margin-top: 7px; }
+:host([data-pi-inspect="composer"]) form { width: 340px; padding: 10px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+:host([data-pi-inspect="composer"]) strong, :host([data-pi-inspect="composer"]) small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:host([data-pi-inspect="composer"]) small { margin-top: 2px; color: var(--muted); }
+:host([data-pi-inspect="composer"]) small.source { direction: rtl; text-align: left; }
+:host([data-pi-inspect="composer"]) .pi-textarea { width: 100%; min-height: 90px; margin: 8px 0; }
+:host([data-pi-inspect="composer"]) footer { display: flex; justify-content: flex-end; gap: 6px; }

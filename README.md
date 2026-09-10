@@ -32,6 +32,14 @@ Or upgrade all installed packages:
     cd ~/dotfiles
     make brew
 
+## Pi Inspect
+
+[Pi Inspect](pi-inspect/README.md) contains the Chrome/Vivaldi extension and pi bridge for source-aware browser feedback.
+
+    make pi-inspect
+
+Also included in `make dotfiles`. Load `~/dotfiles/pi-inspect/extension/` as an unpacked browser extension, then run `/reload` and `/browser-pair` in pi.
+
 ## Contents
 
     .

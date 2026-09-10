@@ -1,0 +1,4 @@
+node_modules/
+.pi/playwright-runs/
+.pi/playwright-scenarios/__pycache__/
+.DS_Store

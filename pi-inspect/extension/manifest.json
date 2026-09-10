@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Pi Inspect",
+  "version": "0.1.0",
+  "description": "Inspect and annotate page regions in DevTools, then send source-aware feedback to pi.",
+  "permissions": ["scripting", "storage"],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "http://*.localhost/*",
+    "https://localhost/*",
+    "https://*.localhost/*"
+  ],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "devtools_page": "devtools.html",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src ws://127.0.0.1:17373"
+  }
+}

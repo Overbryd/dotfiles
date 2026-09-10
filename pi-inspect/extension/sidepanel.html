@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pi Inspect</title>
+    <link rel="stylesheet" href="ui/components.css">
+    <link rel="stylesheet" href="sidepanel.css">
+  </head>
+  <body>
+    <div id="workspace" hidden>
+      <header class="toolbar" aria-label="Inspection actions">
+        <button id="pick" class="pi-button pi-button--toolbar" title="Select an element in the inspected page to annotate it">
+          <svg class="pi-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4M8 7l8 4-4 1-1 4Z"/></svg>
+          <span>Select element</span>
+        </button>
+        <span class="separator" aria-hidden="true"></span>
+        <button id="draft-all" class="pi-button pi-button--toolbar" title="Put unresolved notes in pi's editor">Draft all</button>
+        <button id="send-all" class="pi-button pi-button--toolbar" title="Send unresolved notes to pi">Send all</button>
+        <button id="clear-resolved" class="pi-button pi-button--toolbar pi-button--icon" title="Clear resolved notes" aria-label="Clear resolved notes">
+          <svg class="pi-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m5.5 14.5 9-9"/></svg>
+        </button>
+      </header>
+
+      <div class="options-bar">
+        <label class="drive-control">
+          <input id="enable-driving" class="pi-checkbox" type="checkbox">
+          <span>Enable browser driving on all sites</span>
+        </label>
+      </div>
+
+      <section id="pairing" class="connection-panel hidden" aria-labelledby="pairing-title">
+        <h2 id="pairing-title">Connect to pi</h2>
+        <p>Run <code>/browser-pair</code> in pi, then enter the six-digit code.</p>
+        <form id="pairing-form" class="row">
+          <input id="pairing-code" class="pi-input" aria-label="Pairing code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="000000">
+          <button id="pair" class="pi-button pi-button--primary" type="submit">Connect</button>
+        </form>
+      </section>
+
+      <section class="notes-pane" aria-label="Page notes">
+        <div class="section-heading">Notes <span id="annotation-count">0</span></div>
+        <main id="annotations" aria-live="polite"></main>
+        <div id="empty-state" class="empty">
+          <strong>No notes yet</strong>
+          <p>Select an element in the inspected page<br>to add source-aware feedback.</p>
+        </div>
+      </section>
+
+      <footer class="status-bar">
+        <span id="connection-status" class="status disconnected" role="status">Disconnected</span>
+        <span class="status-endpoint" title="Local pi bridge">127.0.0.1:17373</span>
+      </footer>
+    </div>
+
+    <main id="devtools-required" class="empty" hidden>
+      <strong>Open Pi Inspect in DevTools</strong>
+      <p>Inspect a web page, then select the Pi Inspect tab.<br>This extension has no standalone or toolbar view.</p>
+    </main>
+
+    <template id="annotation-template">
+      <article class="annotation">
+        <div class="annotation-heading">
+          <strong class="note-title"></strong>
+          <span class="target"></span>
+          <button class="remove pi-button pi-button--toolbar pi-button--icon" title="Delete note" aria-label="Delete note">
+            <svg class="pi-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 6 8 8m0-8-8 8"/></svg>
+          </button>
+        </div>
+        <div class="annotation-body">
+          <small class="source"></small>
+          <textarea class="comment pi-textarea" rows="3" aria-label="Note text" placeholder="What should change here?"></textarea>
+          <div class="annotation-actions">
+            <label><input class="resolved pi-checkbox" type="checkbox"> Resolved</label>
+            <span></span>
+            <button class="highlight pi-button pi-button--toolbar" title="Highlight this element in the inspected page">Show</button>
+            <button class="draft pi-button pi-button--toolbar" title="Put this note in pi's editor">Draft</button>
+            <button class="send pi-button pi-button--toolbar" title="Send this note to pi">Send</button>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <script src="lib/notes.js"></script>
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>

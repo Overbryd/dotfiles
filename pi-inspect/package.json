@@ -1,0 +1,20 @@
+{
+  "name": "pi-inspect",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Point at rendered page regions and send source-aware feedback to an active pi session.",
+  "type": "module",
+  "pi": {
+    "extensions": ["./pi-extension/index.ts"]
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check extension/content.js && node --check extension/devtools.js && node --check extension/sidepanel.js && node --check extension/lib/devtools.js && node --check extension/ui/shadow.js && node --check extension/ui/install.js && node --check extension/lib/notes.js && node --check extension/lib/phoenix-source.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13"
+  }
+}
