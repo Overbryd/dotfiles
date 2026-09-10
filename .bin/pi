@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Overlay the Homebrew pi install with the local fork (github.com/Overbryd/pi)
+# whenever that fork is built. Falls back to the packaged pi otherwise.
+FORK_CLI="${PI_FORK_ROOT:-$HOME/Projects/JavaScript/pi}/packages/coding-agent/dist/cli.js"
+
+if [[ -x "$FORK_CLI" ]]; then
+  exec "$FORK_CLI" "$@"
+fi
+
+exec "${HOMEBREW_PREFIX:-/opt/homebrew}/bin/pi" "$@"

@@ -11,6 +11,8 @@ PNPM_CONFIG_FILES := ~/Library/Preferences/pnpm/config.yaml
 
 DOTFILES_ROOT = $(HOME)/dotfiles
 BREW = $(DOTFILES_ROOT)/.bin/brew
+PI_FORK_ROOT = $(HOME)/Projects/JavaScript/pi
+PI_INSTALLED_AI = $(HOMEBREW_PREFIX)/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai
 NODE_VERSION = 20.12.0
 NPM_VERSION = 11.11.0
 NPM_MIN_RELEASE_AGE = 30
@@ -523,7 +525,7 @@ defaults-LaunchAgents: \
 	launchctl unload -w $@ 2>/dev/null || true
 	launchctl load -w $@
 
-.PHONY: dotfiles pi-settings
+.PHONY: dotfiles pi-settings pi-fork
 
 dotfiles: \
 	~/dotfiles \
@@ -574,6 +576,23 @@ pi-settings: pi/settings.json | ~/.pi/agent
 	fi; \
 	test ! -L $(HOME)/.pi/agent/settings.json || rm $(HOME)/.pi/agent/settings.json; \
 	mv $$tmp $(HOME)/.pi/agent/settings.json
+
+# Build the pi fork that .bin/pi prefers over the Homebrew install.
+# Model data is generated instead of committed, so reuse the data the installed pi-ai
+# release shipped with. That keeps the build offline and requires a fork rebased onto
+# the upstream tag matching the installed version.
+pi-fork: $(PI_FORK_ROOT)/.git
+	test "$$(node -p "require('$(PI_INSTALLED_AI)/package.json').version")" = "$$(node -p "require('$(PI_FORK_ROOT)/packages/ai/package.json').version")" || { echo "pi-fork: rebase $(PI_FORK_ROOT) onto the upstream tag matching the installed pi version"; exit 1; }
+	npm --prefix $(PI_FORK_ROOT) ci --ignore-scripts
+	rm -rf $(PI_FORK_ROOT)/packages/ai/src/providers/data
+	cp -R $(PI_INSTALLED_AI)/dist/providers/data $(PI_FORK_ROOT)/packages/ai/src/providers/data
+	npm --prefix $(PI_FORK_ROOT) run build:offline
+	npm --prefix $(PI_FORK_ROOT)/packages/ai test -- test/openai-responses-native-compaction.test.ts
+
+$(PI_FORK_ROOT)/.git:
+	git clone git@github.com:Overbryd/pi.git $(PI_FORK_ROOT)
+	git -C $(PI_FORK_ROOT) remote add upstream https://github.com/earendil-works/pi.git
+	git -C $(PI_FORK_ROOT) remote set-url --push upstream DISABLED
 
 ~/.pi/agent:
 	if [ -L $$HOME/.pi ]; then
