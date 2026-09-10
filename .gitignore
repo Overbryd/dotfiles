@@ -14,3 +14,4 @@ Thumbs.db
 .byebug_history
 .envrc
 .bin/**/__pycache__/
+.agent/skills/**/__pycache__/
