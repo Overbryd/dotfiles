@@ -26,15 +26,10 @@ The setup is intentionally split by device type.
 The agent checks:
 
 - Home Assistant away/home state
-- local screen lock state
-- local idle time
 - current WireGuard tunnel state
+- reachability of the VPN gateway
 
-It then decides whether to:
-
-- start the `ms1` tunnel
-- stop it again optionally
-- or do nothing
+When Home Assistant reports away, it starts a disconnected tunnel immediately. While connected, it restarts the tunnel after repeated gateway health-check failures. Disconnect-on-return remains optional.
 
 ### Mobile Macs
 
@@ -51,8 +46,11 @@ This keeps laptops simple and reliable while roaming.
 ## Files
 
 - `.bin/wg-tunnel`
-  - wraps `scutil --nc`
+  - compiles and caches `.bin/wg-tunnel.swift`
+  - controls app-managed tunnels through `NETunnelProviderManager`
   - supports `list`, `show`, `status`, `is-connected`, `start`, `stop`
+- `.bin/wg-tunnel.swift`
+  - provides the NetworkExtension control helper
 - `.bin/ms1-away-vpn-agent`
   - intended to run on `ms1`
   - consumes external config from `~/.wg-auto/ms1.env`
@@ -88,14 +86,11 @@ That means the LaunchAgent can safely be installed broadly by your dotfiles, whi
 
 Default behavior:
 
-- if HA says you are **away**
-- and `ms1` is **locked** or **idle long enough**
-- and the tunnel is not already connected
-- then the agent starts the tunnel
+- if HA says you are **away** and the tunnel is disconnected, start it
+- if HA says you are **away** and the VPN gateway fails three consecutive checks, restart it
+- if HA cannot be queried, leave the tunnel unchanged
 
-Default non-behavior:
-
-- disconnect-on-return is disabled unless explicitly enabled in config
+Disconnect-on-return is disabled unless explicitly enabled in config.
 
 ## Related docs
 

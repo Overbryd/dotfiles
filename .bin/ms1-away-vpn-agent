@@ -9,14 +9,14 @@ readonly AWK_BIN=/usr/bin/awk
 readonly CURL_BIN=/usr/bin/curl
 readonly DATE_BIN=/bin/date
 readonly HOSTNAME_BIN=/bin/hostname
-readonly IOREG_BIN=/usr/sbin/ioreg
-readonly PLUTIL_BIN=/usr/bin/plutil
+readonly PING_BIN=${PING_BIN:-/sbin/ping}
 readonly RUBY_BIN=/usr/bin/ruby
 readonly SECURITY_BIN=/usr/bin/security
 readonly SED_BIN=/usr/bin/sed
 readonly TR_BIN=/usr/bin/tr
 readonly ID_BIN=/usr/bin/id
 readonly MKDIR_BIN=/bin/mkdir
+readonly RM_BIN=/bin/rm
 
 DRY_RUN=0
 
@@ -25,10 +25,7 @@ usage() {
 Usage:
   ms1-away-vpn-agent [--dry-run] [--help]
 
-Automates a WireGuard tunnel on macOS based on:
-- Home Assistant presence state
-- local screen lock state
-- local idle time
+Keeps a WireGuard tunnel healthy while Home Assistant reports away.
 
 This script is safe to keep in a public dotfiles repo:
 - it reads configuration from outside the repo by default
@@ -42,9 +39,8 @@ Recommended Keychain setup:
 
 Useful overrides for local testing:
   WG_AUTO_EXPECT_HOSTNAME=mba1
-  WG_AUTO_HA_STATE_OVERRIDE=on
-  WG_AUTO_LOCKED_OVERRIDE=true
-  WG_AUTO_IDLE_SECONDS_OVERRIDE=900
+  WG_AUTO_HA_STATE_OVERRIDE=away
+  WG_AUTO_HEALTH_STATE_OVERRIDE=healthy
   ms1-away-vpn-agent --dry-run
 EOF
 }
@@ -134,40 +130,6 @@ current_hostname() {
   "$HOSTNAME_BIN" -s 2>/dev/null || "$HOSTNAME_BIN"
 }
 
-current_lock_state() {
-  if [[ -n "${WG_AUTO_LOCKED_OVERRIDE:-}" ]]; then
-    bool_from_text "$WG_AUTO_LOCKED_OVERRIDE"
-    return
-  fi
-
-  if "$IOREG_BIN" -a -n Root -d1 2>/dev/null | "$PLUTIL_BIN" -extract IOConsoleLocked raw -o - - 2>/dev/null; then
-    return
-  fi
-
-  echo false
-}
-
-current_idle_seconds() {
-  local idle_ns
-
-  if [[ -n "${WG_AUTO_IDLE_SECONDS_OVERRIDE:-}" ]]; then
-    printf '%s\n' "$WG_AUTO_IDLE_SECONDS_OVERRIDE"
-    return
-  fi
-
-  idle_ns=$(
-    "$IOREG_BIN" -c IOHIDSystem 2>/dev/null \
-      | "$AWK_BIN" '/HIDIdleTime/ { gsub(/[^0-9]/, "", $NF); print $NF; exit }'
-  )
-
-  if [[ -z "$idle_ns" ]]; then
-    echo 0
-    return
-  fi
-
-  echo $(( idle_ns / 1000000000 ))
-}
-
 home_assistant_token() {
   if [[ -n "${HA_TOKEN:-}" ]]; then
     printf '%s' "$HA_TOKEN"
@@ -206,6 +168,51 @@ home_assistant_state() {
 
   printf '%s' "$response" \
     | "$RUBY_BIN" -rjson -e 'print JSON.parse(STDIN.read).fetch("state")'
+}
+
+current_tunnel_health() {
+  if [[ -n "${WG_AUTO_HEALTH_STATE_OVERRIDE:-}" ]]; then
+    case "$(normalize "$WG_AUTO_HEALTH_STATE_OVERRIDE")" in
+      healthy) echo true ;;
+      unhealthy) echo false ;;
+      *) bool_from_text "$WG_AUTO_HEALTH_STATE_OVERRIDE" ;;
+    esac
+    return
+  fi
+
+  if "$PING_BIN" -n -c 1 -W "$WG_AUTO_PING_TIMEOUT_MS" "$WG_AUTO_HEALTHCHECK_HOST" >/dev/null 2>&1; then
+    echo true
+  else
+    echo false
+  fi
+}
+
+health_failure_count() {
+  local count=0
+
+  if [[ -f "$WG_AUTO_HEALTH_FAILURE_FILE" ]]; then
+    read -r count < "$WG_AUTO_HEALTH_FAILURE_FILE" || true
+  fi
+
+  if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+    count=0
+  fi
+
+  printf '%s\n' "$count"
+}
+
+increment_health_failure_count() {
+  local count
+
+  count=$(health_failure_count)
+  count=$((count + 1))
+  "$MKDIR_BIN" -p "$WG_AUTO_STATE_DIR"
+  printf '%s\n' "$count" > "$WG_AUTO_HEALTH_FAILURE_FILE"
+  printf '%s\n' "$count"
+}
+
+clear_health_failures() {
+  "$RM_BIN" -f "$WG_AUTO_HEALTH_FAILURE_FILE"
 }
 
 presence_from_state() {
@@ -259,12 +266,14 @@ load_external_config
 WG_AUTO_EXPECT_HOSTNAME=${WG_AUTO_EXPECT_HOSTNAME:-ms1}
 WG_AUTO_TUNNEL=${WG_AUTO_TUNNEL:-ms1}
 WG_TUNNEL_BIN=${WG_TUNNEL_BIN:-$WG_TUNNEL_BIN_DEFAULT}
-WG_AUTO_IDLE_THRESHOLD_SECONDS=${WG_AUTO_IDLE_THRESHOLD_SECONDS:-600}
-WG_AUTO_HOME_ACTIVE_THRESHOLD_SECONDS=${WG_AUTO_HOME_ACTIVE_THRESHOLD_SECONDS:-120}
 WG_AUTO_ENABLE_DISCONNECT=$(bool_to_int "${WG_AUTO_ENABLE_DISCONNECT:-0}")
 WG_AUTO_TREAT_OTHER_STATES_AS_AWAY=$(bool_to_int "${WG_AUTO_TREAT_OTHER_STATES_AS_AWAY:-0}")
+WG_AUTO_HEALTHCHECK_HOST=${WG_AUTO_HEALTHCHECK_HOST:-10.10.10.1}
+WG_AUTO_HEALTH_FAILURE_THRESHOLD=${WG_AUTO_HEALTH_FAILURE_THRESHOLD:-3}
+WG_AUTO_PING_TIMEOUT_MS=${WG_AUTO_PING_TIMEOUT_MS:-2000}
 WG_AUTO_STATE_DIR=${WG_AUTO_STATE_DIR:-$HOME/.local/state/wg-auto}
 WG_AUTO_STATE_FILE=${WG_AUTO_STATE_FILE:-$WG_AUTO_STATE_DIR/ms1-away-vpn-agent.last}
+WG_AUTO_HEALTH_FAILURE_FILE=${WG_AUTO_HEALTH_FAILURE_FILE:-$WG_AUTO_STATE_DIR/ms1-away-vpn-agent.health-failures}
 HA_URL=${HA_URL:-}
 HA_ENTITY_ID=${HA_ENTITY_ID:-}
 HA_AWAY_STATES=${HA_AWAY_STATES:-on,away,not_home}
@@ -276,13 +285,18 @@ if [[ "$(current_hostname)" != "$WG_AUTO_EXPECT_HOSTNAME" ]]; then
   exit 0
 fi
 
-if [[ ! -x "$WG_TUNNEL_BIN" ]]; then
-  log_if_changed "error=missing-wg-tunnel path=$WG_TUNNEL_BIN"
+if [[ ! "$WG_AUTO_HEALTH_FAILURE_THRESHOLD" =~ ^[1-9][0-9]*$ ]]; then
+  log_if_changed "error=invalid-health-failure-threshold value=$WG_AUTO_HEALTH_FAILURE_THRESHOLD"
   exit 1
 fi
 
-if ! "$WG_TUNNEL_BIN" show "$WG_AUTO_TUNNEL" >/dev/null 2>&1; then
-  log_if_changed "error=tunnel-not-found tunnel=$WG_AUTO_TUNNEL"
+if [[ ! "$WG_AUTO_PING_TIMEOUT_MS" =~ ^[1-9][0-9]*$ ]]; then
+  log_if_changed "error=invalid-ping-timeout value=$WG_AUTO_PING_TIMEOUT_MS"
+  exit 1
+fi
+
+if [[ ! -x "$WG_TUNNEL_BIN" ]]; then
+  log_if_changed "error=missing-wg-tunnel path=$WG_TUNNEL_BIN"
   exit 1
 fi
 
@@ -304,55 +318,52 @@ if ! ha_state=$(home_assistant_state 2>&1); then
   exit 1
 fi
 
-if ! locked=$(current_lock_state 2>/dev/null); then
-  log_if_changed "error=lock-state-unreadable"
+presence=$(presence_from_state "$ha_state")
+
+if ! tunnel_status=$("$WG_TUNNEL_BIN" status "$WG_AUTO_TUNNEL" 2>&1); then
+  log_if_changed "error=tunnel-status-failed tunnel=$WG_AUTO_TUNNEL detail=$(single_line "$tunnel_status")"
   exit 1
 fi
 
-idle_seconds=$(current_idle_seconds)
-presence=$(presence_from_state "$ha_state")
-connected=no
-
-if "$WG_TUNNEL_BIN" is-connected "$WG_AUTO_TUNNEL" >/dev/null 2>&1; then
-  connected=yes
-fi
-
-idle_enough=no
-if (( idle_seconds >= WG_AUTO_IDLE_THRESHOLD_SECONDS )); then
-  idle_enough=yes
-fi
-
-home_active=no
-if [[ "$locked" == false ]] && (( idle_seconds < WG_AUTO_HOME_ACTIVE_THRESHOLD_SECONDS )); then
-  home_active=yes
-fi
-
+tunnel_status=$(normalize "$tunnel_status")
 action=no-op
 reason=''
+health_failures=0
 
 case "$presence" in
   away)
-    if [[ "$connected" == yes ]]; then
-      reason='away-but-already-connected'
-    elif [[ "$locked" == true ]]; then
-      action=start
-      reason='away-and-locked'
-    elif [[ "$idle_enough" == yes ]]; then
-      action=start
-      reason='away-and-idle-threshold-met'
-    else
-      reason='away-but-machine-still-active'
-    fi
+    case "$tunnel_status" in
+      connected)
+        if [[ "$(current_tunnel_health)" == true ]]; then
+          clear_health_failures
+          reason='away-and-healthy'
+        else
+          health_failures=$(increment_health_failure_count)
+          if (( health_failures >= WG_AUTO_HEALTH_FAILURE_THRESHOLD )); then
+            action=restart
+            reason='away-and-healthcheck-failed'
+          else
+            reason="away-and-healthcheck-failed-${health_failures}-of-${WG_AUTO_HEALTH_FAILURE_THRESHOLD}"
+          fi
+        fi
+        ;;
+      connecting|reasserting|disconnecting)
+        reason="away-and-tunnel-$tunnel_status"
+        ;;
+      *)
+        action=start
+        reason='away-and-disconnected'
+        ;;
+    esac
     ;;
 
   home)
-    if [[ "$connected" == no ]]; then
+    clear_health_failures
+    if [[ "$tunnel_status" == disconnected || "$tunnel_status" == invalid ]]; then
       reason='home-and-tunnel-already-disconnected'
-    elif [[ "$WG_AUTO_ENABLE_DISCONNECT" == 1 && "$home_active" == yes ]]; then
-      action=stop
-      reason='home-and-active-again'
     elif [[ "$WG_AUTO_ENABLE_DISCONNECT" == 1 ]]; then
-      reason='home-but-not-active-enough-to-disconnect'
+      action=stop
+      reason='home-and-disconnect-enabled'
     else
       reason='home-and-disconnect-disabled'
     fi
@@ -363,17 +374,18 @@ case "$presence" in
     ;;
 esac
 
-summary="state=presence:$presence ha:$ha_state locked:$locked idle_enough:$idle_enough connected:$connected action:$action reason:$reason"
+summary="state=presence:$presence ha:$ha_state tunnel_status:$tunnel_status health_failures:$health_failures action:$action reason:$reason"
 
 case "$action" in
   start)
     if (( DRY_RUN )); then
-      log_force "dry_run=1 tunnel=$WG_AUTO_TUNNEL action=start idle_seconds=$idle_seconds locked=$locked ha_state=$ha_state reason=$reason"
+      log_force "dry_run=1 tunnel=$WG_AUTO_TUNNEL action=start ha_state=$ha_state reason=$reason"
       exit 0
     fi
 
     if result=$("$WG_TUNNEL_BIN" start "$WG_AUTO_TUNNEL" 2>&1); then
-      log_force "tunnel=$WG_AUTO_TUNNEL action=start result=$(single_line "$result") idle_seconds=$idle_seconds locked=$locked ha_state=$ha_state reason=$reason"
+      clear_health_failures
+      log_force "tunnel=$WG_AUTO_TUNNEL action=start result=$(single_line "$result") ha_state=$ha_state reason=$reason"
       exit 0
     fi
 
@@ -381,14 +393,36 @@ case "$action" in
     exit 1
     ;;
 
+  restart)
+    if (( DRY_RUN )); then
+      log_force "dry_run=1 tunnel=$WG_AUTO_TUNNEL action=restart ha_state=$ha_state reason=$reason"
+      exit 0
+    fi
+
+    if ! stop_result=$("$WG_TUNNEL_BIN" stop "$WG_AUTO_TUNNEL" 2>&1); then
+      log_force "error=tunnel-restart-stop-failed tunnel=$WG_AUTO_TUNNEL detail=$(single_line "$stop_result")"
+      exit 1
+    fi
+
+    if start_result=$("$WG_TUNNEL_BIN" start "$WG_AUTO_TUNNEL" 2>&1); then
+      clear_health_failures
+      log_force "tunnel=$WG_AUTO_TUNNEL action=restart stop_result=$(single_line "$stop_result") start_result=$(single_line "$start_result") ha_state=$ha_state reason=$reason"
+      exit 0
+    fi
+
+    log_force "error=tunnel-restart-start-failed tunnel=$WG_AUTO_TUNNEL detail=$(single_line "$start_result")"
+    exit 1
+    ;;
+
   stop)
     if (( DRY_RUN )); then
-      log_force "dry_run=1 tunnel=$WG_AUTO_TUNNEL action=stop idle_seconds=$idle_seconds locked=$locked ha_state=$ha_state reason=$reason"
+      log_force "dry_run=1 tunnel=$WG_AUTO_TUNNEL action=stop ha_state=$ha_state reason=$reason"
       exit 0
     fi
 
     if result=$("$WG_TUNNEL_BIN" stop "$WG_AUTO_TUNNEL" 2>&1); then
-      log_force "tunnel=$WG_AUTO_TUNNEL action=stop result=$(single_line "$result") idle_seconds=$idle_seconds locked=$locked ha_state=$ha_state reason=$reason"
+      clear_health_failures
+      log_force "tunnel=$WG_AUTO_TUNNEL action=stop result=$(single_line "$result") ha_state=$ha_state reason=$reason"
       exit 0
     fi
 

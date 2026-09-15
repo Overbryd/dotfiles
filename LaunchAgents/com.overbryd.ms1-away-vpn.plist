@@ -12,7 +12,7 @@
 	<array>
 		<string>/bin/bash</string>
 		<string>-c</string>
-		<string>$HOME/dotfiles/.bin/ms1-away-vpn-agent</string>
+        <string>exec "$HOME/.bin/ms1-away-vpn-agent"</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

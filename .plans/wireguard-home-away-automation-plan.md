@@ -1,5 +1,7 @@
 # WireGuard home/away automation plan
 
+> Historical design note. The implemented agent no longer uses `scutil --nc` or local idle/lock gating. See [`docs/wireguard-home-away/`](../docs/wireguard-home-away/) for current behavior.
+
 ## 1. Problem statement
 
 You have two related but slightly different VPN automation needs:

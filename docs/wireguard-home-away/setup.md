@@ -67,15 +67,15 @@ launchctl load -w ~/Library/LaunchAgents/com.overbryd.ms1-away-vpn.plist
 Before letting it control the real `ms1` tunnel, test the decision logic:
 
 ```bash
-WG_AUTO_HA_STATE_OVERRIDE=on \
-WG_AUTO_IDLE_SECONDS_OVERRIDE=900 \
+WG_AUTO_HA_STATE_OVERRIDE=away \
+WG_AUTO_HEALTH_STATE_OVERRIDE=healthy \
 ~/dotfiles/.bin/ms1-away-vpn-agent --dry-run
 ```
 
-Example expected output:
+Example output when the tunnel is disconnected:
 
 ```text
-2026-03-31T00:53:18+0200 dry_run=1 tunnel=ms1 action=start idle_seconds=900 locked=false ha_state=on reason=away-and-idle-threshold-met
+2026-03-31T00:53:18+0200 dry_run=1 tunnel=ms1 action=start ha_state=away reason=away-and-disconnected
 ```
 
 ## 5. Real tunnel wrapper checks
@@ -87,6 +87,8 @@ Useful manual checks:
 ~/dotfiles/.bin/wg-tunnel show ms1
 ~/dotfiles/.bin/wg-tunnel status ms1
 ```
+
+The first invocation compiles `.bin/wg-tunnel.swift` and caches the executable under `~/Library/Caches/com.overbryd.wg-tunnel/`. This requires the Xcode Command Line Tools and `/usr/bin/swiftc`.
 
 Manual control if needed:
 
@@ -128,25 +130,33 @@ That way the laptop connects automatically when away from home.
 
 By default, the script only auto-connects.
 
-To also disconnect when you are home again and actively using `ms1`, set:
+To disconnect when Home Assistant reports home, set:
 
 ```bash
 WG_AUTO_ENABLE_DISCONNECT=1
 ```
 
-This is intentionally off by default.
+This is off by default to avoid terminating a remote session during a transient presence change.
 
 ## 9. Troubleshooting
 
 ### Tunnel not found
 
-Check that the official WireGuard app exposes the tunnel through macOS VPN services:
+List the official WireGuard app's tunnels:
 
 ```bash
-scutil --nc list
+~/dotfiles/.bin/wg-tunnel list
 ```
 
-Then make sure `WG_AUTO_TUNNEL` exactly matches the service name.
+Make sure `WG_AUTO_TUNNEL` exactly matches the tunnel name.
+
+### Swift compiler missing
+
+Install Apple's Xcode Command Line Tools, then verify:
+
+```bash
+/usr/bin/swiftc --version
+```
 
 ### Home Assistant token missing
 
@@ -172,7 +182,7 @@ For local testing elsewhere:
 
 ```bash
 WG_AUTO_EXPECT_HOSTNAME=$(hostname -s) \
-WG_AUTO_HA_STATE_OVERRIDE=on \
-WG_AUTO_IDLE_SECONDS_OVERRIDE=900 \
+WG_AUTO_HA_STATE_OVERRIDE=away \
+WG_AUTO_HEALTH_STATE_OVERRIDE=healthy \
 ~/dotfiles/.bin/ms1-away-vpn-agent --dry-run
 ```
