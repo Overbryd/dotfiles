@@ -13,6 +13,7 @@ Current status:
 - portable rsync dry-run previews for plain-dir and repo-overlay chunks
 - confirm-to-apply flow with editable plan
 - vendored tomli fallback for Python 3.9
+- simple progress output on interactive runs
 """
 
 import fnmatch
@@ -23,10 +24,11 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 
 DEFAULT_RSYNC_CANDIDATES = [
@@ -457,6 +459,7 @@ def print_help() -> None:
         "  - force-git whole-directory rsync mode\n"
         "  - doctor checks\n"
         "  - editable plan + confirm-to-apply\n"
+        "  - progress output on stderr when attached to a terminal\n"
     )
 
 
@@ -466,6 +469,28 @@ def expand_path(raw: str) -> Path:
 
 def current_hostname() -> str:
     return socket.gethostname().split(".", 1)[0]
+
+
+def progress_enabled() -> bool:
+    return sys.stderr.isatty()
+
+
+def progress(message: str) -> None:
+    if progress_enabled():
+        sys.stderr.write("wsync: {}\n".format(message))
+        sys.stderr.flush()
+
+
+def progress_status(message: str) -> None:
+    if progress_enabled():
+        sys.stderr.write("\rwsync: {}".format(message))
+        sys.stderr.flush()
+
+
+def progress_status_done() -> None:
+    if progress_enabled():
+        sys.stderr.write("\n")
+        sys.stderr.flush()
 
 
 def run_command(
@@ -485,6 +510,37 @@ def run_command(
         errors=errors,
         timeout=timeout,
     )
+
+
+def run_streaming_command(
+    args: Sequence[str],
+    on_stdout_line: Callable[[str], None],
+) -> subprocess.CompletedProcess:
+    process = subprocess.Popen(
+        list(args),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        errors="replace",
+    )
+    stderr_chunks: List[str] = []
+
+    def drain_stderr() -> None:
+        if process.stderr:
+            stderr_chunks.append(process.stderr.read())
+
+    stderr_reader = threading.Thread(target=drain_stderr)
+    stderr_reader.start()
+
+    stdout_lines: List[str] = []
+    if process.stdout:
+        for line in process.stdout:
+            stdout_lines.append(line)
+            on_stdout_line(line.rstrip("\n"))
+
+    returncode = process.wait()
+    stderr_reader.join()
+    return subprocess.CompletedProcess(list(args), returncode, "".join(stdout_lines), "".join(stderr_chunks))
 
 
 def ssh_command(host: str, script: str, timeout: int = 8) -> subprocess.CompletedProcess:
@@ -1127,8 +1183,10 @@ def build_plan(
     plan = Plan(run_id=run_id, action=action, target_label=target.label, plan_path=plan_path)
     work_dir = plan_path.parent
     rsync_path, rsync_version = resolve_rsync(config)
+    root_count = len(target.roots)
 
-    for root in target.roots:
+    for root_index, root in enumerate(target.roots, start=1):
+        progress("[{}/{}] planning {}".format(root_index, root_count, root.path))
         if not root.path.exists() and action != "pull":
             plan.chunks.append(
                 PlanChunk(
@@ -1234,10 +1292,13 @@ def build_git_chunks(
     work_dir: Path,
 ) -> List[PlanChunk]:
     excludes = merge_excludes(config, root)
+    progress("inspecting git repo {}".format(repo_root))
     untracked_count, untracked_error = count_untracked_files(repo_root)
+    progress("rsync dry-run for repo overlay {}".format(repo_root))
     overlay_paths, overlay_error, overlay_preview, overlay_apply_command, include_patterns = repo_overlay_preview(
         action, root, repo_root, ssh_host, rsync_path, work_dir
     )
+    progress("collecting git snapshots for {}".format(repo_root))
     local_snapshot = collect_git_snapshot_local(repo_root)
     peer_snapshot = collect_git_snapshot_remote(ssh_host, repo_root) if ssh_host else None
     classification, worktree_applyable = classify_worktree(local_snapshot, peer_snapshot)
@@ -1335,7 +1396,9 @@ def build_plain_chunks(
         nested_git_roots: List[Path] = []
         truncated = False
     else:
+        progress("scanning for nested git repos in {}".format(root.path))
         nested_git_roots, truncated = scan_nested_git_roots(root.path)
+    progress("rsync dry-run for {}".format(root.path))
     preview = plain_dir_preview(action, root.path, ssh_host, rsync_path, excludes, nested_git_roots)
     apply_command, apply_error = build_plain_dir_rsync_command(
         action,
@@ -1513,6 +1576,22 @@ def log_command_result(log_path: Path, label: str, command: Sequence[str], resul
     append_log(log_path, "exit={}\n".format(result.returncode))
 
 
+def is_itemized_rsync_line(line: str) -> bool:
+    return bool(line.strip()) and not line.startswith("sending ") and not line.startswith("sent ")
+
+
+def rsync_progress_reporter(label: str) -> Callable[[str], None]:
+    counted = [0]
+
+    def report(line: str) -> None:
+        if not is_itemized_rsync_line(line):
+            return
+        counted[0] += 1
+        progress_status("{} transferred {} item(s)".format(label, counted[0]))
+
+    return report
+
+
 def apply_rsync_chunk(chunk: PlanChunk, log_path: Path) -> Tuple[bool, str]:
     apply_command = [str(value) for value in chunk.metadata.get("apply_command", [])]
     if not apply_command:
@@ -1521,13 +1600,17 @@ def apply_rsync_chunk(chunk: PlanChunk, log_path: Path) -> Tuple[bool, str]:
     if chunk.direction == "pull":
         chunk.path.mkdir(parents=True, exist_ok=True)
 
-    result = run_command(apply_command, errors="replace")
+    result = run_streaming_command(
+        apply_command,
+        rsync_progress_reporter("{} {}".format(chunk.chunk_id, chunk.path)),
+    )
+    progress_status_done()
     log_command_result(log_path, "apply {} {}".format(chunk.chunk_type, chunk.path), apply_command, result)
     if result.returncode != 0:
         detail = first_line(result.stderr) or first_line(result.stdout) or "rsync apply failed"
         return False, detail
 
-    itemized_lines = [line for line in result.stdout.splitlines() if line.strip() and not line.startswith("sending ") and not line.startswith("sent ")]
+    itemized_lines = [line for line in result.stdout.splitlines() if is_itemized_rsync_line(line)]
     return True, "applied ({} changed line(s))".format(len(itemized_lines))
 
 
@@ -1583,12 +1666,21 @@ def apply_selected_chunks(plan: Plan, ssh_host: Optional[str], selected_chunk_id
     applied = 0
     skipped = 0
     failed = 0
+    selected_count = sum(1 for chunk in plan.chunks if chunk.chunk_id in selected)
+    started = 0
 
     for chunk in plan.chunks:
         if chunk.chunk_id not in selected:
             chunk.status = "skipped"
             skipped += 1
             continue
+
+        started += 1
+        progress(
+            "[{}/{}] applying {} {} {}".format(
+                started, selected_count, chunk.chunk_id, chunk.chunk_type, chunk.path
+            )
+        )
 
         if not chunk.applyable:
             chunk.status = "skipped"

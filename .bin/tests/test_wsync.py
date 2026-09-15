@@ -1,4 +1,5 @@
 import importlib.machinery
+import io
 import sys
 import tempfile
 import unittest
@@ -101,6 +102,65 @@ class SelectedApplyErrorsTest(unittest.TestCase):
             ["peer host is unconfigured"],
             wsync.selected_apply_errors(plan, ["chunk-0001"]),
         )
+
+
+class ProgressOutputTest(unittest.TestCase):
+    def setUp(self):
+        self.config = wsync.Config(
+            config_home=Path("/tmp/wsync-config"),
+            config_path=Path("/tmp/wsync-config/config.toml"),
+            profiles_dir=Path("/tmp/wsync-config/profiles"),
+            data={},
+            parser_name="tomllib",
+        )
+
+    def build_plain_chunks_with_progress(self, enabled):
+        stderr = io.StringIO()
+        with mock.patch.object(wsync, "progress_enabled", return_value=enabled), mock.patch.object(
+            wsync.sys, "stderr", stderr
+        ):
+            wsync.build_plain_chunks(
+                action="pull",
+                root=wsync.RootSpec(path=Path("/tmp/workspace"), source="test"),
+                config=self.config,
+                ssh_host=None,
+                rsync_path="/usr/bin/rsync",
+                rsync_version=None,
+                work_dir=Path("/tmp"),
+                force_git=True,
+                force_git_reason="requested by --force-git",
+            )
+        return stderr.getvalue()
+
+    def test_plan_phase_reports_steps_on_a_terminal(self):
+        self.assertIn("rsync dry-run for /tmp/workspace", self.build_plain_chunks_with_progress(True))
+
+    def test_plan_phase_stays_quiet_without_a_terminal(self):
+        self.assertEqual("", self.build_plain_chunks_with_progress(False))
+
+    def test_apply_streams_item_counter_and_still_logs_output(self):
+        script = "print('sending incremental file list'); print('>f+++++++++ one.txt'); print('>f+++++++++ two.txt')"
+        with tempfile.TemporaryDirectory() as work_dir:
+            log_path = Path(work_dir) / "run.log"
+            chunk = wsync.PlanChunk(
+                chunk_type="plain-dir",
+                path=Path(work_dir),
+                direction="push",
+                summary="Sync plain directory",
+                chunk_id="chunk-0001",
+                metadata={"apply_command": [sys.executable, "-c", script]},
+            )
+            stderr = io.StringIO()
+            with mock.patch.object(wsync, "progress_enabled", return_value=True), mock.patch.object(
+                wsync.sys, "stderr", stderr
+            ):
+                ok, detail = wsync.apply_rsync_chunk(chunk, log_path)
+
+            self.assertTrue(ok)
+            self.assertEqual("applied (2 changed line(s))", detail)
+            self.assertIn("transferred 1 item(s)", stderr.getvalue())
+            self.assertIn("transferred 2 item(s)", stderr.getvalue())
+            self.assertIn(">f+++++++++ two.txt", log_path.read_text())
 
 
 if __name__ == "__main__":
