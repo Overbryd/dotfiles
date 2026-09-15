@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Opt-in shared-branch guard. Default is allow: this hook does nothing unless a
+# deny list is configured, so it stays out of the way in personal repos.
+#
+#   export GIT_PROTECTED_BRANCHES="master main"        # per shell, e.g. from .envrc
+#   git config guard.protectedBranches "master main"   # per repo
+#
+# Entries are shell globs, so "release/*" works. Override a single push with
+# ALLOW_PROTECTED_PUSH=1.
+
+set -uo pipefail
+
+list="${GIT_PROTECTED_BRANCHES:-$(git config --get guard.protectedBranches || true)}"
+[ -z "$list" ] && exit 0
+[ "${ALLOW_PROTECTED_PUSH:-0}" = 1 ] && exit 0
+
+remote="$1"
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  [ -z "${remote_ref:-}" ] && continue
+  branch="${remote_ref#refs/heads/}"
+  for protected in $list; do
+    # shellcheck disable=SC2254
+    case "$branch" in
+      $protected)
+        echo "pre-push: refusing to push $remote/$branch - protected branch" >&2
+        echo "          open a PR, or re-run with ALLOW_PROTECTED_PUSH=1" >&2
+        exit 1
+        ;;
+    esac
+  done
+done
