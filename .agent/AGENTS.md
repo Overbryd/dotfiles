@@ -13,6 +13,9 @@
 - Every changed line must trace to request. Mention unrelated dead code; do not delete it.
 - For behavior changes and bug fixes, default to one focused red/green test, then relevant full suite.
 - Before multi-step work, give short plan with verification. Skip ceremony for trivial work.
+- For ordered issue batches, refine all issues first, establish the integration/release unit, keep one focused commit per issue in requested order, and amortize shared expensive checks at the final boundary.
+- Prefer bounded polling and summarized status for long CI/build operations. Read full logs only for failures, plans, or evidence needed for a decision.
+- When repository-specific facts had to be rediscovered, record durable guidance in that repository's `AGENTS.md`.
 - Use `edit` for existing text and `write` only for new files or complete rewrites. Never use shell commands or scripts to mutate project files.
 - After implementation, remove excess commentary.
 
