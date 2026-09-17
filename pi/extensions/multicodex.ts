@@ -39,6 +39,8 @@ const OPENAI_CODEX_DEVICE_VERIFY_URL = "https://auth.openai.com/codex/device";
 const OPENAI_CODEX_DEVICE_REDIRECT_URI = "https://auth.openai.com/deviceauth/callback";
 const OPENAI_CODEX_TOKEN_URL = "https://auth.openai.com/oauth/token";
 const OPENAI_CODEX_DEVICE_TIMEOUT_MS = 15 * 60 * 1000;
+const TOUCH_GRASS_AVAILABLE_CHANNEL = "touch-grass:available";
+const TOUCH_GRASS_REQUEST_CHANNEL = "touch-grass:request";
 
 const ZERO_USAGE: Usage = {
 	input: 0,
@@ -113,6 +115,21 @@ type OpenAIStatusSummary = {
 };
 
 type StreamSimple = ReturnType<typeof openAICodexResponsesApi>["streamSimple"];
+
+type TouchGrassController = {
+	isEnabled(): boolean;
+	waitUntil(resetAt: number, signal?: AbortSignal): Promise<"elapsed" | "disabled" | "aborted">;
+	clearPause(): void;
+	getPausedStatus(now?: number): string | undefined;
+	onChange(handler: () => void): () => void;
+};
+
+function isTouchGrassController(value: unknown): value is TouchGrassController {
+	if (!isRecord(value)) return false;
+	return ["isEnabled", "waitUntil", "clearPause", "getPausedStatus", "onChange"].every(
+		(key) => typeof value[key] === "function",
+	);
+}
 
 class UsageHttpError extends Error {
 	constructor(
@@ -743,9 +760,19 @@ function isAccountAvailable(account: Account, now: number): boolean {
 	return !account.quotaExhaustedUntil || account.quotaExhaustedUntil <= now;
 }
 
-export function pickBestAccount(accounts: Account[], usageByEmail: Map<string, UsageSnapshot>, excludeEmails = new Set<string>()): Account | undefined {
+export function pickBestAccount(
+	accounts: Account[],
+	usageByEmail: Map<string, UsageSnapshot>,
+	excludeEmails = new Set<string>(),
+	allowCredits = true,
+): Account | undefined {
 	const now = Date.now();
-	const available = accounts.filter((account) => isAccountAvailable(account, now) && !excludeEmails.has(account.email));
+	const available = accounts.filter(
+		(account) =>
+			!excludeEmails.has(account.email) &&
+			(isAccountAvailable(account, now) ||
+				(allowCredits && !account.needsReauth && hasCreditCapacity(usageByEmail.get(account.email)))),
+	);
 	if (available.length === 0) return undefined;
 
 	const normalQuota = available
@@ -757,6 +784,7 @@ export function pickBestAccount(accounts: Account[], usageByEmail: Map<string, U
 		}))
 		.sort((a, b) => a.used - b.used || a.weeklyReset - b.weeklyReset);
 	if (normalQuota[0]) return normalQuota[0].account;
+	if (!allowCredits) return undefined;
 
 	const creditFallback = available
 		.filter((account) => hasCreditCapacity(usageByEmail.get(account.email)))
@@ -1106,12 +1134,12 @@ class AccountManager {
 		await Promise.all(stale.map((account) => this.refreshUsageForAccount(account, { signal })));
 	}
 
-	async activateBestAccount(options: { excludeEmails?: Set<string>; signal?: AbortSignal } = {}) {
+	async activateBestAccount(options: { excludeEmails?: Set<string>; signal?: AbortSignal; allowCredits?: boolean } = {}) {
 		this.clearExpiredExhaustion();
 		const accounts = this.getAccounts();
 		await this.refreshStaleUsage(accounts, options.signal);
 		const excluded = new Set([...(options.excludeEmails || []), ...this.downEmails()]);
-		const selected = pickBestAccount(accounts, this.usageCache, excluded);
+		const selected = pickBestAccount(accounts, this.usageCache, excluded, options.allowCredits ?? true);
 		if (!selected) return undefined;
 		this.data.activeEmail = selected.email;
 		if (!this.isPiAuthAccount(selected)) this.save();
@@ -1119,13 +1147,34 @@ class AccountManager {
 		return selected;
 	}
 
-	getAvailableManualAccount(excludeEmails = new Set<string>()) {
+	getNextStandardQuotaResetAt() {
+		const resets: number[] = [];
+		for (const account of this.getAccounts()) {
+			if (account.needsReauth || this.isDown(account.email)) continue;
+			const usage = this.usageCache.get(account.email);
+			const blockedWindows = [usage?.primary, usage?.secondary].filter(
+				(window): window is UsageWindow => typeof window?.usedPercent === "number" && window.usedPercent >= 100,
+			);
+			if (blockedWindows.length > 0 && blockedWindows.every((window) => typeof window.resetAt === "number")) {
+				resets.push(Math.max(...blockedWindows.map((window) => window.resetAt as number)));
+			} else if (typeof account.quotaExhaustedUntil === "number") {
+				resets.push(account.quotaExhaustedUntil);
+			}
+		}
+		return resets.length > 0 ? Math.min(...resets) : undefined;
+	}
+
+	getAvailableManualAccount(excludeEmails = new Set<string>(), allowCredits = true) {
 		const manual = this.getManualAccount();
+		const usage = manual ? this.usageCache.get(manual.email) : undefined;
+		const available = manual &&
+			(isAccountAvailable(manual, Date.now()) ||
+				(allowCredits && !manual.needsReauth && hasCreditCapacity(usage)));
 		if (
 			!manual ||
 			excludeEmails.has(manual.email) ||
-			!isAccountAvailable(manual, Date.now()) ||
-			isWorkspaceCreditExhausted(this.usageCache.get(manual.email))
+			!available ||
+			(!allowCredits ? !hasNormalQuota(usage) : isWorkspaceCreditExhausted(usage))
 		) {
 			return undefined;
 		}
@@ -1159,7 +1208,11 @@ function createErrorEvent(model: Model<Api>, message: string): AssistantMessageE
 	} as AssistantMessageEvent;
 }
 
-function createStreamWrapper(accountManager: AccountManager, baseStreamSimple: StreamSimple) {
+function createStreamWrapper(
+	accountManager: AccountManager,
+	baseStreamSimple: StreamSimple,
+	getTouchGrass: () => TouchGrassController | undefined,
+) {
 	return (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => {
 		const stream = createAssistantMessageEventStream();
 
@@ -1169,13 +1222,37 @@ function createStreamWrapper(accountManager: AccountManager, baseStreamSimple: S
 				const excludedEmails = new Set<string>();
 
 				for (let attempt = 0; attempt <= MAX_ROTATION_RETRIES; attempt++) {
-					let account = accountManager.getAvailableManualAccount(excludedEmails);
+					const touchGrass = getTouchGrass();
+					const allowCredits = !(touchGrass?.isEnabled() ?? false);
+					let account = accountManager.getAvailableManualAccount(excludedEmails, allowCredits);
 					const usingManual = Boolean(account);
 					if (!account) {
 						if (accountManager.hasManualAccount()) accountManager.clearManualAccount();
-						account = await accountManager.activateBestAccount({ excludeEmails: excludedEmails, signal: options?.signal });
+						account = await accountManager.activateBestAccount({
+							excludeEmails: excludedEmails,
+							signal: options?.signal,
+							allowCredits,
+						});
+					}
+					if (!account && touchGrass?.isEnabled()) {
+						const resetAt = accountManager.getNextStandardQuotaResetAt();
+						if (resetAt !== undefined) {
+							const retryAt = resetAt > Date.now() ? resetAt : Date.now() + CODEX_DOWN_RETRY_MS;
+							const waitResult = await touchGrass.waitUntil(retryAt, options?.signal);
+							if (waitResult === "aborted") {
+								stream.end();
+								return;
+							}
+							if (waitResult === "elapsed") {
+								await accountManager.refreshUsageForAllAccounts({ force: true, signal: options?.signal });
+							}
+							excludedEmails.clear();
+							attempt = -1;
+							continue;
+						}
 					}
 					if (!account) throw new Error(accountManager.availabilityError());
+					touchGrass?.clearPause();
 
 					let token: string;
 					try {
@@ -1372,10 +1449,16 @@ function isStaleContextError(error: unknown) {
 	return messageFromUnknown(error).includes("ctx is stale");
 }
 
-function updateStatus(ctx: ExtensionContext, accountManager: AccountManager) {
+function updateStatus(ctx: ExtensionContext, accountManager: AccountManager, touchGrass?: TouchGrassController) {
 	if (!ctx.hasUI) return;
 	if (ctx.model?.provider !== PROVIDER_ID) {
 		ctx.ui.setStatus(STATUS_KEY, undefined);
+		return;
+	}
+
+	const pausedStatus = touchGrass?.getPausedStatus();
+	if (pausedStatus) {
+		ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("warning", pausedStatus));
 		return;
 	}
 
@@ -1393,20 +1476,27 @@ function updateStatus(ctx: ExtensionContext, accountManager: AccountManager) {
 	ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("muted", formatAccountBar(account.email, usage)));
 }
 
-function safelyUpdateStatus(ctx: ExtensionContext, accountManager: AccountManager) {
+function safelyUpdateStatus(ctx: ExtensionContext, accountManager: AccountManager, touchGrass?: TouchGrassController) {
 	try {
-		updateStatus(ctx, accountManager);
+		updateStatus(ctx, accountManager, touchGrass);
 	} catch (error) {
 		if (!isStaleContextError(error)) throw error;
 	}
 }
 
-async function refreshStatus(ctx: ExtensionContext, accountManager: AccountManager, force = false) {
-	safelyUpdateStatus(ctx, accountManager);
+async function refreshStatus(
+	ctx: ExtensionContext,
+	accountManager: AccountManager,
+	touchGrass: TouchGrassController | undefined,
+	force = false,
+) {
+	safelyUpdateStatus(ctx, accountManager, touchGrass);
 	const account = accountManager.getActiveAccount();
 	if (account && ctx.model?.provider === PROVIDER_ID) await accountManager.refreshUsageForAccount(account, { force });
-	if (!accountManager.hasManualAccount() && ctx.model?.provider === PROVIDER_ID) await accountManager.activateBestAccount();
-	safelyUpdateStatus(ctx, accountManager);
+	if (!accountManager.hasManualAccount() && ctx.model?.provider === PROVIDER_ID) {
+		await accountManager.activateBestAccount({ allowCredits: !(touchGrass?.isEnabled() ?? false) });
+	}
+	safelyUpdateStatus(ctx, accountManager, touchGrass);
 }
 
 async function loginAndUse(_pi: ExtensionAPI, ctx: ExtensionCommandContext, accountManager: AccountManager, identifier: string) {
@@ -1485,6 +1575,20 @@ export default function multicodex(pi: ExtensionAPI) {
 	const baseModels = getModels(PROVIDER_ID) as readonly Model<Api>[];
 	let lastContext: ExtensionContext | undefined;
 	let refreshTimer: ReturnType<typeof setInterval> | undefined;
+	let touchGrass: TouchGrassController | undefined;
+	let unsubscribeTouchGrassChange: (() => void) | undefined;
+
+	const attachTouchGrass = (value: unknown) => {
+		if (!isTouchGrassController(value) || value === touchGrass) return;
+		unsubscribeTouchGrassChange?.();
+		touchGrass = value;
+		unsubscribeTouchGrassChange = touchGrass.onChange(() => {
+			if (lastContext) safelyUpdateStatus(lastContext, accountManager, touchGrass);
+		});
+		if (lastContext) safelyUpdateStatus(lastContext, accountManager, touchGrass);
+	};
+	const unsubscribeTouchGrassAvailable = pi.events.on(TOUCH_GRASS_AVAILABLE_CHANNEL, attachTouchGrass);
+	pi.events.emit(TOUCH_GRASS_REQUEST_CHANNEL, { accept: attachTouchGrass });
 
 	accountManager.setWarningHandler((message) => {
 		try {
@@ -1496,7 +1600,7 @@ export default function multicodex(pi: ExtensionAPI) {
 		}
 	});
 	accountManager.onStateChange(() => {
-		if (lastContext) safelyUpdateStatus(lastContext, accountManager);
+		if (lastContext) safelyUpdateStatus(lastContext, accountManager, touchGrass);
 	});
 
 	pi.registerProvider(PROVIDER_ID, {
@@ -1504,7 +1608,7 @@ export default function multicodex(pi: ExtensionAPI) {
 		baseUrl: "https://chatgpt.com/backend-api",
 		apiKey: activeApiKey(accountManager),
 		api: "openai-codex-responses",
-		streamSimple: createStreamWrapper(accountManager, openAICodexResponsesApi().streamSimple),
+		streamSimple: createStreamWrapper(accountManager, openAICodexResponsesApi().streamSimple, () => touchGrass),
 		models: toModelDefinitions(baseModels),
 	});
 
@@ -1515,12 +1619,13 @@ export default function multicodex(pi: ExtensionAPI) {
 		try {
 			accountManager.loadPiAuth();
 			if (accountManager.getAccounts().length > 0) {
-				if (!accountManager.getAvailableManualAccount()) accountManager.clearManualAccount();
-				await accountManager.activateBestAccount();
+				const allowCredits = !(touchGrass?.isEnabled() ?? false);
+				if (!accountManager.getAvailableManualAccount(new Set(), allowCredits)) accountManager.clearManualAccount();
+				await accountManager.activateBestAccount({ allowCredits });
 			}
 		} finally {
 			accountManager.markReady();
-			safelyUpdateStatus(ctx, accountManager);
+			safelyUpdateStatus(ctx, accountManager, touchGrass);
 		}
 	}
 
@@ -1528,25 +1633,28 @@ export default function multicodex(pi: ExtensionAPI) {
 		void initialize(ctx);
 		if (refreshTimer) clearInterval(refreshTimer);
 		refreshTimer = setInterval(() => {
-			if (lastContext) void refreshStatus(lastContext, accountManager);
+			if (lastContext) void refreshStatus(lastContext, accountManager, touchGrass);
 		}, CODEX_DOWN_RETRY_MS);
 		refreshTimer.unref?.();
 	});
 
 	pi.on("model_select", (_event, ctx) => {
 		lastContext = ctx;
-		void refreshStatus(ctx, accountManager);
+		void refreshStatus(ctx, accountManager, touchGrass);
 	});
 
 	pi.on("agent_settled", (_event, ctx) => {
 		lastContext = ctx;
-		void refreshStatus(ctx, accountManager, true);
+		void refreshStatus(ctx, accountManager, touchGrass, true);
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
 		if (refreshTimer) clearInterval(refreshTimer);
 		refreshTimer = undefined;
 		ctx.ui.setStatus(STATUS_KEY, undefined);
+		unsubscribeTouchGrassChange?.();
+		unsubscribeTouchGrassChange = undefined;
+		unsubscribeTouchGrassAvailable();
 		lastContext = undefined;
 	});
 
@@ -1597,14 +1705,14 @@ export default function multicodex(pi: ExtensionAPI) {
 			if (command === "add") {
 				const identifier = rest || (ctx.hasUI ? (await ctx.ui.input("Account email/label")) || "" : "");
 				await loginAndUse(pi, ctx, accountManager, identifier);
-				if (lastContext) await refreshStatus(lastContext, accountManager);
+				if (lastContext) await refreshStatus(lastContext, accountManager, touchGrass);
 				return;
 			}
 
 			if (command === "use") {
 				const email = rest || (await chooseAccount(ctx, accountManager, "Use MultiCodex account")) || "";
 				await useAccount(pi, ctx, accountManager, email);
-				if (lastContext) await refreshStatus(lastContext, accountManager);
+				if (lastContext) await refreshStatus(lastContext, accountManager, touchGrass);
 				return;
 			}
 
@@ -1622,7 +1730,7 @@ export default function multicodex(pi: ExtensionAPI) {
 				}
 				const failed = refreshedAccounts.some((account) => accountManager.getLastUsageError(account.email));
 				notify(ctx, refreshResultMessage(accountManager, refreshedAccounts), failed ? "warning" : "info");
-				if (lastContext) await refreshStatus(lastContext, accountManager);
+				if (lastContext) await refreshStatus(lastContext, accountManager, touchGrass);
 				return;
 			}
 
@@ -1631,7 +1739,7 @@ export default function multicodex(pi: ExtensionAPI) {
 				const account = accountManager.getAccount(email);
 				if (!account) return notify(ctx, `Unknown account: ${email}`, "warning");
 				await loginAndUse(pi, ctx, accountManager, account.email);
-				if (lastContext) await refreshStatus(lastContext, accountManager);
+				if (lastContext) await refreshStatus(lastContext, accountManager, touchGrass);
 				return;
 			}
 
@@ -1643,7 +1751,7 @@ export default function multicodex(pi: ExtensionAPI) {
 				if (ctx.hasUI && !(await ctx.ui.confirm("Remove MultiCodex account", `Remove ${email}?`))) return;
 				accountManager.removeAccount(email);
 				notify(ctx, `Removed ${email}`, "info");
-				if (lastContext) await refreshStatus(lastContext, accountManager);
+				if (lastContext) await refreshStatus(lastContext, accountManager, touchGrass);
 				return;
 			}
 
@@ -1652,7 +1760,7 @@ export default function multicodex(pi: ExtensionAPI) {
 				const manualCleared = target === "manual" || target === "all" ? accountManager.clearManualAccount() : false;
 				const quotaCleared = target === "quota" || target === "all" ? accountManager.clearAllQuotaExhaustion() : 0;
 				notify(ctx, `Reset ${target}: manual=${manualCleared ? "yes" : "no"} quota=${quotaCleared}`, "info");
-				if (lastContext) await refreshStatus(lastContext, accountManager);
+				if (lastContext) await refreshStatus(lastContext, accountManager, touchGrass);
 				return;
 			}
 

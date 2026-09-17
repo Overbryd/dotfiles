@@ -40,6 +40,10 @@ test("refreshes usage after agent settles rather than after every turn", () => {
 		},
 		registerProvider() {},
 		registerCommand() {},
+		events: {
+			on() { return () => {}; },
+			emit() {},
+		},
 	} as never);
 
 	assert.equal(events.includes("turn_end"), false);
@@ -182,6 +186,29 @@ test("pickBestAccount skips accounts with neither normal quota nor credits", () 
 	);
 
 	assert.equal(selected?.email, available.email);
+});
+
+test("pickBestAccount refuses credit fallback while touch grass is enabled", () => {
+	const creditsOnly = account("credits@example.com");
+	const selected = pickBestAccount(
+		[creditsOnly],
+		new Map([[creditsOnly.email, usage(100, "100", "100")]]),
+		new Set(),
+		false,
+	);
+
+	assert.equal(selected, undefined);
+});
+
+test("pickBestAccount allows deliberate credits after a standard quota cooldown", () => {
+	const creditsOnly = {
+		...account("credits@example.com"),
+		quotaExhaustedUntil: Date.now() + 60 * 60 * 1000,
+	};
+	const usageByEmail = new Map([[creditsOnly.email, usage(100, "100", "100")]]);
+
+	assert.equal(pickBestAccount([creditsOnly], usageByEmail, new Set(), false), undefined);
+	assert.equal(pickBestAccount([creditsOnly], usageByEmail, new Set(), true)?.email, creditsOnly.email);
 });
 
 test("pickBestAccount compares total credit and auto-purchase capacity", () => {
