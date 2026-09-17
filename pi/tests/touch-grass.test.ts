@@ -13,6 +13,18 @@ test("formats a paused Codex bar as hours and minutes", () => {
 	);
 });
 
+test("elapsed wait clears the paused status", async () => {
+	const gate = new TouchGrassGate();
+	let changes = 0;
+	gate.onChange(() => changes++);
+	const waiting = gate.waitUntil(Date.now() + 10);
+
+	assert.match(gate.getPausedStatus() ?? "", /loop paused/);
+	assert.equal(await waiting, "elapsed");
+	assert.equal(gate.getPausedStatus(), undefined);
+	assert.equal(changes, 2);
+});
+
 test("disabling touch grass wakes a paused loop for session credit use", async () => {
 	const gate = new TouchGrassGate();
 	const waiting = gate.waitUntil(Date.now() + 60_000);

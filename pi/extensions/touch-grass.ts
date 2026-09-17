@@ -59,6 +59,7 @@ export class TouchGrassGate implements TouchGrassController {
 				clearTimeout(timer);
 				signal?.removeEventListener("abort", abort);
 				this.waiters.delete(finish);
+				if (this.waiters.size === 0) this.clearPause();
 				resolve(result);
 			};
 			const abort = () => finish("aborted");
