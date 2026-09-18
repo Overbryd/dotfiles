@@ -692,6 +692,24 @@ test("session provider preference can explicitly switch locked API back to Codex
 	assert.equal(h.providerId, "openai-codex");
 });
 
+test("silently falls back when the classifier is aborted by touch-grass timeout", async () => {
+	const aborted = {
+		...assistantClassification("routine"),
+		content: [],
+		stopReason: "aborted",
+		errorMessage: "Request was aborted",
+	};
+	const h = harness([aborted]);
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.handlers.get("before_agent_start")?.({ prompt: "Wait for quota" }, h.context);
+
+	assert.equal(h.modelId, "gpt-5.6-sol");
+	assert.equal(h.thinkingLevel, "high");
+	assert.equal(h.notifications.some((message) => /classifier failed/i.test(message)), false);
+	assert.equal(h.workingMessages.at(-1), undefined);
+	assert.match(h.entries.at(-1).data.rationale, /aborted/i);
+});
+
 test("falls back to Sol high when classifier output is invalid", async () => {
 	const invalid = assistantClassification("routine");
 	invalid.content[0].text = "not json";

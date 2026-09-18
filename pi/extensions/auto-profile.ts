@@ -85,6 +85,7 @@ class ClassifierError extends Error {
 	constructor(
 		message: string,
 		readonly usage?: Usage,
+		readonly silent = false,
 	) {
 		super(message);
 	}
@@ -651,6 +652,9 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 					signal: AbortSignal.timeout(CLASSIFIER_TIMEOUT_MS),
 				},
 			);
+			if (response.stopReason === "aborted") {
+				throw new ClassifierError("classifier request aborted", response.usage, true);
+			}
 			const classification = parseClassification(assistantText(response));
 			if (!classification) throw new ClassifierError("classifier returned invalid JSON", response.usage);
 			return { classification, usage: response.usage };
@@ -720,7 +724,7 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 			decision = state.autoScope === "family"
 				? familyFallbackDecision(state, ctx, message)
 				: fallbackDecision(state.providerId ?? "openai", message, state.sessionModelId);
-			if (ctx.hasUI && !state.failureWarningShown) {
+			if (ctx.hasUI && !state.failureWarningShown && !(error instanceof ClassifierError && error.silent)) {
 				state.failureWarningShown = true;
 				ctx.ui.notify(`Auto-profile classifier failed; using ${modelName(decision.modelId)} high: ${message}`, "warning");
 			}
