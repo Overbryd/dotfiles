@@ -20,7 +20,7 @@ notify setup
 The command uses `random-pet` and prints a short pet-style URL such as `https://ntfy.sh/milo-otter-Ab3_X9q2`. `random-pet` draws from 66 names and 67 animals before adding a random eight-character suffix, and can also be used directly. Subscribe to that exact URL in the app, then test it:
 
 ```sh
-notify send "Phone setup works"
+notify "Pi setup test" "Phone setup works"
 ```
 
 An existing topic or full topic URL can be reused instead:
@@ -28,14 +28,9 @@ An existing topic or full topic URL can be reused instead:
 ```sh
 notify setup my-existing-topic
 notify setup https://ntfy.sh/my-existing-topic
-notify setup --topic my-existing-topic
 ```
 
-Configuration lives at `~/.config/notify/config` with mode `0600`. `NOTIFY_URL` and `NOTIFY_TOKEN` override the file. A self-hosted or authenticated server can be configured with:
-
-```sh
-notify setup --server https://ntfy.example.com --token TOKEN --topic TOPIC
-```
+Configuration lives at `~/.config/notify/config` with mode `0600`. `NOTIFY_URL` overrides the saved URL, so a self-hosted server can also be selected with `notify setup https://ntfy.example.com/TOPIC`. Set `NOTIFY_TOKEN` when that server requires an access token.
 
 On public ntfy, the random topic URL is effectively a password. Anyone who knows it can read and publish messages. Do not put credentials, private code, or other secrets in notification summaries.
 
@@ -67,10 +62,8 @@ Set a custom sound file with `PI_DONE_SOUND`. Set `PI_NOTIFY_COMMAND` when the e
 ## Agent CLI
 
 ```sh
-notify "Build finished"
-notify --title "Release ready" "Artifacts uploaded"
-notify send --priority 4 --tags white_check_mark "Deployment needs approval"
-notify status
+notify "Build finished" "Tests passed; ready for review."
+notify "Deployment needs approval" "Release artifacts are ready."
 ```
 
-The default route is automatic. Use `notify send` to force a phone push and `notify local` to force a macOS alert.
+The CLI deliberately accepts only a title and message. Both are required; it does not choose routing, provenance, priority, tags, emoji, or fallback text. The Pi extension owns local-versus-push routing and constructs its title and summary before calling the CLI.

@@ -40,7 +40,7 @@ function harness(env: NodeJS.ProcessEnv = { NOTIFY_URL: "https://ntfy.sh/test" }
 		{ id: "answer", type: "message", message: { role: "assistant", content: [{ type: "text", text: "Ready to review." }] } },
 	];
 	const local: Array<[string, string]> = [];
-	const pushes: string[] = [];
+	const pushes: Array<[string, string]> = [];
 	const notices: string[] = [];
 	const pi = {
 		on(event: string, handler: (event: any, ctx: any) => unknown) {
@@ -71,7 +71,7 @@ function harness(env: NodeJS.ProcessEnv = { NOTIFY_URL: "https://ntfy.sh/test" }
 		stdoutIsTTY: true,
 		getTmuxState: () => ({ attached: true, target: "work:2.0 tests" }),
 		notifyLocal: (title, summary) => local.push([title, summary]),
-		notifyPush: (summary) => pushes.push(summary),
+		notifyPush: (title, summary) => pushes.push([title, summary]),
 	});
 	return { commands, ctx, entries, handlers, local, notices, pushes };
 }
@@ -86,6 +86,16 @@ test("notifies once after Pi fully settles", async () => {
 	assert.match(h.local[0]?.[0] ?? "", /Pi needs you.*work:2\.0 tests/);
 	assert.equal(h.local[0]?.[1], "Ready to review.");
 	assert.deepEqual(h.pushes, []);
+});
+
+test("push notifications receive an explicit title and message", async () => {
+	const h = harness({ NOTIFY_URL: "https://ntfy.sh/test", SSH_CONNECTION: "client" });
+	await h.handlers.get("session_start")?.({}, h.ctx);
+	await h.handlers.get("agent_settled")?.({}, h.ctx);
+
+	assert.equal(h.pushes.length, 1);
+	assert.match(h.pushes[0]?.[0] ?? "", /Pi needs you.*work:2\.0 tests/);
+	assert.equal(h.pushes[0]?.[1], "Ready to review.");
 });
 
 test("session command disables and restores notifications", async () => {
@@ -122,14 +132,6 @@ test("notify CLI stores configuration and publishes through curl", () => {
 	const fakeCurl = join(bin, "curl");
 	writeFileSync(fakeCurl, `#!/bin/sh\nprintf '%s\\n' "$@" > "$FAKE_CURL_ARGS"\ncat > "$FAKE_CURL_BODY"\n`);
 	chmodSync(fakeCurl, 0o755);
-	for (const [name, body] of [
-		["hostname", "printf 'mac-mini\\n'"],
-		["tmux", "printf 'mobile:4.1 agent\\n'"],
-	] as const) {
-		const path = join(bin, name);
-		writeFileSync(path, `#!/bin/sh\n${body}\n`);
-		chmodSync(path, 0o755);
-	}
 	const script = fileURLToPath(new URL("../../.bin/notify", import.meta.url));
 	const env = {
 		...process.env,
@@ -137,8 +139,6 @@ test("notify CLI stores configuration and publishes through curl", () => {
 		PATH: `${bin}:${process.env.PATH}`,
 		FAKE_CURL_ARGS: argsFile,
 		FAKE_CURL_BODY: bodyFile,
-		TMUX: "",
-		SSH_CONNECTION: "",
 		NOTIFY_URL: "",
 		NOTIFY_TOKEN: "",
 	};
@@ -147,27 +147,26 @@ test("notify CLI stores configuration and publishes through curl", () => {
 	assert.equal(setup.status, 0, setup.stderr);
 	assert.match(setup.stdout, /https:\/\/ntfy\.sh\/agent-test-secret/);
 
-	const sent = spawnSync("/bin/sh", [script, "send", "--title", "Pi test", "--", "Ready now"], {
+	const sent = spawnSync("/bin/sh", [script, "Pi test", "Ready now"], {
 		env,
 		encoding: "utf8",
 	});
 	assert.equal(sent.status, 0, sent.stderr);
-	assert.match(readFileSync(argsFile, "utf8"), /Title: Pi test/);
-	assert.match(readFileSync(argsFile, "utf8"), /https:\/\/ntfy\.sh\/agent-test-secret/);
-	assert.equal(readFileSync(bodyFile, "utf8"), "Ready now\n");
+	const curlArgs = readFileSync(argsFile, "utf8");
+	assert.match(curlArgs, /Title: Pi test/);
+	assert.match(curlArgs, /https:\/\/ntfy\.sh\/agent-test-secret/);
+	assert.doesNotMatch(curlArgs, /Priority:|Tags:/);
+	assert.equal(readFileSync(bodyFile, "utf8"), "Ready now");
 
-	const withProvenance = spawnSync("/bin/sh", [script, "send", "Tmux needs attention"], {
-		env: { ...env, TMUX: "socket" },
-		encoding: "utf8",
-	});
-	assert.equal(withProvenance.status, 0, withProvenance.stderr);
-	assert.match(readFileSync(argsFile, "utf8"), /Title: Agent needs you · mac-mini · mobile:4\.1 agent/);
+	const missingMessage = spawnSync("/bin/sh", [script, "Only a title"], { env, encoding: "utf8" });
+	assert.equal(missingMessage.status, 64);
+	assert.match(missingMessage.stderr, /title and message are required/);
 
 	const generated = spawnSync("/bin/sh", [script, "setup"], { env, encoding: "utf8" });
 	assert.equal(generated.status, 0, generated.stderr);
 	assert.match(generated.stdout, /https:\/\/ntfy\.sh\/[a-z]+-[a-z]+-[-_A-Za-z0-9]{8}/);
 
-	const existing = spawnSync("/bin/sh", [script, "setup", "--topic", "https://push.example.test/my-pets"], {
+	const existing = spawnSync("/bin/sh", [script, "setup", "https://push.example.test/my-pets"], {
 		env,
 		encoding: "utf8",
 	});

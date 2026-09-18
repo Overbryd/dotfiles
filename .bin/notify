@@ -2,44 +2,44 @@
 set -eu
 
 config_home=${XDG_CONFIG_HOME:-"${HOME}/.config"}
-config_dir="$config_home/notify"
-config_file="$config_dir/config"
-default_server=https://ntfy.sh
+config_file="$config_home/notify/config"
 script_dir=$(CDPATH= cd -P "$(dirname "$0")" && pwd)
 
 usage() {
 	cat <<'EOF'
 Usage:
-  notify [auto] [OPTIONS] [--] MESSAGE
-  notify send [OPTIONS] [--] MESSAGE
-  notify local [OPTIONS] [--] MESSAGE
-  notify setup [--server URL] [--token TOKEN] [--topic TOPIC_OR_URL]
-  notify setup [--server URL] [--token TOKEN] [TOPIC_OR_URL]
-  notify status
-
-Commands:
-  auto    Local macOS notification when present; otherwise ntfy push (default)
-  send    Force an ntfy push
-  local   Force a macOS Notification Center alert and sound
-  setup   Configure an existing topic, or generate a short pet-style topic
-  status  Show configuration and current terminal provenance
-
-Message options:
-  --app NAME       Notification source, default: Agent
-  --title TITLE    Override title and automatic provenance
-  --priority N     ntfy priority 1-5, default: 3
-  --tags TAGS      ntfy comma-separated tags, default: robot
-  --quiet          Suppress success output
+  notify setup [TOPIC_OR_URL]
+  notify TITLE MESSAGE
 
 Environment:
-  NOTIFY_URL, NOTIFY_TOKEN   Override saved ntfy configuration
-  PI_DONE_SOUND             Local macOS sound file
+  NOTIFY_URL     Override the saved topic URL
+  NOTIFY_TOKEN   Optional ntfy access token
 EOF
 }
 
 fail() {
 	printf 'notify: %s\n' "$*" >&2
+	usage >&2
 	exit 64
+}
+
+setup_notify() {
+	[ "$#" -le 1 ] || fail 'setup accepts at most one topic or URL'
+	topic=${1:-"$("$script_dir/random-pet")"}
+
+	case "$topic" in
+		http://*|https://*) url=$topic ;;
+		*[!A-Za-z0-9_-]*) fail 'topic may contain only letters, digits, _ and -' ;;
+		*) url="https://ntfy.sh/$topic" ;;
+	esac
+	case "$url" in *'
+'*) fail 'topic URL must be a single line' ;; esac
+
+	umask 077
+	mkdir -p "$(dirname "$config_file")"
+	printf 'url=%s\n' "$url" > "$config_file"
+	chmod 600 "$config_file"
+	printf 'Configured ntfy topic: %s\n' "$url"
 }
 
 load_config() {
@@ -53,225 +53,28 @@ load_config() {
 			esac
 		done < "$config_file"
 	fi
+	[ -n "$url" ] || fail 'not configured; run: notify setup'
 }
 
-short_hostname() {
-	hostname -s 2>/dev/null || hostname
-}
-
-tmux_target() {
-	[ -n "${TMUX:-}" ] || return 1
-	tmux display-message -p '#{session_name}:#{window_index}.#{pane_index} #{window_name}' 2>/dev/null
-}
-
-provenance() {
-	host=$(short_hostname)
-	if target=$(tmux_target); then
-		printf '%s · %s' "$host" "$target"
-	else
-		printf '%s' "$host"
-	fi
-}
-
-tmux_detached() {
-	[ -n "${TMUX:-}" ] || return 1
-	attached=$(tmux display-message -p '#{session_attached}' 2>/dev/null || printf '')
-	[ "$attached" = 0 ]
-}
-
-is_away() {
-	[ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}${SSH_TTY:-}" ] || tmux_detached
-}
-
-sanitize_header() {
-	printf '%s' "$1" | tr '\r\n' '  '
-}
-
-read_message() {
-	if [ "$#" -gt 0 ]; then
-		printf '%s' "$*"
-	elif [ ! -t 0 ]; then
-		cat
-	else
-		printf '%s' 'Agent finished and is waiting for input.'
-	fi
-}
-
-generate_topic() {
-	"$script_dir/random-pet"
-}
-
-setup_notify() {
-	server=$default_server
-	token_value=
-	topic=
-	while [ "$#" -gt 0 ]; do
-		case "$1" in
-			--server)
-				[ "$#" -ge 2 ] || fail '--server needs a URL'
-				server=$2
-				shift 2
-				;;
-			--token)
-				[ "$#" -ge 2 ] || fail '--token needs a value'
-				token_value=$2
-				shift 2
-				;;
-			--topic)
-				[ "$#" -ge 2 ] || fail '--topic needs a topic or URL'
-				[ -z "$topic" ] || fail 'setup accepts one topic or URL'
-				topic=$2
-				shift 2
-				;;
-			-h|--help)
-				usage
-				exit 0
-				;;
-			-*) fail "unknown setup option: $1" ;;
-			*)
-				[ -z "$topic" ] || fail 'setup accepts one topic or URL'
-				topic=$1
-				shift
-				;;
-		esac
-	done
-
-	if [ -z "$topic" ]; then
-		topic=$(generate_topic)
-	fi
-	case "$topic" in
-		http://*|https://*) url=$topic ;;
-		*)
-			case "$topic" in *[!A-Za-z0-9_-]*) fail 'topic may contain only letters, digits, _ and -' ;; esac
-			url="${server%/}/$topic"
-			;;
-	esac
-	case "$url" in http://*|https://*) ;; *) fail 'topic URL must use http or https' ;; esac
-	case "$url$token_value" in *'
-'*) fail 'URL and token must be single-line values' ;; esac
-
-	umask 077
-	mkdir -p "$config_dir"
-	{
-		printf 'url=%s\n' "$url"
-		[ -z "$token_value" ] || printf 'token=%s\n' "$token_value"
-	} > "$config_file"
-	chmod 600 "$config_file"
-
-	printf 'Configured ntfy topic: %s\n' "$url"
-	printf 'Install ntfy on iPhone, subscribe to that exact URL, then run: notify send "test"\n'
-	printf 'The topic URL is a secret: anyone who knows it can read or publish notifications.\n'
-}
-
-show_status() {
-	load_config
-	printf 'Provenance: %s\n' "$(provenance)"
-	if [ -n "$url" ]; then
-		printf 'ntfy URL: %s\n' "$url"
-		[ -z "$token" ] || printf 'ntfy token: configured\n'
-	else
-		printf 'ntfy: not configured (run: notify setup)\n'
-	fi
-	if is_away; then
-		printf 'auto route: push\n'
-	elif [ "$(uname -s)" = Darwin ]; then
-		printf 'auto route: local macOS notification + sound\n'
-	else
-		printf 'auto route: push\n'
-	fi
-}
-
-notify_local() {
-	[ "$(uname -s)" = Darwin ] || fail 'local notifications require macOS'
+send_notification() {
+	[ "$#" -eq 2 ] || fail 'title and message are required'
 	title=$1
 	message=$2
-	script='on run argv
- display notification (item 1 of argv) with title (item 2 of argv)
-end run'
-	osascript -e "$script" -- "$message" "$title" >/dev/null 2>&1 &
-	afplay "${PI_DONE_SOUND:-/System/Library/Sounds/Glass.aiff}" >/dev/null 2>&1 &
-}
+	[ -n "$title" ] || fail 'title must not be empty'
+	[ -n "$message" ] || fail 'message must not be empty'
+	case "$title" in *'
+'*) fail 'title must be a single line' ;; esac
 
-notify_push() {
-	title=$1
-	message=$2
-	priority=$3
-	tags=$4
 	load_config
-	[ -n "$url" ] || {
-		printf 'notify: ntfy not configured; run: notify setup\n' >&2
-		exit 78
-	}
-
-	set -- --fail-with-body --silent --show-error --max-time 10 --retry 1 \
-		-H "Title: $(sanitize_header "$title")" \
-		-H "Priority: $priority" \
-		-H "Tags: $(sanitize_header "$tags")"
+	set -- --fail-with-body --silent --show-error --max-time 10 -H "Title: $title"
 	if [ -n "$token" ]; then
-		set -- "$@" -H "Authorization: Bearer $(sanitize_header "$token")"
+		set -- "$@" -H "Authorization: Bearer $token"
 	fi
-	curl "$@" --data-binary @- -- "$url" >/dev/null <<EOF
-$message
-EOF
+	printf '%s' "$message" | curl "$@" --data-binary @- -- "$url" >/dev/null
 }
 
-send_message() {
-	route=$1
-	shift
-	app=Agent
-	title=
-	priority=3
-	tags=robot
-	quiet=false
-	while [ "$#" -gt 0 ]; do
-		case "$1" in
-			--app)
-				[ "$#" -ge 2 ] || fail '--app needs a value'
-				app=$2
-				shift 2
-				;;
-			--title)
-				[ "$#" -ge 2 ] || fail '--title needs a value'
-				title=$2
-				shift 2
-				;;
-			--priority)
-				[ "$#" -ge 2 ] || fail '--priority needs a value'
-				priority=$2
-				shift 2
-				;;
-			--tags)
-				[ "$#" -ge 2 ] || fail '--tags needs a value'
-				tags=$2
-				shift 2
-				;;
-			--quiet) quiet=true; shift ;;
-			--) shift; break ;;
-			-h|--help) usage; exit 0 ;;
-			-*) fail "unknown message option: $1" ;;
-			*) break ;;
-		esac
-	done
-	case "$priority" in 1|2|3|4|5) ;; *) fail 'priority must be 1, 2, 3, 4, or 5' ;; esac
-	message=$(read_message "$@")
-	[ -n "$title" ] || title="$app needs you · $(provenance)"
-
-	if [ "$route" = auto ]; then
-		if ! is_away && [ "$(uname -s)" = Darwin ]; then route=local; else route=send; fi
-	fi
-	case "$route" in
-		local) notify_local "$title" "$message" ;;
-		send) notify_push "$title" "$message" "$priority" "$tags" ;;
-		*) fail "unknown route: $route" ;;
-	esac
-	[ "$quiet" = true ] || printf 'Notification sent via %s: %s\n' "$route" "$title"
-}
-
-command=${1:-auto}
-case "$command" in
+case "${1:-}" in
 	setup) shift; setup_notify "$@" ;;
-	status) shift; [ "$#" -eq 0 ] || fail 'status takes no arguments'; show_status ;;
-	send|local|auto) [ "$#" -eq 0 ] || shift; send_message "$command" "$@" ;;
 	-h|--help|help) usage ;;
-	*) send_message auto "$@" ;;
+	*) send_notification "$@" ;;
 esac

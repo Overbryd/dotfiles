@@ -17,7 +17,7 @@ type NotifyRuntime = {
 	stdoutIsTTY: boolean;
 	getTmuxState: () => { attached?: boolean; target?: string };
 	notifyLocal: (title: string, summary: string) => void;
-	notifyPush: (summary: string) => void;
+	notifyPush: (title: string, summary: string) => void;
 };
 
 function textFromContent(content: unknown): string {
@@ -139,8 +139,8 @@ function notifyScript(env: NodeJS.ProcessEnv): string {
 	return env.PI_NOTIFY_COMMAND || join(env.HOME || homedir(), ".bin", "notify");
 }
 
-function defaultPushNotification(summary: string, env: NodeJS.ProcessEnv): void {
-	const child = spawn("/bin/sh", [notifyScript(env), "send", "--app", "Pi", "--quiet", "--", summary], {
+function defaultPushNotification(title: string, summary: string, env: NodeJS.ProcessEnv): void {
+	const child = spawn(notifyScript(env), [title, summary], {
 		detached: true,
 		stdio: "ignore",
 	});
@@ -174,7 +174,7 @@ export function registerNotify(pi: ExtensionAPI, overrides: Partial<NotifyRuntim
 		stdoutIsTTY: !!process.stdout.isTTY,
 		getTmuxState: defaultTmuxState,
 		notifyLocal: (title, summary) => defaultLocalNotification(title, summary, env),
-		notifyPush: (summary) => defaultPushNotification(summary, env),
+		notifyPush: (title, summary) => defaultPushNotification(title, summary, env),
 		...overrides,
 	};
 	let enabled = true;
@@ -195,12 +195,13 @@ export function registerNotify(pi: ExtensionAPI, overrides: Partial<NotifyRuntim
 		lastNotifiedLeaf = leaf ?? undefined;
 
 		const tmux = runtime.getTmuxState();
+		const title = notificationTitle(tmux.target);
 		const summary = summarizeNotification(ctx.sessionManager.getBranch());
 		for (const channel of notificationChannels(runtime.env, runtime.platform, tmux.attached)) {
 			if (channel === "local" && runtime.platform === "darwin" && runtime.stdoutIsTTY) {
-				runtime.notifyLocal(notificationTitle(tmux.target), summary);
+				runtime.notifyLocal(title, summary);
 			} else if (channel === "push" && isPushConfigured(runtime.env)) {
-				runtime.notifyPush(summary);
+				runtime.notifyPush(title, summary);
 			}
 		}
 	});
@@ -221,7 +222,8 @@ export function registerNotify(pi: ExtensionAPI, overrides: Partial<NotifyRuntim
 					report(ctx, "Phone push not configured. Run: notify setup", "warning");
 					return;
 				}
-				runtime.notifyPush("Test notification from Pi.");
+				const tmux = runtime.getTmuxState();
+				runtime.notifyPush(notificationTitle(tmux.target), "Test notification from Pi.");
 				report(ctx, "Test phone notification queued.");
 				return;
 			} else if (command !== "status") {
