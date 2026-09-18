@@ -5,5 +5,10 @@ if id -Gn | grep admin >/dev/null; then
 else
   export ADMIN_PROMPT=""
 fi
-export PS1="\n${ADMIN_PROMPT}\W$\[\e[m\] "
+if [ -n "${SSH_CONNECTION:-}" ]; then
+  export SSH_PROMPT="\[\e[38;5;255;48;5;24m\]\h\[\e[m\] "
+else
+  export SSH_PROMPT=""
+fi
+export PS1="\n${SSH_PROMPT}${ADMIN_PROMPT}\W$\[\e[m\] "
 
