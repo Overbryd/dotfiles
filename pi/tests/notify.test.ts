@@ -36,6 +36,7 @@ test("routes local Mac sessions locally and remote or detached sessions to push"
 function harness(env: NodeJS.ProcessEnv = { NOTIFY_URL: "https://ntfy.sh/test" }) {
 	const handlers = new Map<string, (event: any, ctx: any) => unknown>();
 	const commands = new Map<string, any>();
+	const busHandlers = new Map<string, Set<(value: unknown) => void>>();
 	const entries: any[] = [
 		{ id: "answer", type: "message", message: { role: "assistant", content: [{ type: "text", text: "Ready to review." }] } },
 	];
@@ -51,6 +52,17 @@ function harness(env: NodeJS.ProcessEnv = { NOTIFY_URL: "https://ntfy.sh/test" }
 		},
 		appendEntry(customType: string, data: unknown) {
 			entries.push({ type: "custom", customType, data });
+		},
+		events: {
+			on(channel: string, handler: (value: unknown) => void) {
+				const handlers = busHandlers.get(channel) ?? new Set();
+				handlers.add(handler);
+				busHandlers.set(channel, handlers);
+				return () => handlers.delete(handler);
+			},
+			emit(channel: string, value: unknown) {
+				for (const handler of busHandlers.get(channel) ?? []) handler(value);
+			},
 		},
 	};
 	const ctx = {
@@ -73,7 +85,7 @@ function harness(env: NodeJS.ProcessEnv = { NOTIFY_URL: "https://ntfy.sh/test" }
 		notifyLocal: (title, summary) => local.push([title, summary]),
 		notifyPush: (title, summary) => pushes.push([title, summary]),
 	});
-	return { commands, ctx, entries, handlers, local, notices, pushes };
+	return { busHandlers, commands, ctx, entries, handlers, local, notices, pi, pushes };
 }
 
 test("notifies once after Pi fully settles", async () => {
@@ -96,6 +108,41 @@ test("push notifications receive an explicit title and message", async () => {
 	assert.equal(h.pushes.length, 1);
 	assert.match(h.pushes[0]?.[0] ?? "", /Pi needs you.*work:2\.0 tests/);
 	assert.equal(h.pushes[0]?.[1], "Ready to review.");
+});
+
+test("terminal agent errors include the error in the notification", async () => {
+	const h = harness({ NOTIFY_URL: "https://ntfy.sh/test", SSH_CONNECTION: "client" });
+	h.entries[0].message.stopReason = "error";
+	h.entries[0].message.errorMessage = "Provider failed\nwith status 500";
+	await h.handlers.get("session_start")?.({}, h.ctx);
+	await h.handlers.get("agent_settled")?.({}, h.ctx);
+
+	assert.equal(h.pushes.length, 1);
+	assert.match(h.pushes[0]?.[0] ?? "", /Pi error/);
+	assert.equal(h.pushes[0]?.[1], "Provider failed with status 500");
+});
+
+test("touch-grass pause notifies once when the quota wait starts", async () => {
+	const h = harness({ NOTIFY_URL: "https://ntfy.sh/test", SSH_CONNECTION: "client" });
+	let pausedStatus: string | undefined;
+	let changed = () => {};
+	const controller = {
+		getPausedStatus: () => pausedStatus,
+		onChange(handler: () => void) {
+			changed = handler;
+			return () => { changed = () => {}; };
+		},
+	};
+	h.pi.events.emit("touch-grass:available", controller);
+	await h.handlers.get("session_start")?.({}, h.ctx);
+
+	pausedStatus = "touch grass 2h 5m left, loop paused";
+	changed();
+	changed();
+
+	assert.equal(h.pushes.length, 1);
+	assert.match(h.pushes[0]?.[0] ?? "", /Pi paused/);
+	assert.equal(h.pushes[0]?.[1], pausedStatus);
 });
 
 test("session command disables and restores notifications", async () => {

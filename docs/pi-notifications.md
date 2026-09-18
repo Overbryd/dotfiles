@@ -6,8 +6,10 @@ Pi reports when it has settled and needs another user turn.
 - SSH session, detached tmux session, or non-macOS host: ntfy push.
 - Notification title: host and tmux `session:window.pane` provenance.
 - Notification body: up to 240 characters from Pi's final response.
+- Terminal agent error: `Pi error` title with the provider error message.
+- Codex touch-grass quota wait: immediate, deduplicated `Pi paused` notification with the remaining wait.
 
-The extension waits for `agent_settled`, not `agent_end`, so retries, compaction, and queued follow-ups do not produce premature alerts.
+Normal completion and terminal errors wait for `agent_settled`, not `agent_end`, so retries, compaction, and queued follow-ups do not produce premature alerts. Touch-grass pause transitions arrive through the extension event bus because the agent remains busy during that wait.
 
 ## Phone setup
 

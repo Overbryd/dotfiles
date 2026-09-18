@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir, hostname } from "node:os";
@@ -7,6 +7,8 @@ import { join } from "node:path";
 const CUSTOM_TYPE = "notify";
 const FALLBACK_SUMMARY = "Pi finished and is waiting for input.";
 const MAX_SUMMARY_CHARS = 240;
+const TOUCH_GRASS_AVAILABLE_CHANNEL = "touch-grass:available";
+const TOUCH_GRASS_REQUEST_CHANNEL = "touch-grass:request";
 
 export type NotifyChannel = "local" | "push";
 export type NotifyMode = "auto" | "local" | "push" | "both";
@@ -18,6 +20,16 @@ type NotifyRuntime = {
 	getTmuxState: () => { attached?: boolean; target?: string };
 	notifyLocal: (title: string, summary: string) => void;
 	notifyPush: (title: string, summary: string) => void;
+};
+
+type TouchGrassController = {
+	getPausedStatus(now?: number): string | undefined;
+	onChange(handler: () => void): () => void;
+};
+
+export type NotificationOutcome = {
+	error: boolean;
+	summary: string;
 };
 
 function textFromContent(content: unknown): string {
@@ -41,22 +53,34 @@ function shorten(text: string, maxLength = MAX_SUMMARY_CHARS): string {
 	return `${prefix.slice(0, end).trimEnd()}…`;
 }
 
-export function summarizeNotification(entries: readonly unknown[]): string {
+export function notificationOutcome(entries: readonly unknown[]): NotificationOutcome {
 	for (let index = entries.length - 1; index >= 0; index--) {
 		const entry = entries[index];
 		if (!entry || typeof entry !== "object") continue;
 		const message = (entry as { type?: unknown; message?: unknown }).message;
 		if (!message || typeof message !== "object" || (message as { role?: unknown }).role !== "assistant") continue;
 
-		const text = textFromContent((message as { content?: unknown }).content)
+		const assistant = message as { content?: unknown; errorMessage?: unknown; stopReason?: unknown };
+		const errorMessage = typeof assistant.errorMessage === "string"
+			? assistant.errorMessage.replace(/\s+/g, " ").trim()
+			: "";
+		if (assistant.stopReason === "error" || errorMessage) {
+			return { error: true, summary: shorten(errorMessage || "Pi turn ended with an error.") };
+		}
+
+		const text = textFromContent(assistant.content)
 			.replace(/```(?:\w+)?/g, " ")
 			.replace(/\[([^\]]+)]\([^\s)]+\)/g, "$1")
 			.replace(/[*_~`>#]+/g, " ")
 			.replace(/\s+/g, " ")
 			.trim();
-		return text ? shorten(text) : FALLBACK_SUMMARY;
+		return { error: false, summary: text ? shorten(text) : FALLBACK_SUMMARY };
 	}
-	return FALLBACK_SUMMARY;
+	return { error: false, summary: FALLBACK_SUMMARY };
+}
+
+export function summarizeNotification(entries: readonly unknown[]): string {
+	return notificationOutcome(entries).summary;
 }
 
 export function notifyMode(env: NodeJS.ProcessEnv): NotifyMode {
@@ -110,8 +134,8 @@ function defaultTmuxState(): { attached?: boolean; target?: string } {
 	};
 }
 
-function notificationTitle(target?: string): string {
-	return ["Pi needs you", hostname().split(".")[0], target].filter(Boolean).join(" · ");
+function notificationTitle(target?: string, status = "Pi needs you"): string {
+	return [status, hostname().split(".")[0], target].filter(Boolean).join(" · ");
 }
 
 function defaultLocalNotification(title: string, summary: string, env: NodeJS.ProcessEnv): void {
@@ -157,6 +181,12 @@ export function isPushConfigured(env: NodeJS.ProcessEnv): boolean {
 	return !!env.NOTIFY_URL || existsSync(configPath(env));
 }
 
+function isTouchGrassController(value: unknown): value is TouchGrassController {
+	if (!value || typeof value !== "object") return false;
+	const controller = value as Partial<TouchGrassController>;
+	return typeof controller.getPausedStatus === "function" && typeof controller.onChange === "function";
+}
+
 function report(
 	ctx: { hasUI: boolean; ui: { notify(message: string, type?: "info" | "warning" | "error"): void } },
 	message: string,
@@ -178,25 +208,16 @@ export function registerNotify(pi: ExtensionAPI, overrides: Partial<NotifyRuntim
 		...overrides,
 	};
 	let enabled = true;
+	let lastContext: ExtensionContext | undefined;
 	let lastNotifiedLeaf: string | undefined;
+	let touchGrass: TouchGrassController | undefined;
+	let touchGrassPaused = false;
+	let unsubscribeTouchGrassChange: (() => void) | undefined;
 
-	const restore = (ctx: { sessionManager: { getBranch(): readonly unknown[] } }) => {
-		enabled = restoreEnabled(ctx.sessionManager.getBranch());
-		lastNotifiedLeaf = undefined;
-	};
-
-	pi.on("session_start", (_event, ctx) => restore(ctx));
-	pi.on("session_tree", (_event, ctx) => restore(ctx));
-
-	pi.on("agent_settled", (_event, ctx) => {
-		if (!enabled || ctx.mode !== "tui" || !ctx.isIdle() || ctx.hasPendingMessages()) return;
-		const leaf = ctx.sessionManager.getLeafId();
-		if (leaf && leaf === lastNotifiedLeaf) return;
-		lastNotifiedLeaf = leaf ?? undefined;
-
+	const deliver = (ctx: ExtensionContext, status: string, summary: string) => {
+		if (!enabled || ctx.mode !== "tui") return;
 		const tmux = runtime.getTmuxState();
-		const title = notificationTitle(tmux.target);
-		const summary = summarizeNotification(ctx.sessionManager.getBranch());
+		const title = notificationTitle(tmux.target, status);
 		for (const channel of notificationChannels(runtime.env, runtime.platform, tmux.attached)) {
 			if (channel === "local" && runtime.platform === "darwin" && runtime.stdoutIsTTY) {
 				runtime.notifyLocal(title, summary);
@@ -204,6 +225,49 @@ export function registerNotify(pi: ExtensionAPI, overrides: Partial<NotifyRuntim
 				runtime.notifyPush(title, summary);
 			}
 		}
+	};
+
+	const attachTouchGrass = (value: unknown) => {
+		if (!isTouchGrassController(value) || value === touchGrass) return;
+		unsubscribeTouchGrassChange?.();
+		touchGrass = value;
+		touchGrassPaused = !!touchGrass.getPausedStatus();
+		unsubscribeTouchGrassChange = touchGrass.onChange(() => {
+			const pausedStatus = touchGrass?.getPausedStatus();
+			const justPaused = !!pausedStatus && !touchGrassPaused;
+			touchGrassPaused = !!pausedStatus;
+			if (justPaused && lastContext) deliver(lastContext, "Pi paused", pausedStatus);
+		});
+	};
+	const unsubscribeTouchGrassAvailable = pi.events.on(TOUCH_GRASS_AVAILABLE_CHANNEL, attachTouchGrass);
+	pi.events.emit(TOUCH_GRASS_REQUEST_CHANNEL, { accept: attachTouchGrass });
+
+	const restore = (ctx: ExtensionContext) => {
+		lastContext = ctx;
+		enabled = restoreEnabled(ctx.sessionManager.getBranch());
+		lastNotifiedLeaf = undefined;
+		touchGrassPaused = !!touchGrass?.getPausedStatus();
+	};
+
+	pi.on("session_start", (_event, ctx) => restore(ctx));
+	pi.on("session_tree", (_event, ctx) => restore(ctx));
+
+	pi.on("agent_settled", (_event, ctx) => {
+		lastContext = ctx;
+		if (!enabled || ctx.mode !== "tui" || !ctx.isIdle() || ctx.hasPendingMessages()) return;
+		const leaf = ctx.sessionManager.getLeafId();
+		if (leaf && leaf === lastNotifiedLeaf) return;
+		lastNotifiedLeaf = leaf ?? undefined;
+
+		const outcome = notificationOutcome(ctx.sessionManager.getBranch());
+		deliver(ctx, outcome.error ? "Pi error" : "Pi needs you", outcome.summary);
+	});
+
+	pi.on("session_shutdown", () => {
+		unsubscribeTouchGrassChange?.();
+		unsubscribeTouchGrassChange = undefined;
+		unsubscribeTouchGrassAvailable();
+		lastContext = undefined;
 	});
 
 	pi.registerCommand("notify", {
