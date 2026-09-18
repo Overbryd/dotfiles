@@ -1,5 +1,7 @@
 ---
-description: Implement a ticket from Atlassian Jira
+name: jira-implement-issue
+description: Implement a ticket from Atlassian Jira.
+disable-model-invocation: true
 ---
 
 Plan and implement a given ticket (task, story, etc).

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if (($# < 1 || $# > 2)); then
+  echo "usage: bash tf-plan-summary <saved-plan.tfplan> [config-dir]" >&2
+  exit 64
+fi
+
+plan=$(realpath "$1")
+terraform_bin=${TERRAFORM_BIN:-terraform}
+
+if (($# == 2)); then
+  cd "$2"
+fi
+
+"$terraform_bin" show -json "$plan" |
+jq -r '
+  [.resource_changes[]?
+    | select(.change.actions != ["no-op"] and .change.actions != ["read"])
+    | {address, actions: .change.actions}
+  ] as $changes
+  | ($changes | group_by(.actions | join("+"))[]
+      | "\(.[0].actions | join("+")): \(length)"
+    ),
+    "--- resources ---",
+    ($changes[] | "\(.actions | join("+"))\t\(.address)"),
+    "--- totals ---",
+    "add=\([$changes[] | select(.actions == ["create"])] | length) " +
+    "change=\([$changes[] | select(.actions == ["update"])] | length) " +
+    "replace=\([$changes[] | select(.actions == ["delete", "create"] or .actions == ["create", "delete"])] | length) " +
+    "destroy=\([$changes[] | select(.actions == ["delete"])] | length)"
+'

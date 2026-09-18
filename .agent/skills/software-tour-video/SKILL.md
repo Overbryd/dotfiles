@@ -1,7 +1,8 @@
 ---
 name: software-tour-video
-description: Creates slow, captioned local software change-tour videos with Playwright, packages them as phone-compatible H.264 MP4 files, performs visual/decode QC, and places them in Dropbox Videos. Use when a user asks for walkthrough, demo, release, issue, or feature videos to watch on a phone or sync through Dropbox.
+description: Creates captioned software walkthrough MP4s from local behavior and delivers them to Dropbox Videos.
 compatibility: macOS or Linux with pi-playwright-e2e, Chromium, FFmpeg/ffprobe; Dropbox optional.
+disable-model-invocation: true
 ---
 
 # Software change-tour videos

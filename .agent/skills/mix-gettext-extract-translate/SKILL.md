@@ -1,5 +1,7 @@
 ---
-description: Extract translation strings and translate untranslated msg strings locales
+name: mix-gettext-extract-translate
+description: Extract Gettext strings and translate empty locale messages.
+disable-model-invocation: true
 ---
 
 Run `mix gettext.extract --merge` and go through all language files.

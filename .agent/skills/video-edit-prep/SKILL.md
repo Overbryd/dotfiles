@@ -2,6 +2,7 @@
 name: video-edit-prep
 description: Prepares local video projects for transcript-driven 16:9 longform and 9:16 shortform editing using FFmpeg, sayneat, macOS Vision eye-line gates, deterministic review renders, QC, and Resolve-Free-compatible FCPXML. Use for raw recording ingest, stacked camera feeds, audio-track mapping, local German/multilingual ASR, content selects, shot grammar, reframing, review cuts, or NLE handoff.
 compatibility: Apple Silicon macOS, Python 3.11+, FFmpeg/ffprobe, sayneat, Swift; DaVinci Resolve Free optional for finishing.
+disable-model-invocation: true
 ---
 
 # Video edit preparation
@@ -21,6 +22,7 @@ Read [references/WORKFLOW.md](references/WORKFLOW.md) before first project. Read
 - Originals immutable. Never write, rename, move, remux, or delete inside `Originals/`.
 - Keep generated work under `<project>/Production/`.
 - No publishing, uploads, Resolve project deletion, or source replacement.
+- Treat third-party motion/generative tools as untrusted dependencies: no cloud render, media upload, account login, or API credential use without explicit approval. Prefer a pinned local renderer, frozen local assets, recorded license/integrity, and a replaceable intermediate.
 - Audio and transcription stay local. Network may occur only for missing model downloads after user approval.
 - Never publish raw ASR. Check names, numbers, URLs, negations, prices, and unclear words.
 - Never infer speaker identity from filename, loudness, or face. Ask or label unknown.
@@ -172,6 +174,8 @@ Review transcript plus contact sheets. Produce timestamped candidates with:
 
 Separate completed delivery from false starts, rehearsal, crew direction, technical talk, and teardown. For event recordings, inventory every self-contained presentation—including host or sponsor presentations—before classifying surrounding speech as moderation. Refine every retained start/end and every moderation removal with short, word-timestamped boundary passes; whole-recording ASR segments may be too coarse. Do not pad weak material to hit requested length. State when only a shorter honest cut exists.
 
+For recap, promo, and social edits, define the opening hook, progression, one deliberate breather, and landing before polishing scenes. Keep energy high with motion and cuts rather than unreadable text. A short label needs about 0.8 seconds fully settled; a sentence needs roughly 0.3 seconds per word and at least about 1.2 seconds settled.
+
 ### 4. Apply shot grammar
 
 Default learned baseline:
@@ -196,6 +200,10 @@ python3 scripts/video_prep.py validate-plan "/path/to/Project" "/path/to/plan.js
 ```
 
 Fix all failures before render.
+
+For music-led edits, preserve the licensed local master and license evidence, then derive a cue/beat map as optional timing guidance. Lock only a few major reveals to strong cues; never force speech, story, or readable text onto every beat. Sequential readable labels normally need every other beat or a shared settled hold. Record any retime, reverse, loop, or editorial music cut in the plan or review notes.
+
+For external motion packages, keep source and rendered intermediates under `Production/`, pin the exact dependency version, record upstream/license/integrity and network behavior, freeze runtime assets locally, run the dependency's own checker, and inspect the result over real footage. The normal project QC, consent gates, and human watch still control delivery.
 
 ### 6. Render review
 

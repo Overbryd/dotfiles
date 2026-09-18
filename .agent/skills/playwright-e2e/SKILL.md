@@ -1,6 +1,6 @@
 ---
 name: playwright-e2e
-description: Run browser end-to-end checks against local or remote web servers using a shared global Python Playwright install. Use for Playwright, browser automation, e2e tests, screenshots, videos, traces, visual smoke tests, and verifying web UI behavior without installing Playwright into the project.
+description: Runs browser E2E checks, automation, screenshots, videos, traces, and UI smoke tests through shared Playwright without project installation.
 ---
 
 # Playwright E2E

@@ -5,7 +5,7 @@ PI_CONFIG_SOURCES := $(filter-out pi/settings.json,$(wildcard pi/*.json))
 PI_CONFIG_FILES := $(addprefix ~/.pi/agent/, $(notdir $(PI_CONFIG_SOURCES)))
 PI_EXTENSIONS := $(addprefix ~/.pi/agent/extensions/, $(notdir $(wildcard pi/extensions/*.ts)))
 PI_AGENT_FILES := ~/.pi/agent/AGENTS.md
-PI_AGENT_SKILLS := $(patsubst .agent/skills/%,~/.pi/agent/skills/%,$(shell find .agent/skills -mindepth 2 -type f 2>/dev/null))
+PI_AGENT_SKILLS := $(patsubst .agent/skills/%,~/.pi/agent/skills/%,$(shell find .agent/skills -mindepth 2 -type f ! -path '*/__pycache__/*' ! -name '*.pyc' 2>/dev/null))
 LAUNCH_AGENTS := $(addprefix ~/Library/, $(wildcard LaunchAgents/*))
 PNPM_CONFIG_FILES := ~/Library/Preferences/pnpm/config.yaml
 

@@ -1,5 +1,7 @@
 ---
-description: Wrap up an implementation with project-specific checks and a scoped diff review
+name: wrapup
+description: Wrap up an implementation with project-specific checks and a scoped diff review.
+disable-model-invocation: true
 ---
 
 # Wrap up implementation

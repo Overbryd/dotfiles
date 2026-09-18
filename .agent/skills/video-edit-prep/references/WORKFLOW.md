@@ -58,6 +58,8 @@ Vision landmarks measured direct front-to-front cuts. Per-shot crops aligned eye
 
 Official press-kit assets worked well when preserved under `Production/01_analysis/brand/` with source URL and hashes. Generated title/end clips under `Production/05_resolve/graphics/` could then participate in the same JSON plan as camera sources. Keeping branding to cards—not a persistent bug—avoided obscuring code and slides.
 
+For motion frameworks or generated graphics, use the smallest replaceable boundary. Pin an aged, inspected version; record upstream, license, integrity, optional network-capable dependencies, and every network action; keep render assets local; disable telemetry when supported; and prohibit cloud/auth/upload commands unless explicitly approved. Run the framework's checker, but treat its output as an intermediate that still needs ordinary decode/QC, brand review, safe-zone review, and compositing over real footage. A dependency's green gate never supersedes consent or publication gates.
+
 Approval promotion should copy the exact QC-passed review bytes, verify SHA-256, and write an approval-bound manifest. Video, thumbnail, metadata, chapters, and captions are separate delivery checklist items. In this session the videos were promoted correctly, but thumbnails were initially omitted because no explicit checklist/tool gate existed.
 
 ### Rendering/QC
@@ -127,6 +129,19 @@ Use front angle for narrative connection. Cut overhead on an actual product acti
 ### Shortform
 
 Choose one standalone promise/payoff. Start with a truthful subject-complete hook. Rebuild framing from source. Keep face eye line stable, protect caption/UI safe zones, and avoid showing details obscured by hands. Platform maximum length is not a target.
+
+### Recaps, music, and motion text
+
+Plan the arc before effects: hook → progression → one intentional breather → landing/CTA. The opening earns attention, but must still obey chronology, identity, and consent constraints. A flash-forward or rewind may use recognition-safe detail shots when showing participants early would violate those constraints.
+
+Pace with cuts, action, and transition motion—not by making copy disappear too quickly. Minimum practical settled holds:
+
+- short label or one-to-three-word line: about 0.8 seconds;
+- headline or sentence: about 0.3 seconds per word, never less than about 1.2 seconds.
+
+Analyze a licensed local music master after intake. Treat beats and strong cues as evidence, not an edit decision: lock a few major reveals, use beat grids for compatible non-text accents, and skip a cue when it damages readability, dialogue, or story. Fast beat grids often need every other beat for readable sequential text, followed by a hold on the complete set. Prefer a few motion-matched sound accents over a dense grab bag.
+
+Keep track, certificate, source URL, account/license tier, download date, publication window, Clearlist/claim evidence, and final platform check together. Do not accept shared credentials or transfer a standalone licensed asset when the provider forbids either.
 
 ### Color/audio/captions
 

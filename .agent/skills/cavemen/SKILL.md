@@ -1,6 +1,6 @@
 ---
 name: cavemen
-description: Changes response compression level or restores caveman style. Use only when user explicitly asks for caveman, terse, brief, normal mode, or a named caveman level.
+description: Switches response brevity or style. Use only when the user explicitly requests caveman, terse, brief, normal mode, or a named caveman level.
 ---
 
 # Caveman style controls

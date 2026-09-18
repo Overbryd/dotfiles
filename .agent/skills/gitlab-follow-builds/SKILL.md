@@ -1,5 +1,7 @@
 ---
-description: Follow a GitLab pipeline to a green result with bounded logs and token use
+name: gitlab-follow-builds
+description: Follow a GitLab pipeline to a green result with bounded logs and token use.
+disable-model-invocation: true
 ---
 
 # Follow GitLab builds

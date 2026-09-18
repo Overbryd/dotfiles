@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if (($# < 1 || $# > 2)); then
+  echo "usage: bash tf-pane-summary <tmux-target> [history-lines]" >&2
+  exit 64
+fi
+
+target=$1
+history=${2:--3000}
+
+tmux capture-pane -p -t "$target" -S "$history" |
+awk '
+  /^Terraform will perform the following actions:/ ||
+  /^[[:space:]]*# .* will be (created|updated in-place|destroyed|read during apply)/ ||
+  /^[[:space:]]*# .* must be replaced/ ||
+  /^Plan: [0-9]+ to add, [0-9]+ to change, [0-9]+ to destroy\./ ||
+  /^No changes\./ ||
+  /^Do you want to perform these actions\?/ ||
+  /^[[:space:]]*Enter a value:/ ||
+  /^Apply complete!/ ||
+  /^Apply cancelled\./ ||
+  /^Planning failed\./ ||
+  /^│ Error:/ {
+    print
+    error_context = /^│ Error:/ ? 10 : 0
+    next
+  }
+  error_context > 0 {
+    print
+    error_context--
+  }
+'

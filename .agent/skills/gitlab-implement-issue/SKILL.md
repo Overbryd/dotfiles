@@ -1,5 +1,7 @@
 ---
-description: Refine, implement, validate, and optionally release one or more GitLab issues
+name: gitlab-implement-issue
+description: Refine, implement, validate, and optionally release one or more GitLab issues.
+disable-model-invocation: true
 ---
 
 # Implement GitLab issues
@@ -56,7 +58,7 @@ Verify every changed line traces to an issue or an explicitly approved release f
 - Use compact status polling; retrieve full traces only for failures and deployment plans.
 - Fix failures with focused follow-up commits. Never hide warnings merely to make CI green.
 
-See `gitlab-follow-builds.md` for monitoring details.
+See [`gitlab-follow-builds`](../gitlab-follow-builds/SKILL.md) for monitoring details.
 
 ## 6. Staging and production
 
