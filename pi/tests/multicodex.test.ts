@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import multicodex, {
+	createStreamWrapper,
 	formatAccountBar,
 	formatOpenAIStatusAdvice,
 	formatWorkspaceCredits,
@@ -31,6 +32,38 @@ function usage(usedPercent: number, balance: string, autoPurchaseRemaining: stri
 		fetchedAt: Date.now(),
 	};
 }
+
+test("aborting a touch-grass wait completes the provider stream", async () => {
+	const accountManager = {
+		waitUntilReady: async () => {},
+		getAvailableManualAccount: () => undefined,
+		hasManualAccount: () => false,
+		activateBestAccount: async () => undefined,
+		getNextStandardQuotaResetAt: () => Date.now() + 60_000,
+	};
+	const touchGrass = {
+		isEnabled: () => true,
+		waitUntil: async () => "aborted" as const,
+	};
+	const wrapped = createStreamWrapper(
+		accountManager as never,
+		(() => {
+			throw new Error("base stream should not start");
+		}) as never,
+		() => touchGrass as never,
+	);
+	const stream = wrapped(
+		{ api: "openai-codex-responses", provider: "openai-codex", id: "gpt-5.6-luna" } as never,
+		{ messages: [] } as never,
+	);
+	const result = await Promise.race([
+		stream.result(),
+		new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 50)),
+	]);
+
+	assert.notEqual(result, "timeout");
+	assert.equal(typeof result === "object" ? result.stopReason : undefined, "aborted");
+});
 
 test("refreshes usage after agent settles rather than after every turn", () => {
 	const events: string[] = [];

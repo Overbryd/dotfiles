@@ -1190,10 +1190,14 @@ class AccountManager {
 	}
 }
 
-function createErrorEvent(model: Model<Api>, message: string): AssistantMessageEvent {
+function createErrorEvent(
+	model: Model<Api>,
+	message: string,
+	reason: "error" | "aborted" = "error",
+): AssistantMessageEvent {
 	return {
 		type: "error",
-		reason: "error",
+		reason,
 		error: {
 			role: "assistant",
 			content: [],
@@ -1201,14 +1205,14 @@ function createErrorEvent(model: Model<Api>, message: string): AssistantMessageE
 			provider: model.provider,
 			model: model.id,
 			usage: ZERO_USAGE,
-			stopReason: "error",
+			stopReason: reason,
 			errorMessage: message,
 			timestamp: Date.now(),
 		},
 	} as AssistantMessageEvent;
 }
 
-function createStreamWrapper(
+export function createStreamWrapper(
 	accountManager: AccountManager,
 	baseStreamSimple: StreamSimple,
 	getTouchGrass: () => TouchGrassController | undefined,
@@ -1240,6 +1244,7 @@ function createStreamWrapper(
 							const retryAt = resetAt > Date.now() ? resetAt : Date.now() + CODEX_DOWN_RETRY_MS;
 							const waitResult = await touchGrass.waitUntil(retryAt, options?.signal);
 							if (waitResult === "aborted") {
+								stream.push(createErrorEvent(model, "Request was aborted", "aborted"));
 								stream.end();
 								return;
 							}
