@@ -602,6 +602,10 @@ $(PI_FORK_ROOT)/.git:
 	fi
 	mkdir -p $@
 
+~/.pi/agent/extensions/auto-profile.ts: pi/extensions/auto-profile.ts | ~/.pi/agent/extensions
+	test ! -L ~/.pi/agent/extensions/openai-auto-profile.ts || rm ~/.pi/agent/extensions/openai-auto-profile.ts
+	ln -svf $(DOTFILES_ROOT)/$< $@
+
 ~/.pi/agent/extensions/%: pi/extensions/% | ~/.pi/agent/extensions
 	ln -svf $(DOTFILES_ROOT)/$< $@
 

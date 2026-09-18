@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import openAIAutoProfile, {
-	__openAIAutoProfileInternals,
+import autoProfile, {
+	__autoProfileInternals,
 	type AutoProfileDecision,
-} from "../extensions/openai-auto-profile.ts";
+} from "../extensions/auto-profile.ts";
 
-const { parseClassification, resolveAutoDecision } = __openAIAutoProfileInternals;
+const { parseClassification, resolveAutoDecision } = __autoProfileInternals;
 
 type Handler = (event: any, context: any) => unknown;
 
@@ -52,6 +52,35 @@ function harness(
 		id: "gpt-6-astra",
 		provider: "openai",
 		api: "openai-responses",
+		reasoning: true,
+	});
+	for (const id of [
+		"eu.anthropic.claude-fable-5",
+		"eu.anthropic.claude-opus-5",
+		"eu.anthropic.claude-sonnet-5",
+		"global.anthropic.claude-fable-5",
+		"global.anthropic.claude-fable-5-1",
+		"global.anthropic.claude-opus-5",
+		"global.anthropic.claude-sonnet-5",
+		"global.openai.gpt-5.6-luna",
+	]) {
+		models.set(`amazon-bedrock/${id}`, {
+			id,
+			provider: "amazon-bedrock",
+			api: "bedrock-converse-stream",
+			reasoning: true,
+		});
+	}
+	models.set("anthropic/claude-sonnet-5", {
+		id: "claude-sonnet-5",
+		provider: "anthropic",
+		api: "anthropic-messages",
+		reasoning: true,
+	});
+	models.set("minimax/MiniMax-M2.7", {
+		id: "MiniMax-M2.7",
+		provider: "minimax",
+		api: "anthropic-messages",
 		reasoning: true,
 	});
 	let currentModel = models.get(`${initialProvider}/${initialModelId}`)!;
@@ -117,11 +146,17 @@ function harness(
 			},
 		},
 		modelRegistry: {
+			getAll() {
+				return [...models.values()];
+			},
+			getAvailable() {
+				return [...models.values()];
+			},
 			find(provider: string, id: string) {
 				return models.get(`${provider}/${id}`);
 			},
 			async complete(model: any, requestContext: any, options: any) {
-				assert.equal(model.id, "gpt-5.6-luna");
+				assert.match(model.id, /(?:^|\.)gpt-5\.6-luna$/);
 				classifierProviders.push(model.provider);
 				assert.equal(options.reasoning, "minimal");
 				assert.equal(options.maxTokens, 512);
@@ -133,7 +168,7 @@ function harness(
 		},
 	};
 
-	openAIAutoProfile(pi as never);
+	autoProfile(pi as never);
 	return {
 		models,
 		commands,
@@ -247,6 +282,60 @@ test("bare auto snapshots the current provider/model and persists thinking-only 
 	}
 });
 
+test("bare auto works on the currently selected non-OpenAI model", async () => {
+	const h = harness([assistantClassification("critical")], "anthropic", "claude-sonnet-5");
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.commands.get("profile").handler("auto", h.context);
+	await h.handlers.get("before_agent_start")?.({ prompt: "Review this security change" }, h.context);
+
+	assert.equal(h.providerId, "anthropic");
+	assert.equal(h.modelId, "claude-sonnet-5");
+	assert.equal(h.thinkingLevel, "xhigh");
+	assert.equal(h.entries.at(-1).data.providerId, "anthropic");
+	assert.match(h.statuses.at(-1)?.[1] ?? "", /auto-thinking anthropic\/claude-sonnet-5:xhigh/);
+});
+
+test("auto resolves Bedrock models through canonical, API-inferred, and regional shorthand selectors", async () => {
+	for (const command of [
+		"auto amazon-bedrock/eu.anthropic.claude-opus-5",
+		"auto api/eu.anthropic.claude-opus-5",
+		"auto bedrock/eu/opus-5",
+	]) {
+		const h = harness([assistantClassification("routine")]);
+		await h.handlers.get("session_start")?.({}, h.context);
+		await h.commands.get("profile").handler(command, h.context);
+		assert.equal(h.providerId, "amazon-bedrock", command);
+		assert.equal(h.modelId, "eu.anthropic.claude-opus-5", command);
+		assert.equal(h.entries.at(-1).data.autoScope, "thinking", command);
+
+		await h.handlers.get("before_agent_start")?.({ prompt: "Focused implementation" }, h.context);
+		assert.equal(h.providerId, "amazon-bedrock", command);
+		assert.equal(h.modelId, "eu.anthropic.claude-opus-5", command);
+		assert.equal(h.thinkingLevel, "medium", command);
+		assert.deepEqual(h.classifierProviders, ["amazon-bedrock"], command);
+	}
+});
+
+test("qualified auto preserves case-sensitive model IDs", async () => {
+	const h = harness();
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.commands.get("profile").handler("auto minimax/MiniMax-M2.7", h.context);
+
+	assert.equal(h.providerId, "minimax");
+	assert.equal(h.modelId, "MiniMax-M2.7");
+});
+
+test("Bedrock shorthand requires a region when the model exists in several inference profiles", async () => {
+	const h = harness();
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.commands.get("profile").handler("auto bedrock/opus-5", h.context);
+
+	assert.equal(h.providerId, "openai");
+	assert.equal(h.modelId, "gpt-5.6-sol");
+	assert.equal(h.entries.length, 0);
+	assert.match(h.notifications.at(-1) ?? "", /ambiguous.*bedrock\/eu\/opus-5/i);
+});
+
 test("qualified auto pins any supported model, including full model IDs", async () => {
 	for (const [command, provider, model] of [
 		["auto api/terra", "openai", "gpt-5.6-terra"],
@@ -272,17 +361,18 @@ test("qualified auto pins any supported model, including full model IDs", async 
 	}
 });
 
-test("provider-only auto releases Astra pin and routes within the normal family", async () => {
+test("provider-only auto routes the GPT 5.6 through 6 family", async () => {
 	for (const provider of ["api", "codex", "openai", "openai-codex"]) {
 		const expectedProvider = provider === "api" || provider === "openai" ? "openai" : "openai-codex";
-		const h = harness([assistantClassification("complex"), assistantClassification("economy")]);
+		const h = harness([assistantClassification("economy"), assistantClassification("routine"), assistantClassification("complex")]);
 		await h.handlers.get("session_start")?.({}, h.context);
 		await h.commands.get("profile").handler("auto api/astra", h.context);
 		await h.commands.get("profile").handler(`auto ${provider}`, h.context);
 		assert.equal(h.providerId, expectedProvider);
 		assert.equal(h.modelId, "gpt-5.6-sol");
 		assert.equal(h.entries.at(-1).data.autoScope, "family");
-		for (const model of ["gpt-5.6-sol", "gpt-5.6-terra"]) {
+		assert.equal(h.entries.at(-1).data.familyId, "gpt-5.6-6");
+		for (const model of ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]) {
 			await h.handlers.get("session_start")?.({ reason: "reload" }, h.context);
 			await h.handlers.get("before_agent_start")?.({ prompt: "Next task" }, h.context);
 			assert.equal(h.modelId, model);
@@ -290,8 +380,45 @@ test("provider-only auto releases Astra pin and routes within the normal family"
 			assert.match(h.statuses.at(-1)?.[1] ?? "", /auto-family/);
 		}
 		await h.commands.get("profile").handler("status", h.context);
-		assert.match(h.notifications.at(-1) ?? "", /auto scope: family/);
+		assert.match(h.notifications.at(-1) ?? "", /model family: gpt-5.6-6/);
 	}
+});
+
+test("Bedrock Claude family routes available version 5 models within one inference profile", async () => {
+	const h = harness([
+		assistantClassification("economy"),
+		assistantClassification("routine"),
+		assistantClassification("complex"),
+		assistantClassification("critical"),
+	]);
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.commands.get("profile").handler("auto bedrock/claude", h.context);
+
+	assert.equal(h.providerId, "amazon-bedrock");
+	assert.equal(h.modelId, "global.anthropic.claude-opus-5");
+	assert.equal(h.entries.at(-1).data.familyId, "claude-5");
+	assert.equal(h.entries.at(-1).data.familyVariant, "global");
+
+	for (const [model, effort] of [
+		["global.anthropic.claude-sonnet-5", "medium"],
+		["global.anthropic.claude-sonnet-5", "medium"],
+		["global.anthropic.claude-opus-5", "high"],
+		["global.anthropic.claude-fable-5-1", "xhigh"],
+	]) {
+		await h.handlers.get("before_agent_start")?.({ prompt: "Next task" }, h.context);
+		assert.equal(h.modelId, model);
+		assert.equal(h.thinkingLevel, effort);
+	}
+});
+
+test("Bedrock Claude family preserves the current inference profile", async () => {
+	const h = harness([assistantClassification("critical")], "amazon-bedrock", "eu.anthropic.claude-sonnet-5");
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.commands.get("profile").handler("auto bedrock/claude", h.context);
+	await h.handlers.get("before_agent_start")?.({ prompt: "Critical task" }, h.context);
+
+	assert.equal(h.modelId, "eu.anthropic.claude-fable-5");
+	assert.equal(h.entries.at(-1).data.familyVariant, "eu");
 });
 
 test("bare auto after family routing pins the last actual selection", async () => {
@@ -299,10 +426,10 @@ test("bare auto after family routing pins the last actual selection", async () =
 	await h.handlers.get("session_start")?.({}, h.context);
 	await h.commands.get("profile").handler("auto api", h.context);
 	await h.handlers.get("before_agent_start")?.({ prompt: "Small change" }, h.context);
-	assert.equal(h.modelId, "gpt-5.6-terra");
+	assert.equal(h.modelId, "gpt-5.6-luna");
 	await h.commands.get("profile").handler("auto", h.context);
 	await h.handlers.get("before_agent_start")?.({ prompt: "Debug race" }, h.context);
-	assert.equal(h.modelId, "gpt-5.6-terra");
+	assert.equal(h.modelId, "gpt-5.6-luna");
 	assert.equal(h.thinkingLevel, "high");
 });
 
@@ -333,7 +460,7 @@ test("family fallback and escalation stay in the selected provider's normal fami
 	assert.equal(h.modelId, "gpt-5.6-sol");
 	assert.equal(h.providerId, "openai-codex");
 	await h.handlers.get("before_agent_start")?.({ prompt: "Next change" }, h.context);
-	assert.equal(h.modelId, "gpt-5.6-terra");
+	assert.equal(h.modelId, "gpt-5.6-luna");
 	for (let i = 0; i < 3; i++) {
 		await h.handlers.get("tool_result")?.({ toolName: "edit", isError: false }, h.context);
 		await h.handlers.get("tool_result")?.({ toolName: "bash", input: { command: "npm test" }, isError: true }, h.context);
@@ -381,13 +508,22 @@ test("unavailable Codex Astra leaves current selection and auto mode unchanged",
 	assert.equal(h.classifierCalls, 1);
 });
 
-test("automatic profiles never choose Astra without prior selection", async () => {
+test("bare automatic profiles never change the selected model", async () => {
 	for (const task of ["economy", "routine", "complex", "critical"]) {
 		const h = harness([assistantClassification(task)]);
 		await h.handlers.get("session_start")?.({}, h.context);
 		await h.handlers.get("before_agent_start")?.({ prompt: "Do the task" }, h.context);
-		assert.notEqual(h.modelId, "gpt-6-astra", task);
+		assert.equal(h.modelId, "gpt-5.6-sol", task);
 	}
+});
+
+test("OpenAI family routing selects Astra for critical work when available", async () => {
+	const h = harness([assistantClassification("critical")]);
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.commands.get("profile").handler("auto openai", h.context);
+	await h.handlers.get("before_agent_start")?.({ prompt: "Critical work" }, h.context);
+	assert.equal(h.modelId, "gpt-6-astra");
+	assert.equal(h.thinkingLevel, "xhigh");
 });
 
 test("selected Astra stays selected after auto, reload, and classifier failure", async () => {
@@ -465,20 +601,20 @@ test("parses strict classifier output and rejects invalid profiles", () => {
 	assert.equal(parseClassification("not json"), undefined);
 });
 
-test("family routing chooses Terra or Sol according to task without a model pin", () => {
+test("GPT family routing maps task tiers from Luna through Astra", () => {
 	const economy: AutoProfileDecision = resolveAutoDecision(
 		{ task: "economy", confidence: 0.95, rationale: "bounded" },
 		undefined,
 		false,
 	);
-	assert.deepEqual({ modelId: economy.modelId, effort: economy.effort }, { modelId: "gpt-5.6-terra", effort: "medium" });
+	assert.deepEqual({ modelId: economy.modelId, effort: economy.effort }, { modelId: "gpt-5.6-luna", effort: "medium" });
 
 	const solRoutine = resolveAutoDecision(
 		{ task: "economy", confidence: 0.99, rationale: "small" },
 		"gpt-5.6-sol",
 		false,
 	);
-	assert.equal(solRoutine.modelId, "gpt-5.6-terra");
+	assert.equal(solRoutine.modelId, "gpt-5.6-luna");
 	assert.equal(solRoutine.effort, "medium");
 
 	const upgraded = resolveAutoDecision(
@@ -498,19 +634,20 @@ test("family routing chooses Terra or Sol according to task without a model pin"
 	assert.equal(risky.effort, "high");
 });
 
-test("classifies every turn, selects Terra first, then upgrades to Sol", async () => {
+test("family mode classifies every turn, selects Luna first, then upgrades to Sol", async () => {
 	const h = harness([assistantClassification("economy", 0.96), assistantClassification("complex", 0.9)]);
 	await h.handlers.get("session_start")?.({}, h.context);
+	await h.commands.get("profile").handler("auto openai", h.context);
 	await h.handlers.get("before_agent_start")?.({ prompt: "Rename this local variable" }, h.context);
 	assert.equal(h.classifierCalls, 1);
-	assert.equal(h.modelId, "gpt-5.6-terra");
+	assert.equal(h.modelId, "gpt-5.6-luna");
 	assert.equal(h.thinkingLevel, "medium");
 
 	await h.handlers.get("before_agent_start")?.({ prompt: "Now debug the cross-service race" }, h.context);
 	assert.equal(h.classifierCalls, 2);
 	assert.equal(h.modelId, "gpt-5.6-sol");
 	assert.equal(h.thinkingLevel, "high");
-	assert.equal(h.entries.filter((entry) => entry.customType === "openai-auto-profile").length, 2);
+	assert.equal(h.entries.filter((entry) => entry.customType === "openai-auto-profile").length, 3);
 });
 
 test("shows animated classification feedback until routing completes", async () => {
@@ -520,6 +657,7 @@ test("shows animated classification feedback until routing completes", async () 
 	});
 	const h = harness([pending]);
 	await h.handlers.get("session_start")?.({}, h.context);
+	await h.commands.get("profile").handler("auto openai", h.context);
 	const routing = h.handlers.get("before_agent_start")?.({ prompt: "Small change" }, h.context);
 	await Promise.resolve();
 
@@ -528,17 +666,18 @@ test("shows animated classification feedback until routing completes", async () 
 
 	resolveClassification(assistantClassification("routine"));
 	await routing;
-	assert.match(h.statuses.at(-1)?.[1] ?? "", /auto-family api\/sol:medium/i);
+	assert.match(h.statuses.at(-1)?.[1] ?? "", /auto-family api\/terra:medium/i);
 	assert.equal(h.workingMessages.at(-1), undefined);
 });
 
 test("keeps Codex for both classification and selected main model", async () => {
 	const h = harness([assistantClassification("economy", 0.96)], "openai-codex");
 	await h.handlers.get("session_start")?.({}, h.context);
+	await h.commands.get("profile").handler("auto codex", h.context);
 	await h.handlers.get("before_agent_start")?.({ prompt: "Rename this variable" }, h.context);
 	assert.deepEqual(h.classifierProviders, ["openai-codex"]);
 	assert.equal(h.providerId, "openai-codex");
-	assert.equal(h.modelId, "gpt-5.6-terra");
+	assert.equal(h.modelId, "gpt-5.6-luna");
 });
 
 test("session provider preference can explicitly switch locked API back to Codex auto", async () => {
@@ -614,16 +753,17 @@ test("expected red tests do not escalate until the same check stalls after two f
 	const successfulEdit = { toolName: "edit", input: {}, isError: false, content: [{ type: "text", text: "Updated file" }] };
 
 	await h.handlers.get("session_start")?.({}, h.context);
+	await h.commands.get("profile").handler("auto openai", h.context);
 	await h.handlers.get("before_agent_start")?.({ prompt: "Use red/green TDD for this small change" }, h.context);
-	assert.equal(h.modelId, "gpt-5.6-terra");
+	assert.equal(h.modelId, "gpt-5.6-luna");
 
 	await h.handlers.get("tool_result")?.(failedCheck, h.context);
-	assert.equal(h.modelId, "gpt-5.6-terra");
+	assert.equal(h.modelId, "gpt-5.6-luna");
 	assert.equal(h.thinkingLevel, "medium");
 
 	await h.handlers.get("tool_result")?.(successfulEdit, h.context);
 	await h.handlers.get("tool_result")?.(failedCheck, h.context);
-	assert.equal(h.modelId, "gpt-5.6-terra");
+	assert.equal(h.modelId, "gpt-5.6-luna");
 
 	await h.handlers.get("tool_result")?.(successfulEdit, h.context);
 	await h.handlers.get("tool_result")?.(failedCheck, h.context);
@@ -643,6 +783,7 @@ test("a passing verification resets stalled-check tracking", async () => {
 	const edit = { toolName: "edit", input: {}, isError: false, content: [] };
 
 	await h.handlers.get("session_start")?.({}, h.context);
+	await h.commands.get("profile").handler("auto openai", h.context);
 	await h.handlers.get("before_agent_start")?.({ prompt: "Small tested change" }, h.context);
 	await h.handlers.get("tool_result")?.(check(true), h.context);
 	await h.handlers.get("tool_result")?.(edit, h.context);
@@ -651,6 +792,6 @@ test("a passing verification resets stalled-check tracking", async () => {
 	await h.handlers.get("tool_result")?.(edit, h.context);
 	await h.handlers.get("tool_result")?.(check(true), h.context);
 
-	assert.equal(h.modelId, "gpt-5.6-terra");
+	assert.equal(h.modelId, "gpt-5.6-luna");
 	assert.equal(h.thinkingLevel, "medium");
 });
