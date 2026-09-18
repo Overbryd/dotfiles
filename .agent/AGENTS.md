@@ -26,6 +26,7 @@
 - `exa` performs web search, one URL per line.
 - `curl`, `hurl`, `jq`, `yaml-to-json`, and `json-to-yaml` are available.
 - Prefer `sayneat` over `say`. More custom tools live in `~/.bin`.
+- Use `notify '<short summary>'` when the user explicitly asks for a completion notification. Never put secrets in notification text.
 
 # Language and platform guidance
 

@@ -1,0 +1,158 @@
+#!/bin/sh
+set -eu
+
+pet_names='alfie
+archie
+arlo
+bailey
+bandit
+bean
+beanie
+benny
+biscuit
+blue
+bo
+bonnie
+boots
+bruno
+buddy
+charlie
+chester
+cleo
+coco
+cookie
+cooper
+daisy
+dexter
+dolly
+ellie
+finn
+frankie
+freddie
+george
+gigi
+gizmo
+goose
+hazel
+henry
+jasper
+kiki
+leo
+loki
+lola
+louie
+lucky
+luna
+maple
+max
+milo
+mimi
+mochi
+molly
+monty
+nala
+nova
+olive
+ollie
+oscar
+pepper
+pickle
+pip
+poppy
+rosie
+ruby
+simba
+sunny
+teddy
+tofu
+winnie
+ziggy'
+
+pet_animals='alpaca
+badger
+beagle
+bear
+beaver
+bunny
+capybara
+cat
+chinchilla
+chipmunk
+corgi
+dachshund
+deer
+dingo
+dormouse
+duck
+ferret
+finch
+fox
+gecko
+gerbil
+goat
+hamster
+hedgehog
+heron
+hound
+husky
+ibis
+kitten
+koala
+labrador
+lemur
+llama
+lynx
+marmot
+meerkat
+mouse
+newt
+ocelot
+otter
+owl
+panda
+parrot
+penguin
+pigeon
+pony
+poodle
+puffin
+quail
+rabbit
+raccoon
+robin
+samoyed
+seal
+shiba
+spaniel
+sparrow
+squirrel
+stoat
+swan
+terrier
+toucan
+turtle
+weasel
+whippet
+wombat
+yak'
+
+usage() {
+	printf 'Usage: random-pet\n'
+}
+
+random_line() {
+	words=$1
+	count=$(printf '%s\n' "$words" | awk 'END { print NR }')
+	random=$(od -An -N2 -tu2 /dev/urandom | tr -d ' ')
+	line=$((random % count + 1))
+	printf '%s\n' "$words" | awk -v line="$line" 'NR == line { print; exit }'
+}
+
+case "${1:-}" in
+	"") ;;
+	-h|--help) usage; exit 0 ;;
+	*) usage >&2; exit 64 ;;
+esac
+
+suffix=$(openssl rand -base64 6 | tr '+/' '-_' | tr -d '=\n')
+printf '%s-%s-%s\n' "$(random_line "$pet_names")" "$(random_line "$pet_animals")" "$suffix"
