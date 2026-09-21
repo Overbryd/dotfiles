@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+
+# wssh — open and keep a tmux session on the other work machine
+#
+# Takes the current directory (or an explicit one), connects to the wsync peer
+# and attaches to the tmux session for that directory (via tms). When the
+# connection drops, it says so and keeps reconnecting until the session is back
+# or you interrupt it.
+
+set -uo pipefail
+
+SSH_BIN=${WSSH_SSH:-ssh}
+WSYNC_BIN=${WSSH_WSYNC:-wsync}
+REMOTE_TMS=${WSSH_REMOTE_TMS:-'$HOME/.bin/tms'}
+HOST=${WSSH_HOST:-}
+MIN_BACKOFF=${WSSH_MIN_BACKOFF:-1}
+MAX_BACKOFF=${WSSH_MAX_BACKOFF:-15}
+PROBE_TIMEOUT=${WSSH_PROBE_TIMEOUT:-5}
+ALIVE_INTERVAL=${WSSH_ALIVE_INTERVAL:-10}
+ALIVE_COUNT=${WSSH_ALIVE_COUNT:-3}
+retry=true
+directory=
+
+usage() {
+  cat <<'EOF'
+Usage: wssh [--host HOST] [--no-retry] [directory]
+
+Attach to the tmux session for a directory on the other machine.
+Without a directory, the current working directory is used.
+The remote path is the same absolute path as locally (as kept in sync by wsync).
+
+Options:
+  --host HOST   ssh host to use instead of the configured wsync peer
+  --no-retry    exit on a dropped connection instead of reconnecting
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --host)
+      [[ $# -ge 2 ]] || { printf 'wssh: --host needs a value\n' >&2; exit 2; }
+      HOST=$2
+      shift 2
+      ;;
+    --host=*)
+      HOST=${1#--host=}
+      shift
+      ;;
+    --no-retry)
+      retry=false
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      printf 'wssh: unknown option: %s\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [[ $# -gt 1 ]]; then
+  usage >&2
+  exit 2
+fi
+
+directory=${1:-$PWD}
+
+if [[ -d "$directory" ]]; then
+  directory=$(CDPATH='' cd -- "$directory" && pwd -P)
+fi
+
+if [[ -z "$HOST" ]]; then
+  HOST=$("$WSYNC_BIN" peer 2>/dev/null)
+fi
+
+if [[ -z "$HOST" ]]; then
+  printf 'wssh: no peer host configured; run `wsync doctor` or pass --host\n' >&2
+  exit 2
+fi
+
+if [[ -t 2 ]]; then
+  C_INFO=$'\e[38;5;255;48;5;24m'
+  C_WARN=$'\e[38;5;255;48;5;88m'
+  C_OFF=$'\e[m'
+else
+  C_INFO=
+  C_WARN=
+  C_OFF=
+fi
+
+shell_quote() {
+  local value=$1
+  printf "'%s'" "${value//\'/\'\\\'\'}"
+}
+
+say() {
+  printf '%s wssh %s %s\n' "$C_INFO" "$C_OFF" "$1" >&2
+}
+
+warn() {
+  printf '%s wssh %s %s\n' "$C_WARN" "$C_OFF" "$1" >&2
+}
+
+saved_stty=
+if [[ -t 0 ]]; then
+  saved_stty=$(stty -g 2>/dev/null || true)
+fi
+
+restore_terminal() {
+  [[ -t 0 ]] || return 0
+
+  if [[ -n "$saved_stty" ]]; then
+    stty "$saved_stty" 2>/dev/null || stty sane 2>/dev/null || true
+  else
+    stty sane 2>/dev/null || true
+  fi
+
+  # leave alternate screen, restore cursor, stop mouse and bracketed paste
+  # reporting that a killed remote tmux had turned on
+  printf '\e[?1049l\e[?25h\e[?1000l\e[?1002l\e[?1003l\e[?1006l\e[?2004l\e[m'
+}
+
+on_interrupt() {
+  restore_terminal
+  say "stopped, the remote tmux session keeps running"
+  exit 130
+}
+
+remote_command="TMS_ATTACH_DETACH_OTHERS=1 exec $REMOTE_TMS $(shell_quote "$directory")"
+remote_login="bash -lc $(shell_quote "$remote_command")"
+
+ssh_args=(
+  -t
+  -o "ServerAliveInterval=$ALIVE_INTERVAL"
+  -o "ServerAliveCountMax=$ALIVE_COUNT"
+  -o TCPKeepAlive=yes
+  -o "ConnectTimeout=$PROBE_TIMEOUT"
+  -o ControlMaster=no
+  -o ControlPath=none
+)
+
+peer_reachable() {
+  local output status
+
+  output=$("$SSH_BIN" \
+    -o BatchMode=yes \
+    -o "ConnectTimeout=$PROBE_TIMEOUT" \
+    -o ControlMaster=no \
+    -o ControlPath=none \
+    "$HOST" true 2>&1)
+  status=$?
+
+  [[ $status -eq 0 ]] && return 0
+
+  # sshd answered but refused the batch-mode login (for example because the key
+  # only lives in the keychain of the interactive session): still reachable
+  if printf '%s' "$output" | grep -qiE 'permission denied|publickey|password|host key'; then
+    return 0
+  fi
+
+  return 1
+}
+
+wait_for_peer() {
+  local backoff=$MIN_BACKOFF
+  local attempt=0
+
+  trap on_interrupt INT TERM
+
+  while true; do
+    attempt=$((attempt + 1))
+    say "reconnect attempt $attempt to $HOST (ctrl-c to give up)"
+
+    if peer_reachable; then
+      say "$HOST is reachable, re-attaching"
+      trap - INT TERM
+      return 0
+    fi
+
+    sleep "$backoff"
+    backoff=$((backoff * 2))
+    if [[ $backoff -gt $MAX_BACKOFF ]]; then
+      backoff=$MAX_BACKOFF
+    fi
+  done
+}
+
+say "$HOST:$directory"
+
+while true; do
+  "$SSH_BIN" "${ssh_args[@]}" "$HOST" "$remote_login"
+  status=$?
+  restore_terminal
+
+  if [[ $status -eq 0 ]]; then
+    say "detached from $HOST:$directory"
+    exit 0
+  fi
+
+  if [[ $status -ne 255 ]]; then
+    warn "remote tms failed on $HOST (exit $status)"
+    warn "does $directory exist on $HOST? try: wsync push $directory"
+    exit "$status"
+  fi
+
+  warn "connection to $HOST lost, the remote tmux session is still running"
+
+  if [[ "$retry" != true ]]; then
+    exit 255
+  fi
+
+  wait_for_peer
+done

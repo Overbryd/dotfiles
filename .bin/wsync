@@ -432,6 +432,13 @@ def parse_cli(argv: Sequence[str]) -> Command:
             raise UserError("Usage: wsync doctor")
         return Command(action="doctor")
 
+    if first == "peer":
+        if force_git:
+            raise UserError("--force-git cannot be used with peer")
+        if len(args) != 1:
+            raise UserError("Usage: wsync peer")
+        return Command(action="peer")
+
     if first in ("pull", "push"):
         if len(args) > 2:
             raise UserError("Usage: wsync {} [--force-git] [target]".format(first))
@@ -450,7 +457,8 @@ def print_help() -> None:
         "  wsync [--force-git] <path-or-profile>\n"
         "  wsync pull [--force-git] [target]\n"
         "  wsync push [--force-git] [target]\n"
-        "  wsync doctor\n\n"
+        "  wsync doctor\n"
+        "  wsync peer\n\n"
         "Options:\n"
         "  --force-git  rsync whole directories, including .git metadata, instead of Git-aware chunks\n\n"
         "Current behavior:\n"
@@ -458,6 +466,7 @@ def print_help() -> None:
         "  - plan generation\n"
         "  - force-git whole-directory rsync mode\n"
         "  - doctor checks\n"
+        "  - peer prints the configured ssh host of the other machine\n"
         "  - editable plan + confirm-to-apply\n"
         "  - progress output on stderr when attached to a terminal\n"
     )
@@ -1869,6 +1878,17 @@ def main(argv: Sequence[str]) -> int:
 
     hostname = current_hostname()
     ssh_host = config.ssh_host_for(hostname)
+
+    if command.action == "peer":
+        if not ssh_host:
+            raise UserError(
+                "No SSH peer configured for host {}. Add [machines.{}] with peer or ssh_host to {}.".format(
+                    hostname, hostname, config.config_path
+                )
+            )
+        print(ssh_host)
+        return 0
+
     if not ssh_host:
         raise UserError(
             "No SSH peer configured for host {}. Add [machines.{}] with peer or ssh_host to {}.".format(

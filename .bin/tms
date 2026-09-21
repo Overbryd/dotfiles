@@ -8,6 +8,7 @@ PROMPT=${TMS_PROMPT:-"open> "}
 FZF_OPTS=${TMS_FZF_OPTS:-"--height 100% --reverse"}
 WORK_ROOT=${TMS_WORK_ROOT:-$HOME/Work}
 PROJECTS_ROOT=${TMS_PROJECTS_ROOT:-$HOME/Projects}
+ATTACH_DETACH_OTHERS=${TMS_ATTACH_DETACH_OTHERS:-}
 STATE_DIR=${TMS_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/tms}
 RECENTS_FILE=${TMS_RECENTS_FILE:-$STATE_DIR/recent.tsv}
 TAB=$'\t'
@@ -297,6 +298,8 @@ open_target() {
 
   if [[ -n "${TMUX:-}" ]]; then
     tmux_cmd switch-client -t "$session"
+  elif [[ -n "$ATTACH_DETACH_OTHERS" ]]; then
+    exec_tmux attach-session -d -t "$session"
   else
     exec_tmux attach-session -t "$session"
   fi
