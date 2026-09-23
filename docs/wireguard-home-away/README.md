@@ -45,6 +45,9 @@ This keeps laptops simple and reliable while roaming.
 
 ## Files
 
+- `.bin/wg-log`
+  - decodes the WireGuard app tunnel log ring buffer (`--errors`, `--collapse`, `--follow`)
+  - see `tunnel-restart-dead-socket.md` for the failure it exposes
 - `.bin/wg-tunnel`
   - compiles and caches `.bin/wg-tunnel.swift`
   - controls app-managed tunnels through `NETunnelProviderManager`

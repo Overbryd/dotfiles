@@ -48,6 +48,8 @@ DEFAULT_COMMON_EXCLUDES = [
 MAX_SCAN_DIRS = 10_000
 MAX_PREVIEW_LINES = 40
 DEFAULT_REPO_INCLUDES = [".peek/***"]
+SEND_CHUNK_BYTES = 1024 * 1024
+DEFAULT_SEND_DIR = "~/transfer"
 
 REMOTE_OVERLAY_LIST_SCRIPT = r'''
 import fnmatch
@@ -155,6 +157,7 @@ class Command:
     action: str
     target: Optional[str] = None
     force_git: bool = False
+    dest: Optional[str] = None
 
 
 @dataclass
@@ -439,6 +442,13 @@ def parse_cli(argv: Sequence[str]) -> Command:
             raise UserError("Usage: wsync peer")
         return Command(action="peer")
 
+    if first == "send":
+        if force_git:
+            raise UserError("--force-git cannot be used with send")
+        if len(args) not in (2, 3):
+            raise UserError("Usage: wsync send <file> [remote-dir]")
+        return Command(action="send", target=args[1], dest=args[2] if len(args) == 3 else None)
+
     if first in ("pull", "push"):
         if len(args) > 2:
             raise UserError("Usage: wsync {} [--force-git] [target]".format(first))
@@ -457,6 +467,7 @@ def print_help() -> None:
         "  wsync [--force-git] <path-or-profile>\n"
         "  wsync pull [--force-git] [target]\n"
         "  wsync push [--force-git] [target]\n"
+        "  wsync send <file> [remote-dir]\n"
         "  wsync doctor\n"
         "  wsync peer\n\n"
         "Options:\n"
@@ -466,6 +477,7 @@ def print_help() -> None:
         "  - plan generation\n"
         "  - force-git whole-directory rsync mode\n"
         "  - doctor checks\n"
+        "  - send streams one file to the peer, resumable, without a plan\n"
         "  - peer prints the configured ssh host of the other machine\n"
         "  - editable plan + confirm-to-apply\n"
         "  - progress output on stderr when attached to a terminal\n"
@@ -577,6 +589,110 @@ def unique(values: Sequence[str]) -> List[str]:
             seen.add(value)
             result.append(value)
     return result
+
+
+def send_resume_offset(remote_size: int, chunk_bytes: int = SEND_CHUNK_BYTES) -> int:
+    if remote_size <= 0:
+        return 0
+    return remote_size - (remote_size % chunk_bytes)
+
+
+def run_send(ssh_host: str, raw_file: Optional[str], raw_dest: Optional[str]) -> int:
+    source = expand_path(raw_file or "")
+    if not source.is_file():
+        raise UserError("Not a file: {}".format(source))
+
+    remote_dir = (raw_dest or DEFAULT_SEND_DIR).rstrip("/") or "/"
+    remote_path = "{}/{}".format(remote_dir, source.name)
+    quoted_dir = shlex.quote(remote_dir)
+    quoted_path = shlex.quote(remote_path)
+    total = source.stat().st_size
+
+    probe = ssh_command(
+        ssh_host,
+        "mkdir -p {dir} && if [ -f {path} ]; then wc -c < {path}; else echo 0; fi".format(
+            dir=quoted_dir, path=quoted_path
+        ),
+    )
+    if probe.returncode != 0:
+        raise UserError(
+            "ssh to {} failed: {} (unlock the key with ssh-add, then retry)".format(
+                ssh_host, probe.stderr.strip() or "no output"
+            )
+        )
+
+    remote_size = int(probe.stdout.strip() or "0")
+    if remote_size > total:
+        raise UserError(
+            "Remote file is bigger than the local one ({} > {} bytes): remove {}:{} first".format(
+                remote_size, total, ssh_host, remote_path
+            )
+        )
+
+    offset = send_resume_offset(remote_size)
+    if offset == total:
+        print("Already complete: {}:{}".format(ssh_host, remote_path))
+        return 0
+    if remote_size != offset:
+        trim = ssh_command(
+            ssh_host, "dd if=/dev/null of={path} bs=1 seek={offset}".format(path=quoted_path, offset=offset)
+        )
+        if trim.returncode != 0:
+            raise UserError("Could not trim partial remote file: {}".format(trim.stderr.strip() or "no output"))
+
+    print(
+        "Sending {name}: {remaining} of {total} bytes from offset {offset} to {host}:{path}".format(
+            name=source.name, remaining=total - offset, total=total, offset=offset, host=ssh_host, path=remote_path
+        )
+    )
+    process = subprocess.Popen(
+        [
+            "ssh",
+            "-o",
+            "ServerAliveInterval=10",
+            ssh_host,
+            "sh",
+            "-lc",
+            "cat >> {}".format(quoted_path),
+        ],
+        stdin=subprocess.PIPE,
+    )
+    sent = offset
+    try:
+        with source.open("rb") as handle:
+            handle.seek(offset)
+            while True:
+                chunk = handle.read(SEND_CHUNK_BYTES)
+                if not chunk:
+                    break
+                process.stdin.write(chunk)
+                sent += len(chunk)
+                progress_status("sent {:.2f} of {:.2f} GB".format(sent / 1e9, total / 1e9))
+    except BrokenPipeError:
+        pass
+    finally:
+        if process.stdin:
+            try:
+                process.stdin.close()
+            except BrokenPipeError:
+                pass
+        returncode = process.wait()
+        progress_status_done()
+
+    if returncode != 0:
+        raise UserError("ssh stream failed with exit code {}; rerun the same command to resume".format(returncode))
+
+    verify = ssh_command(ssh_host, "wc -c < {}".format(quoted_path))
+    remote_final = int(verify.stdout.strip() or "0") if verify.returncode == 0 else -1
+    if remote_final != total:
+        raise UserError(
+            "Size mismatch after send (local {} bytes, remote {}); rerun the same command to resume".format(
+                total, remote_final
+            )
+        )
+
+    print("Sent to {}:{}".format(ssh_host, remote_path))
+    return 0
 
 
 def workspace_anchor(path: Path) -> Path:
@@ -1895,6 +2011,9 @@ def main(argv: Sequence[str]) -> int:
                 hostname, hostname, config.config_path
             )
         )
+    if command.action == "send":
+        return run_send(ssh_host, command.target, command.dest)
+
     target = resolve_target(config, command.target)
 
     run_id, _run_dir, plan_path = create_run_dir()

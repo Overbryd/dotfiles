@@ -21,8 +21,9 @@
 - `brew install` needs a password; ask first.
 - Local Postgres: default credentials, one database per project, `psql -hlocalhost`.
 - `exa`: web search, one URL per line.
-- Available: `curl`, `hurl`, `jq`, `yaml-to-json`, `json-to-yaml`.
+- Available: `curl`, `hurl`, `jq`, `yaml-to-json`, `json-to-yaml`, `croc` (ad-hoc file transfer over the internet).
 - Use `sayneat` for speech and local transcription; improve it instead of adding ASR wrappers. More tools: `~/.bin`.
+- Single big file to one of my own machines: `wsync send <file> [remote-dir]`, resumable, remote dir defaults to `~/transfer`; then `mv` into place. Never stream into a synced folder like `~/Dropbox`.
 - On explicit request, notify completion with `notify '<title>' '<short message>'`; never include secrets.
 
 # Language and platform

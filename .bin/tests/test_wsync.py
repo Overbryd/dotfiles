@@ -163,5 +163,32 @@ class ProgressOutputTest(unittest.TestCase):
             self.assertIn(">f+++++++++ two.txt", log_path.read_text())
 
 
+class SendResumeOffsetTest(unittest.TestCase):
+    def test_aligns_partial_remote_size_down_to_chunk_boundary(self):
+        chunk = wsync.SEND_CHUNK_BYTES
+
+        self.assertEqual(0, wsync.send_resume_offset(0))
+        self.assertEqual(0, wsync.send_resume_offset(chunk - 1))
+        self.assertEqual(chunk, wsync.send_resume_offset(chunk))
+        self.assertEqual(3 * chunk, wsync.send_resume_offset(3 * chunk + 17))
+
+
+class ParseCliSendTest(unittest.TestCase):
+    def test_send_takes_a_file_and_optional_remote_dir(self):
+        command = wsync.parse_cli(["send", "clip.mov"])
+        self.assertEqual("send", command.action)
+        self.assertEqual("clip.mov", command.target)
+        self.assertIsNone(command.dest)
+
+        with_dest = wsync.parse_cli(["send", "clip.mov", "~/transfer"])
+        self.assertEqual("~/transfer", with_dest.dest)
+
+    def test_send_rejects_missing_file_and_force_git(self):
+        with self.assertRaises(wsync.UserError):
+            wsync.parse_cli(["send"])
+        with self.assertRaises(wsync.UserError):
+            wsync.parse_cli(["send", "clip.mov", "--force-git"])
+
+
 if __name__ == "__main__":
     unittest.main()
