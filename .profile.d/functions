@@ -6,18 +6,16 @@ function session-name-from-pwd {
 
 # Start a new session
 function tmn {
-  local tmux="tmux -u"
-  local session_name="$(session-name-from-pwd)$(tmux ls -F '#{session_name}' | grep --count $name)"
-
-  $tmux new -s $session_name
+  "$HOME/.bin/tmn" "$@"
 }
 
 # Start a new session or join the first one in this folder
 function tms {
-  local tmux="tmux -u"
-  local session_name="$(session-name-from-pwd)0"
-
-  $tmux new -A -s $session_name
+  if [[ $# -eq 0 ]]; then
+    "$HOME/.bin/tms" "$PWD"
+  else
+    "$HOME/.bin/tms" "$@"
+  fi
 }
 
 # Open conflicts at once, setting the search pattern to <<<<<<< in order to cycle through them pressing 'n'

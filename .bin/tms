@@ -16,9 +16,11 @@ TAB=$'\t'
 usage() {
   cat <<'EOF'
 Usage: tms [--list] [directory]
+       tms --new [directory]
 
 Without arguments, pick a directory with fzf and open/switch a tmux session there.
 With a directory argument, open/switch directly.
+With --new, always start a new session.
 With --list, print candidates and exit.
 EOF
 }
@@ -108,7 +110,9 @@ session_name_hint() {
 
 find_session_for_path() {
   local target=$1
-  local session root
+  local base session root suffix rank
+
+  base=$(session_name_hint "$target")
 
   tmux_cmd list-sessions -F '#{session_name}' 2>/dev/null | while IFS= read -r session; do
     root=$(tmux_cmd show-options -qv -t "$session" @tms-root 2>/dev/null || true)
@@ -123,27 +127,40 @@ find_session_for_path() {
 
     root=$(canonical_path "$root" 2>/dev/null || true)
 
-    if [[ "$root" == "$target" ]]; then
-      printf '%s\n' "$session"
-      break
+    if [[ "$root" != "$target" ]]; then
+      continue
     fi
-  done
+
+    if [[ "$session" == "$base" ]]; then
+      # Keep legacy unsuffixed sessions usable, but prefer every numbered one.
+      rank=1000000000
+    elif [[ "$session" == "$base"* ]]; then
+      suffix=${session#"$base"}
+      if [[ "$suffix" =~ ^[0-9]+$ ]]; then
+        rank=$((10#$suffix))
+      else
+        rank=1000000001
+      fi
+    else
+      rank=1000000001
+    fi
+
+    printf '%s\t%s\n' "$rank" "$session"
+  done | sort -n -k1,1 | awk -F '\t' 'NR == 1 { print $2 }'
 }
 
 unique_session_name() {
   local target=$1
-  local base name i
+  local base i
 
   base=$(session_name_hint "$target")
-  name=$base
-  i=2
+  i=0
 
-  while tmux_cmd has-session -t "$name" 2>/dev/null; do
-    name="${base}-${i}"
+  while tmux_cmd has-session -t "${base}${i}" 2>/dev/null; do
     i=$((i + 1))
   done
 
-  printf '%s\n' "$name"
+  printf '%s%s\n' "$base" "$i"
 }
 
 record_recent() {
@@ -271,7 +288,8 @@ build_candidates() {
 
 open_target() {
   local target=$1
-  local session
+  local force_new=${2:-false}
+  local session=
 
   target=$(canonical_path "$target")
 
@@ -280,7 +298,18 @@ open_target() {
     exit 1
   fi
 
-  session=$(find_session_for_path "$target" || true)
+  if [[ "$force_new" != true ]]; then
+    session=$(find_session_for_path "$target" || true)
+
+    if [[ -n "$session" && "$session" == "$(session_name_hint "$target")" ]]; then
+      if tmux_cmd has-session -t "${session}0" 2>/dev/null; then
+        session=
+      else
+        tmux_cmd rename-session -t "$session" -n "${session}0"
+        session="${session}0"
+      fi
+    fi
+  fi
 
   if [[ -z "$session" ]]; then
     session=$(unique_session_name "$target")
@@ -306,6 +335,7 @@ open_target() {
 }
 
 list_only=false
+new_session=false
 selected_path=
 
 case "${1:-}" in
@@ -317,6 +347,10 @@ case "${1:-}" in
     list_only=true
     shift
     ;;
+  --new)
+    new_session=true
+    shift
+    ;;
   '')
     ;;
   *)
@@ -325,13 +359,19 @@ case "${1:-}" in
     ;;
 esac
 
+if [[ -z "$selected_path" && $# -gt 0 ]]; then
+  selected_path=$1
+  shift
+fi
+
 if [[ $# -gt 0 ]]; then
   usage >&2
   exit 1
 fi
 
 if [[ -n "$selected_path" ]]; then
-  open_target "$selected_path"
+  open_target "$selected_path" "$new_session"
+  exit 0
 fi
 
 candidates=$(build_candidates)
@@ -366,4 +406,4 @@ fi
 
 selected_path=${choice#*$TAB}
 selected_path=${selected_path%%$TAB*}
-open_target "$selected_path"
+open_target "$selected_path" "$new_session"
