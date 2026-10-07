@@ -15,6 +15,7 @@
 - Save rediscovered repository facts in that repository's `AGENTS.md`.
 - Edit existing files with `edit`; use `write` only for new files or full rewrites. Do not retry edits through shell commands or scripts.
 - After implementation, remove excess commentary.
+- Background processes: track own PIDs; kill only those. Never `pkill` by pattern; user may run same app.
 
 # Local tools
 
@@ -28,4 +29,5 @@
 
 # Language and platform
 
+- Elixir: read `elixir` skill before editing `.ex`/`.exs`. Done = `mix format`, `mix compile --warnings-as-errors`, relevant `mix test`.
 - Terraform: `validate` and `plan` allowed. Never use `-auto-approve`; ask before apply and use `sayneat`.
