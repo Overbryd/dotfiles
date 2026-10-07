@@ -5,6 +5,9 @@ import type {
 	ExtensionContext,
 	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 const CUSTOM_TYPE = "openai-auto-profile";
 const STATUS_KEY = "auto-profile";
@@ -36,10 +39,89 @@ const MODEL_NAMES: Record<string, string> = {
 const EXPLICIT_EFFORTS = new Set<ModelThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const TASKS = new Set<AutoProfileTask>(["economy", "routine", "complex", "critical"]);
 
+// Configured families map the four classifier tiers (economy, routine, complex, critical) to a fixed
+// provider/model/effort each. Unlike the GPT and Bedrock-Claude families below, they need no pattern
+// matching: add an entry to ~/.pi/agent/auto-profile-families.json to route a whole family through
+// any provider's own model lineup, without touching this extension's code.
+type FamilyTierConfig = {
+	modelId: string;
+	effort: ModelThinkingLevel;
+	providerId?: string;
+};
+
+type FamilyConfig = {
+	id: string;
+	/** Default provider for tiers that omit their own providerId. */
+	providerId?: string;
+	tiers: readonly [FamilyTierConfig, FamilyTierConfig, FamilyTierConfig, FamilyTierConfig];
+};
+
+const FAMILY_CONFIG_FILENAME = "auto-profile-families.json";
+
+// Mirrors pi's own ~/.pi/agent resolution (including its PI_CODING_AGENT_DIR override) without a
+// runtime dependency on @earendil-works/pi-coding-agent, which extension hosts resolve differently.
+function agentConfigDir(): string {
+	const envDir = process.env.PI_CODING_AGENT_DIR;
+	if (envDir) return envDir.startsWith("~") ? join(homedir(), envDir.slice(1)) : envDir;
+	return join(homedir(), ".pi", "agent");
+}
+
+function parseFamilyTierConfig(value: unknown): FamilyTierConfig | undefined {
+	if (!isRecord(value) || typeof value.modelId !== "string" || !isThinkingLevel(value.effort)) return undefined;
+	return {
+		modelId: value.modelId,
+		effort: value.effort,
+		providerId: typeof value.providerId === "string" ? value.providerId : undefined,
+	};
+}
+
+function parseFamilyConfig(id: string, value: unknown): FamilyConfig | undefined {
+	if (!isRecord(value) || !Array.isArray(value.tiers) || value.tiers.length !== 4) return undefined;
+	const tiers = value.tiers.map(parseFamilyTierConfig);
+	if (tiers.some((tier) => !tier)) return undefined;
+	return {
+		id,
+		providerId: typeof value.providerId === "string" ? value.providerId : undefined,
+		tiers: tiers as unknown as FamilyConfig["tiers"],
+	};
+}
+
+// Reads user-defined families from a given auto-profile-families.json path. Missing file is normal
+// and silent; malformed JSON or entries are reported once to stderr and otherwise ignored.
+function readFamilyConfigFile(path: string): Record<string, FamilyConfig> {
+	if (!existsSync(path)) return {};
+	try {
+		const raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
+		if (!isRecord(raw) || !isRecord(raw.families)) return {};
+		const configs: Record<string, FamilyConfig> = {};
+		for (const [id, value] of Object.entries(raw.families)) {
+			const config = parseFamilyConfig(id, value);
+			if (config) configs[id] = config;
+			else console.error(`auto-profile: ignoring invalid family "${id}" in ${path}`);
+		}
+		return configs;
+	} catch (error) {
+		console.error(`auto-profile: failed to read ${path}: ${error instanceof Error ? error.message : String(error)}`);
+		return {};
+	}
+}
+
+// Global families live in ~/.pi/agent/auto-profile-families.json (shareable, e.g. public dotfiles).
+// Project-local families in <project>/.pi/auto-profile-families.json are additive and take precedence
+// over same-id global families, so project-specific routing (internal API keys, provider names, etc.)
+// never needs to live in a shared/public config. Only read for trusted projects, matching pi's own
+// rule for project-local extension configuration.
+function getFamilyConfigs(ctx: ProfileContext): Record<string, FamilyConfig> {
+	const global = readFamilyConfigFile(join(agentConfigDir(), FAMILY_CONFIG_FILENAME));
+	if (!ctx.isProjectTrusted()) return global;
+	const project = readFamilyConfigFile(join(ctx.cwd, ".pi", FAMILY_CONFIG_FILENAME));
+	return { ...global, ...project };
+}
+
 export type AutoProfileTask = "economy" | "routine" | "complex" | "critical";
 export type AutoProfileMode = "auto" | "locked";
 export type AutoProfileScope = "thinking" | "family";
-export type AutoProfileFamily = typeof GPT_FAMILY_ID | typeof CLAUDE_FAMILY_ID;
+export type AutoProfileFamily = typeof GPT_FAMILY_ID | typeof CLAUDE_FAMILY_ID | string;
 export type AutoProfileProvider = string;
 export type AutoProfileSource = "classifier" | "fallback" | "manual" | "escalation";
 
@@ -123,8 +205,8 @@ function legacyAutoScope(providerId: string | undefined, modelId: string | undef
 		: "thinking";
 }
 
-function isAutoProfileFamily(value: unknown): value is AutoProfileFamily {
-	return value === GPT_FAMILY_ID || value === CLAUDE_FAMILY_ID;
+function isAutoProfileFamily(value: unknown, ctx: ProfileContext): value is AutoProfileFamily {
+	return value === GPT_FAMILY_ID || value === CLAUDE_FAMILY_ID || (typeof value === "string" && Object.hasOwn(getFamilyConfigs(ctx), value));
 }
 
 function modelName(modelId: string | undefined): string {
@@ -217,7 +299,7 @@ function fallbackDecision(providerId: AutoProfileProvider, reason: string, sessi
 	};
 }
 
-function normalizePersisted(value: unknown): PersistedProfile | undefined {
+function normalizePersisted(value: unknown, ctx: ProfileContext): PersistedProfile | undefined {
 	if (!isRecord(value) || value.version !== 1 || (value.mode !== "auto" && value.mode !== "locked")) return undefined;
 	const source = value.source;
 	if (source !== "classifier" && source !== "fallback" && source !== "manual" && source !== "escalation") return undefined;
@@ -230,7 +312,7 @@ function normalizePersisted(value: unknown): PersistedProfile | undefined {
 				typeof value.providerId === "string" ? value.providerId : undefined,
 				typeof value.sessionModelId === "string" ? value.sessionModelId : undefined,
 			),
-		familyId: isAutoProfileFamily(value.familyId)
+		familyId: isAutoProfileFamily(value.familyId, ctx)
 			? value.familyId
 			: (value.autoScope === "family" || value.autoScope === undefined) &&
 					(value.providerId === "openai" || value.providerId === "openai-codex")
@@ -253,11 +335,11 @@ function currentBranchEntries(ctx: ExtensionContext | ExtensionCommandContext): 
 	return typeof manager.getBranch === "function" ? manager.getBranch() : manager.getEntries();
 }
 
-function latestPersisted(entries: SessionEntry[]): PersistedProfile | undefined {
+function latestPersisted(entries: SessionEntry[], ctx: ProfileContext): PersistedProfile | undefined {
 	for (let index = entries.length - 1; index >= 0; index--) {
 		const entry = entries[index];
 		if (entry.type !== "custom" || entry.customType !== CUSTOM_TYPE) continue;
-		const profile = normalizePersisted(entry.data);
+		const profile = normalizePersisted(entry.data, ctx);
 		if (profile) return profile;
 	}
 	return undefined;
@@ -310,13 +392,13 @@ ${eventPrompt.slice(0, MAX_REQUEST_CHARS)}
 </request>`;
 }
 
-function profileUsage(entries: SessionEntry[]): { calls: number; tokens: number; cost: number } {
+function profileUsage(entries: SessionEntry[], ctx: ProfileContext): { calls: number; tokens: number; cost: number } {
 	let calls = 0;
 	let tokens = 0;
 	let cost = 0;
 	for (const entry of entries) {
 		if (entry.type !== "custom" || entry.customType !== CUSTOM_TYPE) continue;
-		const profile = normalizePersisted(entry.data);
+		const profile = normalizePersisted(entry.data, ctx);
 		if (!profile?.classifierUsage) continue;
 		calls++;
 		tokens += profile.classifierUsage.totalTokens ?? 0;
@@ -326,7 +408,7 @@ function profileUsage(entries: SessionEntry[]): { calls: number; tokens: number;
 }
 
 function stateReport(state: RuntimeState, ctx: ExtensionCommandContext): string {
-	const usage = profileUsage(currentBranchEntries(ctx));
+	const usage = profileUsage(currentBranchEntries(ctx), ctx);
 	return [
 		`profile: ${state.mode}`,
 		`auto scope: ${state.autoScope}`,
@@ -445,6 +527,42 @@ function familyModelId(
 	return undefined;
 }
 
+// Resolves a configured family's tier to a concrete provider/model/effort, falling back to other
+// tiers (closest complexity first) when the configured model for the requested tier is unavailable.
+function resolveConfiguredTier(
+	config: FamilyConfig,
+	tier: number,
+	fallbackProviderId: string,
+	ctx: ProfileContext,
+): { providerId: string; modelId: string; effort: ModelThinkingLevel } | undefined {
+	for (const candidateTier of fallbackTierOrder(tier)) {
+		const tierConfig = config.tiers[candidateTier];
+		const providerId = tierConfig.providerId ?? config.providerId ?? fallbackProviderId;
+		if (ctx.modelRegistry.find(providerId, tierConfig.modelId)) {
+			return { providerId, modelId: tierConfig.modelId, effort: tierConfig.effort };
+		}
+	}
+	return undefined;
+}
+
+// Shared model lookup for family fallback/escalation/seed paths, which only need a provider+model
+// (not the tier's configured effort). Dispatches to the pattern-matching families or a configured one.
+function resolveFamilyModel(
+	familyId: AutoProfileFamily,
+	providerId: string,
+	variant: string | undefined,
+	tier: number,
+	ctx: ProfileContext,
+): { providerId: string; modelId: string } | undefined {
+	const config = getFamilyConfigs(ctx)[familyId];
+	if (config) {
+		const resolved = resolveConfiguredTier(config, tier, providerId, ctx);
+		return resolved ? { providerId: resolved.providerId, modelId: resolved.modelId } : undefined;
+	}
+	const modelId = familyModelId(familyId, providerId, variant, tier, ctx);
+	return modelId ? { providerId, modelId } : undefined;
+}
+
 function resolveFamilyDecision(
 	classification: AutoProfileClassification,
 	highRisk: boolean,
@@ -453,6 +571,20 @@ function resolveFamilyDecision(
 ): AutoProfileDecision {
 	const familyId = state.familyId ?? GPT_FAMILY_ID;
 	const { tier, effort } = classificationProfile(classification, highRisk);
+	const config = getFamilyConfigs(ctx)[familyId];
+	if (config) {
+		const resolved = resolveConfiguredTier(config, tier, state.providerId ?? config.providerId ?? "openai", ctx);
+		if (!resolved) throw new Error(`no available ${familyId} model`);
+		return {
+			providerId: resolved.providerId,
+			modelId: resolved.modelId,
+			effort: resolved.effort,
+			source: "classifier",
+			task: classification.task,
+			confidence: classification.confidence,
+			rationale: classification.rationale,
+		};
+	}
 	const providerId = state.providerId ?? "openai";
 	const modelId = familyModelId(familyId, providerId, state.familyVariant, tier, ctx);
 	if (!modelId) throw new Error(`no available ${familyId} model on ${providerId}`);
@@ -470,9 +602,10 @@ function resolveFamilyDecision(
 function familyFallbackDecision(state: RuntimeState, ctx: ProfileContext, reason: string): AutoProfileDecision {
 	const familyId = state.familyId ?? GPT_FAMILY_ID;
 	const providerId = state.providerId ?? "openai";
-	const modelId = familyModelId(familyId, providerId, state.familyVariant, 2, ctx) ?? state.sessionModelId;
+	const resolved = resolveFamilyModel(familyId, providerId, state.familyVariant, 2, ctx);
+	const modelId = resolved?.modelId ?? state.sessionModelId;
 	if (!modelId) return fallbackDecision(providerId, reason);
-	return { providerId, modelId, effort: "high", source: "fallback", rationale: reason };
+	return { providerId: resolved?.providerId ?? providerId, modelId, effort: "high", source: "fallback", rationale: reason };
 }
 
 function resolveBedrockTarget(selector: string, ctx: ExtensionCommandContext): TargetResolution {
@@ -664,7 +797,7 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 	};
 
 	const restoreState = (ctx: ExtensionContext) => {
-		const restored = latestPersisted(currentBranchEntries(ctx));
+		const restored = latestPersisted(currentBranchEntries(ctx), ctx);
 		const level = pi.getThinkingLevel();
 		const providerId = restored?.providerId ?? ctx.model?.provider ?? "openai";
 		const autoScope = restored?.autoScope ?? "thinking";
@@ -776,16 +909,17 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 
 		const currentEffort = state.effort ?? "medium";
 		const canEscalateEffort = currentEffort === "minimal" || currentEffort === "low" || currentEffort === "medium";
-		const modelId = state.autoScope === "family"
-			? familyModelId(state.familyId ?? GPT_FAMILY_ID, state.providerId ?? "openai", state.familyVariant, 2, ctx) ?? state.sessionModelId
-			: state.sessionModelId;
+		const familyResolved = state.autoScope === "family"
+			? resolveFamilyModel(state.familyId ?? GPT_FAMILY_ID, state.providerId ?? "openai", state.familyVariant, 2, ctx)
+			: undefined;
+		const modelId = familyResolved?.modelId ?? state.sessionModelId;
 		if (!modelId || stalledCheck.failedRuns < 3 || stalledCheck.escalated || (!canEscalateEffort && state.sessionModelId === modelId)) {
 			return;
 		}
 
 		stalledCheck.escalated = true;
 		const decision: AutoProfileDecision = {
-			providerId: state.providerId ?? "openai",
+			providerId: familyResolved?.providerId ?? state.providerId ?? "openai",
 			modelId,
 			effort: "high",
 			source: "escalation",
@@ -863,6 +997,11 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 						autoScope = "family";
 						familyId = CLAUDE_FAMILY_ID;
 						familyVariant = resolveClaudeVariant(ctx);
+					} else if (Object.hasOwn(getFamilyConfigs(ctx), targetName)) {
+						const config = getFamilyConfigs(ctx)[targetName];
+						providerId = config.providerId ?? providerId;
+						autoScope = "family";
+						familyId = config.id;
 					} else if (Object.hasOwn(MODEL_ALIASES, targetName)) {
 						modelId = MODEL_ALIASES[targetName as keyof typeof MODEL_ALIASES];
 					} else {
@@ -876,7 +1015,9 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 					}
 				}
 				if (autoScope === "family" && providerId && familyId) {
-					modelId = familyModelId(familyId, providerId, familyVariant, 2, ctx);
+					const resolved = resolveFamilyModel(familyId, providerId, familyVariant, 2, ctx);
+					providerId = resolved?.providerId ?? providerId;
+					modelId = resolved?.modelId;
 				}
 				if (!providerId || !modelId) {
 					ctx.ui.notify(familyId ? `No available ${familyId} model` : "Select a model first", "warning");

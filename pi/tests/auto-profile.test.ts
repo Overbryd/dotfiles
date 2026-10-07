@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import autoProfile, {
 	__autoProfileInternals,
@@ -6,6 +9,41 @@ import autoProfile, {
 } from "../extensions/auto-profile.ts";
 
 const { parseClassification, resolveAutoDecision } = __autoProfileInternals;
+
+// Configured families (e.g. hf-router) load from ~/.pi/agent/auto-profile-families.json at call
+// time, so tests point PI_CODING_AGENT_DIR at a throwaway directory holding a fixture file.
+async function withFamilyConfig<T>(families: Record<string, unknown>, fn: () => Promise<T>): Promise<T> {
+	const dir = mkdtempSync(join(tmpdir(), "auto-profile-families-"));
+	writeFileSync(join(dir, "auto-profile-families.json"), JSON.stringify({ families }));
+	const previous = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	try {
+		return await fn();
+	} finally {
+		if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previous;
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+const HF_ROUTER_FAMILY = {
+	providerId: "hf-router",
+	tiers: [
+		{ modelId: "gpt-6-luna", effort: "medium" },
+		{ modelId: "gpt-6-sol", effort: "medium" },
+		{ modelId: "claude-sonnet-5", effort: "high" },
+		{ modelId: "claude-opus-5-5", effort: "xhigh" },
+	],
+};
+
+// Writes a project-local .pi/auto-profile-families.json under a throwaway project directory and
+// returns its path for tests to point ctx.cwd at.
+function writeProjectFamilyConfig(families: Record<string, unknown>): string {
+	const dir = mkdtempSync(join(tmpdir(), "auto-profile-project-"));
+	mkdirSync(join(dir, ".pi"));
+	writeFileSync(join(dir, ".pi", "auto-profile-families.json"), JSON.stringify({ families }));
+	return dir;
+}
 
 type Handler = (event: any, context: any) => unknown;
 
@@ -77,6 +115,9 @@ function harness(
 		api: "anthropic-messages",
 		reasoning: true,
 	});
+	for (const id of ["gpt-5.6-luna", "gpt-6-luna", "gpt-6-sol", "claude-sonnet-5", "claude-opus-5-5"]) {
+		models.set(`hf-router/${id}`, { id, provider: "hf-router", api: "openai-completions", reasoning: false });
+	}
 	models.set("minimax/MiniMax-M2.7", {
 		id: "MiniMax-M2.7",
 		provider: "minimax",
@@ -122,6 +163,9 @@ function harness(
 		model: currentModel,
 		cwd: "/tmp/project",
 		hasUI: true,
+		isProjectTrusted() {
+			return false;
+		},
 		ui: {
 			theme: { fg: (_color: string, text: string) => text },
 			setStatus(key: string, value: string | undefined) {
@@ -382,6 +426,89 @@ test("provider-only auto routes the GPT 5.6 through 6 family", async () => {
 		await h.commands.get("profile").handler("status", h.context);
 		assert.match(h.notifications.at(-1) ?? "", /model family: gpt-5.6-6/);
 	}
+});
+
+test("hf-router family escalates through configured provider/model/effort tiers", async () => {
+	await withFamilyConfig({ "hf-router": HF_ROUTER_FAMILY }, async () => {
+		const h = harness([
+			assistantClassification("economy"),
+			assistantClassification("routine"),
+			assistantClassification("complex"),
+			assistantClassification("critical"),
+		]);
+		await h.handlers.get("session_start")?.({}, h.context);
+		await h.commands.get("profile").handler("auto hf-router", h.context);
+		assert.equal(h.providerId, "hf-router");
+		assert.equal(h.modelId, "claude-sonnet-5");
+		assert.equal(h.entries.at(-1).data.autoScope, "family");
+		assert.equal(h.entries.at(-1).data.familyId, "hf-router");
+
+		for (const [model, effort] of [
+			["gpt-6-luna", "medium"],
+			["gpt-6-sol", "medium"],
+			["claude-sonnet-5", "high"],
+			["claude-opus-5-5", "xhigh"],
+		]) {
+			await h.handlers.get("before_agent_start")?.({ prompt: "Next task" }, h.context);
+			assert.equal(h.providerId, "hf-router", model);
+			assert.equal(h.modelId, model);
+			assert.equal(h.thinkingLevel, effort);
+			assert.deepEqual(h.classifierProviders.at(-1), "hf-router");
+		}
+	});
+});
+
+test("hf-router family fallback and escalation stay on the configured tier", async () => {
+	await withFamilyConfig({ "hf-router": HF_ROUTER_FAMILY }, async () => {
+		const invalid = assistantClassification("routine");
+		invalid.content[0].text = "not json";
+		const h = harness([invalid]);
+		await h.handlers.get("session_start")?.({}, h.context);
+		await h.commands.get("profile").handler("auto hf-router", h.context);
+		await h.handlers.get("before_agent_start")?.({ prompt: "Ambiguous request" }, h.context);
+
+		assert.equal(h.providerId, "hf-router");
+		assert.equal(h.modelId, "claude-sonnet-5");
+		assert.equal(h.thinkingLevel, "high");
+	});
+});
+
+test("project-local family config is additive, overrides same-id global families, and requires trust", async () => {
+	await withFamilyConfig({ "hf-router": HF_ROUTER_FAMILY }, async () => {
+		const projectDir = writeProjectFamilyConfig({
+			"hf-router": {
+				...HF_ROUTER_FAMILY,
+				tiers: [HF_ROUTER_FAMILY.tiers[0], HF_ROUTER_FAMILY.tiers[0], HF_ROUTER_FAMILY.tiers[0], HF_ROUTER_FAMILY.tiers[0]],
+			},
+			"project-only": HF_ROUTER_FAMILY,
+		});
+		try {
+			const h = harness([assistantClassification("critical")]);
+			h.context.cwd = projectDir;
+
+			// Untrusted project: only the global hf-router family is visible, with global tiers.
+			h.context.isProjectTrusted = () => false;
+			await h.handlers.get("session_start")?.({}, h.context);
+			await h.commands.get("profile").handler("auto project-only", h.context);
+			assert.equal(h.providerId, "openai");
+			assert.equal(h.modelId, "gpt-5.6-sol");
+			await h.commands.get("profile").handler("auto hf-router", h.context);
+			assert.equal(h.providerId, "hf-router");
+			assert.equal(h.modelId, "claude-sonnet-5");
+
+			// Trusted project: project-only family becomes available, and the project override of
+			// hf-router (every tier pinned to gpt-6-luna) takes precedence over the global tiers.
+			h.context.isProjectTrusted = () => true;
+			await h.commands.get("profile").handler("auto project-only", h.context);
+			assert.equal(h.providerId, "hf-router");
+			assert.equal(h.modelId, "claude-sonnet-5");
+			await h.commands.get("profile").handler("auto hf-router", h.context);
+			assert.equal(h.providerId, "hf-router");
+			assert.equal(h.modelId, "gpt-6-luna");
+		} finally {
+			rmSync(projectDir, { recursive: true, force: true });
+		}
+	});
 });
 
 test("Bedrock Claude family routes available version 5 models within one inference profile", async () => {
