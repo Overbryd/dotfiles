@@ -12,6 +12,9 @@ module.exports = {
         /.*\.?google$/,
         // AWS
         /^oidc\.*\.amazonaws\.com$/,
+        /^d-[^.]+\.awsapps\.com$/,
+        // Zscaler
+        'samlsp.private.zscaler.com',
         // Gitlab
         /.*\.?gitlab\.com$/,
         // Github
