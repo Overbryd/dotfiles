@@ -597,7 +597,8 @@ pi-fork: $(PI_FORK_ROOT)/.git
 	rm -rf $(PI_FORK_ROOT)/packages/ai/src/providers/data
 	cp -R $(PI_INSTALLED_AI)/dist/providers/data $(PI_FORK_ROOT)/packages/ai/src/providers/data
 	npm --prefix $(PI_FORK_ROOT) run build:offline
-	npm --prefix $(PI_FORK_ROOT)/packages/ai test -- test/openai-responses-native-compaction.test.ts
+	# Stable offline provider test present in both older and current fork bases.
+	npm --prefix $(PI_FORK_ROOT)/packages/ai test -- test/openai-responses-compat.test.ts
 
 $(PI_FORK_ROOT)/.git:
 	git clone git@github.com:Overbryd/pi.git $(PI_FORK_ROOT)
