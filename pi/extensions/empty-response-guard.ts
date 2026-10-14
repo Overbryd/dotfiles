@@ -1,6 +1,14 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+/**
+ * Temporary client fallback for hf-router's empty-success stream bug.
+ *
+ * Remove only after the ai-model-router empty-stream fix is deployed to prod
+ * and 30 consecutive days of Pi sessions contain no hf-router assistant turn
+ * with stopReason="stop", no text/tool call, and zero usage. A router-side
+ * rejection is safe: it reaches Pi as an error and does not activate this guard.
+ */
 const CUSTOM_TYPE = "empty-response-guard";
 const RETRY_PROMPT =
 	"The provider returned an empty final response. Continue the task from the preceding context. Produce either a useful answer or the next required tool call.";
