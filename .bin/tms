@@ -115,6 +115,11 @@ find_session_for_path() {
   base=$(session_name_hint "$target")
 
   tmux_cmd list-sessions -F '#{session_name}' 2>/dev/null | while IFS= read -r session; do
+    if [[ "$session" == "${base}0" ]]; then
+      printf '0\t%s\n' "$session"
+      continue
+    fi
+
     root=$(tmux_cmd show-options -qv -t "$session" @tms-root 2>/dev/null || true)
 
     if [[ -z "$root" ]]; then

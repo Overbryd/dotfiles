@@ -141,6 +141,17 @@ class TmsTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("HelloFresh0", self.switched_to())
 
+    def test_tms_prefers_zero_even_when_its_recorded_root_changed(self):
+        other_root = self.root / "agent-sessions"
+        other_root.mkdir()
+        self.state.write_text(f"HelloFresh0\t{other_root}\n")
+
+        result = self.run_command(TMS, [str(self.workdir)])
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["HelloFresh0"], self.sessions())
+        self.assertEqual("HelloFresh0", self.switched_to())
+
     def test_tms_normalizes_an_old_unsuffixed_session(self):
         root = str(self.workdir)
         self.state.write_text(f"HelloFresh\t{root}\n")
