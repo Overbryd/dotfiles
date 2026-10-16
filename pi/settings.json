@@ -2,6 +2,12 @@
   "enableInstallTelemetry": false,
   "defaultThinkingLevel": "medium",
   "transport": "websocket",
+  "retry": {
+    "enabled": true,
+    "maxRetries": -1,
+    "baseDelayMs": 2000,
+    "maxAgentDelayMs": 60000
+  },
   "hideThinkingBlock": true,
   "theme": "dark",
   "defaultProvider": "openai",

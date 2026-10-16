@@ -13,11 +13,18 @@ const CUSTOM_TYPE = "openai-auto-profile";
 const STATUS_KEY = "auto-profile";
 const CLASSIFIER_MODEL_ID = "gpt-5.6-luna";
 const ASTRA_MODEL_ID = "gpt-6-astra";
-const SOL_MODEL_ID = "gpt-5.6-sol";
+const SOL_MODEL_ID = "gpt-6.1-sol";
+const LEGACY_SOL_MODEL_ID = "gpt-5.6-sol";
 const TERRA_MODEL_ID = "gpt-5.6-terra";
 const GPT_FAMILY_ID = "gpt-5.6-6";
 const CLAUDE_FAMILY_ID = "claude-5";
 const GPT_FAMILY_MODEL_IDS = [CLASSIFIER_MODEL_ID, TERRA_MODEL_ID, SOL_MODEL_ID, ASTRA_MODEL_ID] as const;
+const GPT_FAMILY_MODEL_CANDIDATES = [
+	[CLASSIFIER_MODEL_ID],
+	[TERRA_MODEL_ID],
+	[SOL_MODEL_ID, LEGACY_SOL_MODEL_ID],
+	[ASTRA_MODEL_ID],
+] as const;
 const CLASSIFIER_TIMEOUT_MS = 10_000;
 const MAX_REQUEST_CHARS = 12_000;
 const MAX_CONTEXT_CHARS = 4_000;
@@ -32,6 +39,7 @@ const MODEL_ALIASES = {
 const MODEL_NAMES: Record<string, string> = {
 	[ASTRA_MODEL_ID]: "astra",
 	[SOL_MODEL_ID]: "sol",
+	[LEGACY_SOL_MODEL_ID]: "sol",
 	[TERRA_MODEL_ID]: "terra",
 	[CLASSIFIER_MODEL_ID]: "luna",
 };
@@ -507,8 +515,9 @@ function familyModelId(
 	const available = availableFamilyModels(ctx, providerId);
 	if (familyId === GPT_FAMILY_ID) {
 		for (const candidateTier of fallbackTierOrder(tier)) {
-			const modelId = GPT_FAMILY_MODEL_IDS[candidateTier];
-			if (available.some((model) => model.id === modelId)) return modelId;
+			for (const modelId of GPT_FAMILY_MODEL_CANDIDATES[candidateTier]) {
+				if (available.some((model) => model.id === modelId)) return modelId;
+			}
 		}
 		return undefined;
 	}

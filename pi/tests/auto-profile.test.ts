@@ -86,6 +86,14 @@ function harness(
 			]),
 		),
 	);
+	for (const provider of ["openai", "openai-codex"]) {
+		models.set(`${provider}/gpt-6.1-sol`, {
+			id: "gpt-6.1-sol",
+			provider,
+			api: provider === "openai" ? "openai-responses" : "openai-codex-responses",
+			reasoning: true,
+		});
+	}
 	models.set("openai/gpt-6-astra", {
 		id: "gpt-6-astra",
 		provider: "openai",
@@ -297,7 +305,7 @@ test("auto Codex Astra failure preserves current model, effort, and lock", async
 	const previousEntries = [...h.entries];
 	await h.commands.get("profile").handler("auto codex/astra", h.context);
 	assert.equal(h.providerId, "openai");
-	assert.equal(h.modelId, "gpt-5.6-sol");
+	assert.equal(h.modelId, "gpt-6.1-sol");
 	assert.equal(h.thinkingLevel, "low");
 	assert.deepEqual(h.entries, previousEntries);
 	assert.match(h.notifications.at(-1) ?? "", /openai-codex\/gpt-6-astra is unavailable/);
@@ -405,7 +413,7 @@ test("qualified auto pins any supported model, including full model IDs", async 
 	}
 });
 
-test("provider-only auto routes the GPT 5.6 through 6 family", async () => {
+test("provider-only auto routes each provider through the newest available GPT family tiers", async () => {
 	for (const provider of ["api", "codex", "openai", "openai-codex"]) {
 		const expectedProvider = provider === "api" || provider === "openai" ? "openai" : "openai-codex";
 		const h = harness([assistantClassification("economy"), assistantClassification("routine"), assistantClassification("complex")]);
@@ -413,10 +421,10 @@ test("provider-only auto routes the GPT 5.6 through 6 family", async () => {
 		await h.commands.get("profile").handler("auto api/astra", h.context);
 		await h.commands.get("profile").handler(`auto ${provider}`, h.context);
 		assert.equal(h.providerId, expectedProvider);
-		assert.equal(h.modelId, "gpt-5.6-sol");
+		assert.equal(h.modelId, "gpt-6.1-sol");
 		assert.equal(h.entries.at(-1).data.autoScope, "family");
 		assert.equal(h.entries.at(-1).data.familyId, "gpt-5.6-6");
-		for (const model of ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]) {
+		for (const model of ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-6.1-sol"]) {
 			await h.handlers.get("session_start")?.({ reason: "reload" }, h.context);
 			await h.handlers.get("before_agent_start")?.({ prompt: "Next task" }, h.context);
 			assert.equal(h.modelId, model);
@@ -426,6 +434,16 @@ test("provider-only auto routes the GPT 5.6 through 6 family", async () => {
 		await h.commands.get("profile").handler("status", h.context);
 		assert.match(h.notifications.at(-1) ?? "", /model family: gpt-5.6-6/);
 	}
+});
+
+test("provider-only auto keeps the previous Sol on providers without 6.1", async () => {
+	const h = harness([assistantClassification("complex")]);
+	h.models.delete("openai-codex/gpt-6.1-sol");
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.commands.get("profile").handler("auto codex", h.context);
+	await h.handlers.get("before_agent_start")?.({ prompt: "Debug this race" }, h.context);
+	assert.equal(h.providerId, "openai-codex");
+	assert.equal(h.modelId, "gpt-5.6-sol");
 });
 
 test("hf-router family escalates through configured provider/model/effort tiers", async () => {
@@ -572,7 +590,7 @@ test("older saved profiles retain family routing except for explicitly selected 
 		await h.commands.get("profile").handler("status", h.context);
 		assert.match(h.notifications.at(-1) ?? "", new RegExp(`auto scope: ${expectedScope}`));
 		await h.handlers.get("before_agent_start")?.({ prompt: "Complex debugging" }, h.context);
-		assert.equal(h.modelId, expectedScope === "thinking" ? modelId : "gpt-5.6-sol");
+		assert.equal(h.modelId, expectedScope === "thinking" ? modelId : "gpt-6.1-sol");
 	}
 });
 
@@ -584,7 +602,7 @@ test("family fallback and escalation stay in the selected provider's normal fami
 	await h.commands.get("profile").handler("auto api/astra", h.context);
 	await h.commands.get("profile").handler("auto codex", h.context);
 	await h.handlers.get("before_agent_start")?.({ prompt: "Small change" }, h.context);
-	assert.equal(h.modelId, "gpt-5.6-sol");
+	assert.equal(h.modelId, "gpt-6.1-sol");
 	assert.equal(h.providerId, "openai-codex");
 	await h.handlers.get("before_agent_start")?.({ prompt: "Next change" }, h.context);
 	assert.equal(h.modelId, "gpt-5.6-luna");
@@ -592,7 +610,7 @@ test("family fallback and escalation stay in the selected provider's normal fami
 		await h.handlers.get("tool_result")?.({ toolName: "edit", isError: false }, h.context);
 		await h.handlers.get("tool_result")?.({ toolName: "bash", input: { command: "npm test" }, isError: true }, h.context);
 	}
-	assert.equal(h.modelId, "gpt-5.6-sol");
+	assert.equal(h.modelId, "gpt-6.1-sol");
 	assert.equal(h.providerId, "openai-codex");
 	assert.equal(h.thinkingLevel, "high");
 });
@@ -749,7 +767,7 @@ test("GPT family routing maps task tiers from Luna through Astra", () => {
 		"gpt-5.6-terra",
 		false,
 	);
-	assert.equal(upgraded.modelId, "gpt-5.6-sol");
+	assert.equal(upgraded.modelId, "gpt-6.1-sol");
 	assert.equal(upgraded.effort, "high");
 
 	const risky = resolveAutoDecision(
@@ -757,7 +775,7 @@ test("GPT family routing maps task tiers from Luna through Astra", () => {
 		undefined,
 		true,
 	);
-	assert.equal(risky.modelId, "gpt-5.6-sol");
+	assert.equal(risky.modelId, "gpt-6.1-sol");
 	assert.equal(risky.effort, "high");
 });
 
@@ -772,7 +790,7 @@ test("family mode classifies every turn, selects Luna first, then upgrades to So
 
 	await h.handlers.get("before_agent_start")?.({ prompt: "Now debug the cross-service race" }, h.context);
 	assert.equal(h.classifierCalls, 2);
-	assert.equal(h.modelId, "gpt-5.6-sol");
+	assert.equal(h.modelId, "gpt-6.1-sol");
 	assert.equal(h.thinkingLevel, "high");
 	assert.equal(h.entries.filter((entry) => entry.customType === "openai-auto-profile").length, 3);
 });
@@ -855,7 +873,7 @@ test("manual profile locks model and effort until auto is restored", async () =>
 	await h.commands.get("profile").handler("sol:medium", h.context);
 	await h.handlers.get("before_agent_start")?.({ prompt: "Production security migration" }, h.context);
 	assert.equal(h.classifierCalls, 0);
-	assert.equal(h.modelId, "gpt-5.6-sol");
+	assert.equal(h.modelId, "gpt-6.1-sol");
 	assert.equal(h.thinkingLevel, "medium");
 
 	await h.commands.get("profile").handler("auto", h.context);
@@ -912,7 +930,7 @@ test("expected red tests do not escalate until the same check stalls after two f
 
 	await h.handlers.get("tool_result")?.(successfulEdit, h.context);
 	await h.handlers.get("tool_result")?.(failedCheck, h.context);
-	assert.equal(h.modelId, "gpt-5.6-sol");
+	assert.equal(h.modelId, "gpt-6.1-sol");
 	assert.equal(h.thinkingLevel, "high");
 	assert.equal(h.notifications.some((message) => /xhigh/.test(message)), false);
 });

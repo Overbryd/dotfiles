@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import retryExtension from "../extensions/retry.ts";
 
-test("retry command waits for idle before retrying the latest turn", async () => {
+test("retry command waits for idle before retrying the latest failed response", async () => {
 	let handler: ((args: string, context: unknown) => Promise<void>) | undefined;
 	const pi = {
 		registerCommand(name: string, command: { handler: typeof handler }) {
