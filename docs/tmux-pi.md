@@ -13,6 +13,15 @@ pi --session ID      # exact or partial ID; a JSONL path also works
 
 Inside the `/resume` picker, `Ctrl+N` shows named sessions only and `Ctrl+R` renames the selected session. This dotfiles setup also provides `/pi find the TODAY session`, which searches names and conversation text and switches sessions; `/pi undo` switches back. Tree labels are created with `Shift+L` in `/tree` and are useful for finding a point *within* one session, not for finding the session in `/resume`.
 
+## Keep Pi and tmux names aligned
+
+When a tmux window contains exactly one live Pi pane, names synchronize both ways:
+
+- `/name SES-177` renames the tmux window.
+- `C-b ,`, or `C-b :` followed by `rename-window SES-177`, renames the Pi session.
+
+`C-b ,` opens tmux's rename prompt prefilled with the current window name. Automatic command-derived names such as `node` are ignored. A window containing multiple Pi panes is deliberately not synchronized because no single Pi session owns its name. Synchronization starts after the Pi extension is loaded; run `/reload` in already-running Pi processes after changing the extension.
+
 ## Snapshot and restore tmux windows
 
 ```sh
