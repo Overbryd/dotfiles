@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""Integration tests against an isolated tmux socket; never touch the user's server."""
+
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+import uuid
+
+SCRIPT = Path(__file__).resolve().parents[1] / "tmux-pi"
+
+
+class TmuxPiTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.socket = "pi-restore-test-" + uuid.uuid4().hex[:12]
+        fake_pi = self.root / "pi"
+        fake_pi.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$TMUX_PI_TEST_ARGS\"\nexec sleep 30\n")
+        fake_pi.chmod(0o755)
+        self.env = {**os.environ, "TMUX_PI_SOCKET": self.socket,
+                    "TMUX_PI_BIN": str(fake_pi),
+                    "TMUX_PI_STATE": str(self.root / "state" / "snapshot.json"),
+                    "TMUX_PI_TEST_ARGS": str(self.root / "pi.args"),
+                    "PATH": f'{self.root}:{os.environ["PATH"]}'}
+        self.tmux("-f", "/dev/null", "new-session", "-d", "-s", "TestPi", "-n", "TODAY", "-c", str(self.root),
+                  "exec -a pi /opt/homebrew/bin/node -e 'setInterval(() => {}, 1000)'")
+        self.tmux("set-environment", "-t", "TestPi", "PATH", self.env["PATH"])
+        self.tmux("set-environment", "-t", "TestPi", "TMUX_PI_TEST_ARGS", self.env["TMUX_PI_TEST_ARGS"])
+        self.addCleanup(lambda: self.tmux("kill-server", check=False))
+
+    def tmux(self, *args, check=True):
+        return subprocess.run(["tmux", "-L", self.socket, *args], check=check,
+                              text=True, capture_output=True)
+
+    def script(self, *args):
+        return subprocess.run([str(SCRIPT), *args], env=self.env, text=True, capture_output=True)
+
+    def test_requires_verified_pi_mapping_and_restores_names_and_split(self):
+        session = self.root / "conversation.jsonl"
+        session.write_text(json.dumps({"type": "session", "version": 3, "cwd": str(self.root),
+                                       "id": "test-session", "timestamp": "2026-10-15T00:00:00Z"}) + "\n")
+        pane = self.tmux("display-message", "-p", "-t", "TestPi:TODAY", "#{pane_id}").stdout.strip()
+        # Simulated marker on a live node process; production bind requires the command to be Pi.
+        self.tmux("set-option", "-p", "-t", pane, "@tmux-pi-file", str(session))
+        self.tmux("set-option", "-p", "-t", pane, "@tmux-pi-id", "test-session")
+        pid = self.tmux("display-message", "-p", "-t", pane, "#{pane_pid}").stdout.strip()
+        self.tmux("set-option", "-p", "-t", pane, "@tmux-pi-pid", pid)
+        self.tmux("split-window", "-h", "-t", "TestPi:TODAY", "-c", str(self.root))
+        self.tmux("new-window", "-d", "-t", "TestPi:1", "-n", "other/work", "-c", str(self.root))
+        saved = self.script("save")
+        self.assertEqual(0, saved.returncode, saved.stderr)
+        data = json.loads(Path(self.env["TMUX_PI_STATE"]).read_text())
+        self.assertEqual(0o600, Path(self.env["TMUX_PI_STATE"]).stat().st_mode & 0o777)
+        self.assertEqual("TODAY", data["sessions"][0]["windows"][0]["name"])
+        self.assertEqual(2, len(data["sessions"][0]["windows"][0]["panes"]))
+        self.assertEqual(str(session), data["sessions"][0]["windows"][0]["panes"][0]["session_file"])
+        self.assertEqual(0, self.script("restore", "--dry-run").returncode)
+        self.tmux("kill-server")
+        restored = self.script("restore")
+        self.assertEqual(0, restored.returncode, restored.stderr)
+        windows = self.tmux("list-windows", "-t", "TestPi", "-F", "#{window_index}|#{window_name}|#{window_panes}").stdout
+        self.assertIn("0|TODAY|2", windows)
+        self.assertIn("1|other/work|1", windows)
+        self.assertIn(str(session), json.dumps(data))
+        self.assertEqual(str(session), self.tmux("show-options", "-p", "-v", "-t", "TestPi:0.0", "@tmux-pi-file").stdout.strip())
+        self.assertEqual("TODAY", self.tmux("display-message", "-p", "-t", "TestPi:0", "#{window_name}").stdout.strip())
+        import time
+        for _ in range(20):
+            if (self.root / "pi.args").exists():
+                break
+            time.sleep(0.1)
+        self.assertEqual(f"--session {session}", (self.root / "pi.args").read_text().strip())
+
+    def test_layout_only_restore_does_not_launch_pi(self):
+        session = self.root / "conversation.jsonl"
+        session.write_text(json.dumps({"type": "session", "version": 3, "cwd": str(self.root),
+                                       "id": "test-session", "timestamp": "2026-10-15T00:00:00Z"}) + "\n")
+        pane = self.tmux("display-message", "-p", "-t", "TestPi:TODAY", "#{pane_id}").stdout.strip()
+        pid = self.tmux("display-message", "-p", "-t", pane, "#{pane_pid}").stdout.strip()
+        for option, value in (("@tmux-pi-file", str(session)), ("@tmux-pi-id", "test-session"),
+                              ("@tmux-pi-pid", pid)):
+            self.tmux("set-option", "-p", "-t", pane, option, value)
+        self.tmux("split-window", "-h", "-t", "TestPi:TODAY", "-c", str(self.root))
+        saved = self.script("save")
+        self.assertEqual(0, saved.returncode, saved.stderr)
+        self.tmux("kill-server")
+        restored = self.script("restore", "--layout-only")
+        self.assertEqual(0, restored.returncode, restored.stderr)
+        self.assertFalse((self.root / "pi.args").exists())
+        self.assertIn("0|TODAY|2", self.tmux("list-windows", "-t", "TestPi", "-F",
+                                                  "#{window_index}|#{window_name}|#{window_panes}").stdout)
+
+    def test_save_one_session_to_work_folder_and_restore_among_other_sessions(self):
+        session = self.root / "conversation.jsonl"
+        session.write_text(json.dumps({"type": "session", "version": 3, "cwd": str(self.root),
+                                       "id": "test-session", "timestamp": "2026-10-15T00:00:00Z"}) + "\n")
+        pane = self.tmux("display-message", "-p", "-t", "TestPi:TODAY", "#{pane_id}").stdout.strip()
+        pid = self.tmux("display-message", "-p", "-t", pane, "#{pane_pid}").stdout.strip()
+        for option, value in (("@tmux-pi-file", str(session)), ("@tmux-pi-id", "test-session"),
+                              ("@tmux-pi-pid", pid)):
+            self.tmux("set-option", "-p", "-t", pane, option, value)
+        self.tmux("split-window", "-h", "-t", "TestPi:TODAY", "-c", str(self.root))
+        self.assertEqual(0, self.script("save").returncode)
+        original = Path(self.env["TMUX_PI_STATE"]).read_bytes()
+        self.tmux("new-session", "-d", "-s", "OtherLive", "-c", str(self.root),
+                  "exec -a pi /opt/homebrew/bin/node -e 'setInterval(() => {}, 1000)'")
+        destination = self.root / "Hello Fresh" / ".pi" / "tmux-pi" / "snapshot.json"
+        self.assertNotEqual(0, self.script("save").returncode)  # OtherLive is unverified
+        self.assertEqual(0, self.script("status", "--session", "TestPi").returncode)
+        scoped = self.script("save", "--session", "TestPi", "--file", str(destination))
+        self.assertEqual(0, scoped.returncode, scoped.stderr)
+        self.assertEqual(original, Path(self.env["TMUX_PI_STATE"]).read_bytes())
+        self.assertEqual(0o700, destination.parent.stat().st_mode & 0o777)
+        self.assertEqual(0o600, destination.stat().st_mode & 0o777)
+        saved = json.loads(destination.read_text())
+        self.assertEqual(["TestPi"], [s["name"] for s in saved["sessions"]])
+        self.assertEqual(str(session), saved["sessions"][0]["windows"][0]["panes"][0]["session_file"])
+        self.tmux("kill-session", "-t", "TestPi")
+        self.assertEqual(0, self.script("restore", "--dry-run", "--file", str(destination)).returncode)
+        restored = self.script("restore", "--file", str(destination))
+        self.assertEqual(0, restored.returncode, restored.stderr)
+        self.assertEqual({"OtherLive", "TestPi"}, set(self.tmux("list-sessions", "-F", "#{session_name}").stdout.splitlines()))
+        self.assertIn("0|TODAY|2", self.tmux("list-windows", "-t", "TestPi", "-F",
+                                                  "#{window_index}|#{window_name}|#{window_panes}").stdout)
+        self.assertNotEqual(0, self.script("restore", "--file", str(destination)).returncode)
+
+    def test_work_folder_shortcut_uses_private_snapshot_directory(self):
+        session = self.root / "conversation.jsonl"
+        session.write_text(json.dumps({"type": "session", "version": 3, "cwd": str(self.root),
+                                       "id": "test-session", "timestamp": "2026-10-15T00:00:00Z"}) + "\n")
+        pane = self.tmux("display-message", "-p", "-t", "TestPi:TODAY", "#{pane_id}").stdout.strip()
+        pid = self.tmux("display-message", "-p", "-t", pane, "#{pane_pid}").stdout.strip()
+        for option, value in (("@tmux-pi-file", str(session)), ("@tmux-pi-id", "test-session"),
+                              ("@tmux-pi-pid", pid)):
+            self.tmux("set-option", "-p", "-t", pane, option, value)
+        folder = self.root / "HelloFresh"
+        folder.mkdir()
+        result = self.script("save", "--session", "TestPi", "--work-folder", str(folder))
+        self.assertEqual(0, result.returncode, result.stderr)
+        destination = folder / ".pi" / "tmux-pi" / "snapshot.json"
+        self.assertTrue(destination.is_file())
+        self.assertEqual(0o700, destination.parent.stat().st_mode & 0o777)
+        self.assertEqual(0o600, destination.stat().st_mode & 0o777)
+        self.assertEqual(0, self.script("restore", "--dry-run", "--work-folder", str(folder)).returncode)
+        self.assertFalse(Path(self.env["TMUX_PI_STATE"]).exists())
+
+    def test_refuses_existing_public_destination_directory(self):
+        folder = self.root / "public"
+        folder.mkdir(mode=0o755)
+        folder.chmod(0o755)
+        result = self.script("save", "--file", str(folder / "snapshot.json"))
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(0o755, folder.stat().st_mode & 0o777)
+        self.assertFalse((folder / "snapshot.json").exists())
+
+    def test_scoped_save_requires_file_and_exact_session_name(self):
+        self.assertNotEqual(0, self.script("save", "--session", "TestPi").returncode)
+        destination = self.root / "snapshot.json"
+        result = self.script("save", "--session", "Test", "--file", str(destination))
+        self.assertNotEqual(0, result.returncode)
+        self.assertFalse(destination.exists())
+        self.assertFalse(Path(self.env["TMUX_PI_STATE"]).exists())
+
+    def test_save_rejects_unverified_node_and_leaves_existing_snapshot(self):
+        existing = Path(self.env["TMUX_PI_STATE"])
+        existing.parent.mkdir(parents=True)
+        existing.write_text("previous good snapshot\n")
+        result = self.script("save")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("UNRESOLVED", result.stderr)
+        self.assertEqual("previous good snapshot\n", existing.read_text())
+
+    def test_does_not_overwrite_live_sessions(self):
+        pane = self.tmux("display-message", "-p", "-t", "TestPi:TODAY", "#{pane_id}").stdout.strip()
+        pid = self.tmux("display-message", "-p", "-t", pane, "#{pane_pid}").stdout.strip()
+        self.tmux("set-option", "-p", "-t", pane, "@tmux-pi-shell", pid)
+        saved = self.script("save")
+        self.assertEqual(0, saved.returncode, saved.stderr)
+        result = self.script("restore")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("sessions already exist", result.stderr)
+        self.assertEqual(1, len(self.tmux("list-sessions", "-F", "#{session_name}").stdout.splitlines()))
+
+
+if __name__ == "__main__":
+    unittest.main()

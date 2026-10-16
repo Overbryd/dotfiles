@@ -1,0 +1,372 @@
+#!/usr/bin/env python3
+"""Snapshot tmux layout and exact Pi JSONL files; restore without replaying other processes."""
+
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import subprocess
+import sys
+import tempfile
+
+STATE = Path(os.environ.get("TMUX_PI_STATE", "~/.local/state/tmux-pi/snapshot.json")).expanduser()
+PI_BIN = os.environ.get("TMUX_PI_BIN", "pi")
+TMUX = ["tmux"] + (["-L", os.environ["TMUX_PI_SOCKET"]] if os.environ.get("TMUX_PI_SOCKET") else [])
+SEP = "|"
+
+
+def tmux(*args, check=True):
+    result = subprocess.run([*TMUX, *map(str, args)], capture_output=True, text=True)
+    if check and result.returncode:
+        raise ValueError(result.stderr.strip() or f"tmux {args[0]} failed")
+    return result
+
+
+def rows(*args, columns):
+    output = tmux(*args, "-F", SEP.join(columns)).stdout
+    result = [line.split(SEP) for line in output.splitlines()]
+    if any(len(row) != len(columns) for row in result):
+        raise ValueError("tmux format contained a delimiter; refusing ambiguous snapshot")
+    return result
+
+
+def pane_option(pane, name):
+    return tmux("show-options", "-p", "-qv", "-t", pane, name, check=False).stdout.strip()
+
+
+def session_header(path):
+    file = Path(path)
+    if not file.is_absolute() or file.suffix != ".jsonl" or not file.is_file():
+        raise ValueError(f"missing/invalid Pi session file: {path}")
+    with file.open() as src:
+        try:
+            header = json.loads(src.readline())
+        except (ValueError, OSError) as err:
+            raise ValueError(f"invalid Pi session header: {path}") from err
+    if header.get("type") != "session" or not header.get("id") or not header.get("cwd"):
+        raise ValueError(f"invalid Pi session header: {path}")
+    return header
+
+
+def verified_pi(pane):
+    path = pane_option(pane["id"], "@tmux-pi-file")
+    pid = pane_option(pane["id"], "@tmux-pi-pid")
+    saved_id = pane_option(pane["id"], "@tmux-pi-id")
+    if not (path and pid and saved_id and pid.isdecimal()):
+        raise ValueError("Pi session not marked; run /reload in that Pi or tmux-pi bind <pane> <session.jsonl>")
+    header = session_header(path)
+    if saved_id != header["id"]:
+        raise ValueError("Pi session marker conflicts with JSONL header")
+    info = subprocess.run(["ps", "-p", pid, "-o", "tty=,comm=,command="], capture_output=True, text=True)
+    parts = info.stdout.strip().split(maxsplit=2)
+    if (info.returncode or len(parts) < 3 or parts[0] != Path(pane["tty"]).name
+            or parts[1] not in ("node", "pi") or not re.match(r"^pi(?:\s|$)", parts[2])):
+        raise ValueError("Pi marker PID no longer belongs to this pane's live Pi process")
+    return {"session_file": path, "session_id": header["id"]}
+
+
+def snapshot(session_name=None):
+    sessions = []
+    errors = []
+    names = [row[0] for row in rows("list-sessions", columns=["#{session_name}"])]
+    if session_name is not None:
+        if session_name not in names:
+            raise ValueError(f"tmux session does not exist: {session_name}")
+        names = [session_name]
+    for name in names:
+        windows = []
+        window_rows = rows("list-windows", "-t", name,
+                           columns=["#{window_index}", "#{window_name}", "#{window_layout}",
+                                    "#{window_active}", "#{window_panes}"])
+        for index, window_name, layout, active, pane_count in window_rows:
+            panes = []
+            for pane_index, pane_id, pid, command, cwd, tty, pane_active in rows(
+                    "list-panes", "-t", f"{name}:{index}",
+                    columns=["#{pane_index}", "#{pane_id}", "#{pane_pid}",
+                             "#{pane_current_command}", "#{pane_current_path}", "#{pane_tty}", "#{pane_active}"]):
+                entry = {"index": int(pane_index), "id": pane_id, "cwd": cwd, "active": pane_active == "1"}
+                pane = {"id": pane_id, "pid": pid, "command": command, "cwd": cwd, "tty": tty}
+                if not Path(cwd).is_dir():
+                    errors.append(f"{name}:{index}.{pane_index} ({pane_id}): cwd missing: {cwd}")
+                elif command == "node":
+                    try:
+                        entry.update(verified_pi(pane))
+                    except ValueError as err:
+                        if (pane_option(pane_id, "@tmux-pi-shell") == pid):
+                            entry["shell_only"] = True
+                        else:
+                            errors.append(f"{name}:{index}.{pane_index} ({pane_id}): {err}")
+                elif command not in ("bash", "zsh", "fish", "sh"):
+                    entry["shell_only"] = True  # never replay a command (or its arguments/secrets)
+                panes.append(entry)
+            if len(panes) != int(pane_count):
+                errors.append(f"{name}:{index}: pane count changed during snapshot; retry")
+            windows.append({"index": int(index), "name": window_name, "layout": layout,
+                            "active": active == "1", "panes": panes})
+        base_index = int(tmux("show-options", "-qv", "-t", name, "base-index").stdout or "0")
+        pane_base_index = min(p["index"] for w in windows for p in w["panes"])
+        sessions.append({"name": name, "windows": windows,
+                         "base_index": base_index, "pane_base_index": pane_base_index})
+    return {"version": 1, "sessions": sessions}, errors
+
+
+def show(data, errors):
+    count = 0
+    for session in data["sessions"]:
+        for window in session["windows"]:
+            kinds = ["Pi" if "session_file" in p else "shell" for p in window["panes"]]
+            count += kinds.count("Pi")
+            print(f'{session["name"]}:{window["index"]} {window["name"]}: {", ".join(kinds)}')
+    for err in errors:
+        print("UNRESOLVED:", err, file=sys.stderr)
+    print(f'{len(data["sessions"])} tmux sessions, {count} verified Pi panes, {len(errors)} unresolved', file=sys.stderr)
+
+
+def work_folder_state(folder):
+    if not folder.is_dir():
+        raise ValueError(f"work folder does not exist: {folder}")
+    return folder / ".pi" / "tmux-pi" / "snapshot.json"
+
+
+def safe_state_dir(destination):
+    parent = destination.parent
+    missing = []
+    current = parent
+    while not current.exists():
+        missing.append(current)
+        current = current.parent
+    if not current.is_dir():
+        raise ValueError(f"snapshot parent is not a directory: {current}")
+    if missing:
+        # Do not tighten an existing shared/work directory; only private directories we create.
+        for directory in reversed(missing):
+            directory.mkdir(mode=0o700)
+    if parent.stat().st_mode & 0o077:
+        raise ValueError(f"snapshot directory is accessible to others: {parent}")
+    if destination.is_symlink() or (destination.exists() and not destination.is_file()):
+        raise ValueError(f"snapshot destination is not a regular file: {destination}")
+    if destination.exists() and destination.stat().st_mode & 0o077:
+        raise ValueError(f"snapshot file is accessible to others: {destination}")
+
+
+def save(session_name=None, destination=STATE):
+    data, errors = snapshot(session_name)
+    show(data, errors)
+    if errors:
+        raise ValueError("not saved: every node pane must have a verified Pi marker or explicit shell-only override")
+    safe_state_dir(destination)
+    fd, temp = tempfile.mkstemp(prefix=".snapshot-", dir=destination.parent)
+    try:
+        with os.fdopen(fd, "w") as dest:
+            json.dump(data, dest, indent=2)
+            dest.write("\n")
+            dest.flush()
+            os.fsync(dest.fileno())
+        os.replace(temp, destination)
+    finally:
+        if os.path.exists(temp):
+            os.unlink(temp)
+    print(f"Saved: {destination}")
+
+
+def validate(data):
+    if data.get("version") != 1 or not isinstance(data.get("sessions"), list) or not data["sessions"]:
+        raise ValueError("invalid/empty snapshot")
+    names = set()
+    for session in data["sessions"]:
+        name = session["name"]
+        if not name or name in names or not session["windows"]:
+            raise ValueError("duplicate/empty tmux session in snapshot")
+        names.add(name)
+        indices = set()
+        for window in session["windows"]:
+            if window["index"] in indices or not window["panes"]:
+                raise ValueError("duplicate/empty tmux window in snapshot")
+            indices.add(window["index"])
+            for pane in window["panes"]:
+                if not Path(pane["cwd"]).is_dir():
+                    raise ValueError(f'cwd no longer exists: {pane["cwd"]}')
+                if "session_file" in pane:
+                    header = session_header(pane["session_file"])
+                    if header["id"] != pane["session_id"]:
+                        raise ValueError(f'Pi session changed: {pane["session_file"]}')
+
+
+def remap_layout(layout, old_ids, new_ids):
+    # tmux window_layout embeds numeric pane IDs. They change across server restarts.
+    leaves = re.findall(r"\d+x\d+,\d+,\d+,(\d+)(?=[},\]])", layout)
+    if len(leaves) != len(old_ids) or set(leaves) != set(old_ids) or len(old_ids) != len(new_ids):
+        raise ValueError("layout pane IDs do not match the saved panes")
+    mapped = dict(zip(old_ids, new_ids))
+    body = re.sub(r"(\d+x\d+,\d+,\d+,)(\d+)(?=[},\]])",
+                  lambda match: match[1] + mapped[match[2]], layout.split(",", 1)[1])
+    checksum = 0
+    for byte in body.encode():
+        checksum = (((checksum >> 1) | ((checksum & 1) << 15)) + byte) & 0xFFFF
+    return f"{checksum:04x},{body}"
+
+
+def restore(dry_run=False, layout_only=False, source=STATE):
+    data = json.loads(source.read_text())
+    validate(data)
+    conflicts = [s["name"] for s in data["sessions"] if tmux("has-session", "-t", f'={s["name"]}', check=False).returncode == 0]
+    if conflicts and not dry_run:
+        raise ValueError("tmux sessions already exist: " + ", ".join(conflicts) + "; refusing to overwrite")
+    if layout_only and not os.environ.get("TMUX_PI_SOCKET"):
+        raise ValueError("--layout-only requires an isolated TMUX_PI_SOCKET")
+    show(data, [])
+    if dry_run:
+        print(f"Preflight OK; would restore from {source}" + (f"; existing names: {', '.join(conflicts)}" if conflicts else ""))
+        return
+    for session in data["sessions"]:
+        name = session["name"]
+        first = True
+        for window in session["windows"]:
+            index = window["index"]
+            panes = window["panes"]
+            first_pane = panes[0]
+            first_cwd = session_header(first_pane["session_file"])["cwd"] if "session_file" in first_pane else first_pane["cwd"]
+            command = None
+            if "session_file" in first_pane and not layout_only:
+                command = "exec " + " ".join(map(shlex.quote, [PI_BIN, "--session", first_pane["session_file"]]))
+                pi_cwd = session_header(first_pane["session_file"])["cwd"]
+                if pi_cwd.startswith(str(Path.home() / "Work")):
+                    command = "exec direnv exec " + shlex.quote(pi_cwd) + " " + shlex.quote(PI_BIN) + " --session " + shlex.quote(first_pane["session_file"]) 
+                elif Path(pi_cwd).resolve() != Path(first_pane["cwd"]).resolve():
+                    command = "cd " + shlex.quote(pi_cwd) + " && " + command
+            if first:
+                args = ["new-session", "-d", "-s", name, "-n", window["name"], "-c", first_cwd]
+                if command:
+                    args.append(command)
+                tmux(*args)
+                tmux("set-option", "-t", name, "base-index", str(session["base_index"]))
+                tmux("set-window-option", "-t", f'{name}:{tmux("list-windows", "-t", name, "-F", "#{window_index}").stdout.strip()}',
+                     "pane-base-index", str(session["pane_base_index"]))
+                auto_index = tmux("list-windows", "-t", name, "-F", "#{window_index}").stdout.strip()
+                if int(auto_index) != index:
+                    tmux("move-window", "-s", f"{name}:{auto_index}", "-t", f"{name}:{index}")
+                first = False
+            else:
+                args = ["new-window", "-d", "-t", f"{name}:{index}", "-n", window["name"], "-c", first_cwd]
+                if command:
+                    args.append(command)
+                tmux(*args)
+            target = f"{name}:{index}"
+            tmux("set-window-option", "-t", target, "pane-base-index", str(panes[0]["index"]))
+            tmux("set-window-option", "-t", target, "automatic-rename", "off")
+            for pane in panes[1:]:
+                pane_cwd = session_header(pane["session_file"])["cwd"] if "session_file" in pane else pane["cwd"]
+                args = ["split-window", "-h", "-t", target, "-c", pane_cwd]
+                if "session_file" in pane and not layout_only:
+                    cmd = "exec " + shlex.quote(PI_BIN) + " --session " + shlex.quote(pane["session_file"])
+                    pi_cwd = session_header(pane["session_file"])["cwd"]
+                    if pi_cwd.startswith(str(Path.home() / "Work")):
+                        cmd = "exec direnv exec " + shlex.quote(pi_cwd) + " " + shlex.quote(PI_BIN) + " --session " + shlex.quote(pane["session_file"]) 
+                    elif Path(pi_cwd).resolve() != Path(pane["cwd"]).resolve():
+                        cmd = "cd " + shlex.quote(pi_cwd) + " && " + cmd
+                    args.append(cmd)
+                tmux(*args)
+            if len(panes) > 1 and window["layout"]:
+                old_ids = [p["id"].removeprefix("%") for p in panes]
+                current_panes = rows("list-panes", "-t", target,
+                                     columns=["#{pane_index}", "#{pane_id}"])
+                new_ids = [p[1].removeprefix("%") for p in current_panes]
+                expected = re.match(r"\w+,([0-9]+)x([0-9]+),", window["layout"])
+                if expected:
+                    tmux("resize-window", "-t", target, "-x", expected[1], "-y", expected[2])
+                tmux("select-layout", "-t", target, remap_layout(window["layout"], old_ids, new_ids))
+            for pane in panes:
+                t = f'{target}.{pane["index"]}'
+                if "session_file" in pane and not layout_only:
+                    tmux("set-option", "-p", "-t", t, "@tmux-pi-file", pane["session_file"]) 
+                    tmux("set-option", "-p", "-t", t, "@tmux-pi-id", pane["session_id"])
+                    # Pi extension refreshes PID after startup; do not trust an old PID.
+                if pane["active"]:
+                    tmux("select-pane", "-t", t)
+            if window["active"]:
+                tmux("select-window", "-t", target)
+    if layout_only:
+        print("Restored layout on isolated socket; no Pi or other commands launched.")
+    else:
+        print("Restored windows; Pi panes resume exact --session files. Other processes became shells.")
+
+
+def bind(target, path=None, shell_only=False):
+    values = rows("list-panes", "-a", columns=["#{pane_id}", "#{pane_pid}", "#{pane_current_command}",
+                                                "#{pane_current_path}", "#{pane_tty}"])
+    pane_id = tmux("display-message", "-p", "-t", target, "#{pane_id}").stdout.strip()
+    pane = next((dict(zip(("id", "pid", "command", "cwd", "tty"), r)) for r in values if r[0] == pane_id), None)
+    if not pane or pane["command"] != "node":
+        raise ValueError("bind targets one live node pane only")
+    if shell_only:
+        tmux("set-option", "-p", "-t", pane_id, "@tmux-pi-shell", pane["pid"])
+        print(f"{pane_id}: shell only (node process will NOT restart)")
+        return
+    header = session_header(path)
+    if Path(header["cwd"]).resolve() != Path(pane["cwd"]).resolve():
+        raise ValueError("Pi session cwd does not match the pane cwd")
+    listing = subprocess.check_output(["ps", "-axo", "pid=,tty=,comm=,command="], text=True)
+    candidates = []
+    for line in listing.splitlines():
+        parts = line.strip().split(maxsplit=3)
+        if len(parts) >= 3 and parts[1] == Path(pane["tty"]).name and parts[2] == "pi" and (len(parts) == 3 or re.match(r"^pi(?:\s|$)", parts[3])):
+            candidates.append(parts[0])
+    if len(candidates) != 1:
+        raise ValueError(f"expected one live Pi process in {pane_id}; found {len(candidates)}")
+    for key, value in (("@tmux-pi-file", path), ("@tmux-pi-id", header["id"]), ("@tmux-pi-pid", candidates[0])):
+        tmux("set-option", "-p", "-t", pane_id, key, value)
+    print(f'{pane_id}: bound {header["id"]} (verify /session in that Pi before saving)')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+    status_command = commands.add_parser("status")
+    status_command.add_argument("--session", help="exact tmux session name (not a Pi session ID)")
+    save_command = commands.add_parser("save")
+    save_command.add_argument("--session", help="exact tmux session name (requires --file)")
+    save_command.add_argument("--file", type=Path, help="snapshot destination (private file, outside Git)")
+    save_command.add_argument("--work-folder", type=Path, help="store in FOLDER/.pi/tmux-pi/snapshot.json")
+    restore_command = commands.add_parser("restore")
+    restore_command.add_argument("--file", type=Path, help="snapshot source (defaults to global snapshot)")
+    restore_command.add_argument("--work-folder", type=Path, help="load from FOLDER/.pi/tmux-pi/snapshot.json")
+    restore_command.add_argument("--dry-run", action="store_true")
+    restore_command.add_argument("--layout-only", action="store_true", help="test layout on isolated TMUX_PI_SOCKET without launching Pi")
+    bind_command = commands.add_parser("bind")
+    bind_command.add_argument("pane", help="pane ID, e.g. %%205")
+    bind_command.add_argument("file", nargs="?", help="exact path from /session in this Pi")
+    bind_command.add_argument("--shell-only", action="store_true", help="this node pane is NOT Pi; do not restart it")
+    args = parser.parse_args()
+    try:
+        if args.command == "status":
+            data, errors = snapshot(args.session)
+            show(data, errors)
+            return bool(errors)
+        if args.command == "save":
+            if args.file and args.work_folder:
+                parser.error("choose --file or --work-folder")
+            if args.session and not (args.file or args.work_folder):
+                parser.error("--session requires --file or --work-folder, so a partial snapshot cannot overwrite the global one")
+            destination = work_folder_state(args.work_folder.expanduser()) if args.work_folder else (
+                args.file.expanduser() if args.file else STATE)
+            save(args.session, destination)
+        elif args.command == "restore":
+            if args.file and args.work_folder:
+                parser.error("choose --file or --work-folder")
+            source = work_folder_state(args.work_folder.expanduser()) if args.work_folder else (
+                args.file.expanduser() if args.file else STATE)
+            restore(args.dry_run, args.layout_only, source)
+        else:
+            if not args.shell_only and not args.file:
+                parser.error("bind requires a Pi session path, or --shell-only")
+            bind(args.pane, args.file, args.shell_only)
+        return 0
+    except (ValueError, OSError, subprocess.CalledProcessError) as err:
+        print(f"tmux-pi: {err}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
