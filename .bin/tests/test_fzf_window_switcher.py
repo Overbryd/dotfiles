@@ -86,7 +86,7 @@ fi
 
 FAKE_TMS = r'''#!/bin/bash
 set -eu
-printf '%s\n' "$*" >> "$FAKE_TMS_LOG"
+printf '%s|%s\n' "${TMS_SWITCH_CLIENT:-0}" "$*" >> "$FAKE_TMS_LOG"
 '''
 
 
@@ -135,7 +135,7 @@ class FzfWindowSwitcherTest(unittest.TestCase):
         result = self.run_switcher("HelloFresh/TODAY")
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual("/work/HelloFresh", self.tms_log.read_text().strip())
+        self.assertEqual("1|/work/HelloFresh", self.tms_log.read_text().strip())
         self.assertIn("select-window -t @hf1", self.tmux_log.read_text())
 
     def test_standalone_session_selection_switches_client_then_window(self):

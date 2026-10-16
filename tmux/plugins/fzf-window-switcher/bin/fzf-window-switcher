@@ -65,7 +65,7 @@ target=${choice_rest%%$'\t'*}
 case "$choice_type" in
   project)
     if [[ "$session" != "$current_project" ]]; then
-      TMUX_BIN="$TMUX_CMD" "$TMS_BIN" "$root"
+      TMUX_BIN="$TMUX_CMD" TMS_SWITCH_CLIENT=1 "$TMS_BIN" "$root"
     fi
     "$TMUX_CMD" select-window -t "$target"
     ;;

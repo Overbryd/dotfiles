@@ -128,7 +128,7 @@ case "$command" in
   switch-client|attach-session)
     target=$(target_arg "$@")
     printf '%s\n' "$target" >> "$log"
-    if [[ "$command" == attach-session && -n "${FAKE_TMUX_COMMAND_LOG:-}" ]]; then
+    if [[ -n "${FAKE_TMUX_COMMAND_LOG:-}" ]]; then
       printf '%s %s\n' "$command" "$*" >> "$FAKE_TMUX_COMMAND_LOG"
     fi
     ;;
@@ -219,6 +219,19 @@ class TmsTest(unittest.TestCase):
         self.assertIn("attach-session", attach)
         self.assertIn(f"-c {self.workdir.resolve()}", attach)
         self.assertIn("-f active-pane", attach)
+
+    def test_picker_mode_switches_the_client_instead_of_attaching_inside_its_popup(self):
+        command_log = self.root / "commands.log"
+
+        result = self.run_command(
+            args=[str(self.workdir)],
+            env={"FAKE_TMUX_COMMAND_LOG": str(command_log), "TMS_SWITCH_CLIENT": "1"},
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        command = command_log.read_text()
+        self.assertIn("switch-client", command)
+        self.assertNotIn("attach-session", command)
 
     def test_second_attached_client_gets_an_independent_numbered_view(self):
         first = self.run_command(args=[str(self.workdir)])
