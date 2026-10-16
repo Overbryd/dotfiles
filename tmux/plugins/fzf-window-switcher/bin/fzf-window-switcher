@@ -3,6 +3,7 @@ set -euo pipefail
 
 TMUX_CMD=${TMUX_CMD:-tmux}
 FZF_BIN=${FZF_BIN:-fzf}
+TMS_BIN=${TMS_BIN:-"$HOME/dotfiles/.bin/tms"}
 PROMPT=${TMUX_FZF_SWITCHER_PROMPT:-"switch> "}
 FZF_OPTS=${TMUX_FZF_SWITCHER_OPTS:-"--height 100% --reverse"}
 TAB=$'\t'
@@ -13,23 +14,41 @@ if ! command -v "$FZF_BIN" >/dev/null 2>&1; then
 fi
 
 entries=()
-project=$("$TMUX_CMD" show-options -qv @tms-project 2>/dev/null || true)
-[[ -n "$project" ]] || project=$("$TMUX_CMD" display-message -p '#S')
+seen_window_ids=" "
+current_session=$("$TMUX_CMD" display-message -p '#S')
+current_project=$("$TMUX_CMD" show-options -qv -t "$current_session" @tms-project 2>/dev/null || true)
+[[ -n "$current_project" ]] || current_project=$current_session
+current_window=$("$TMUX_CMD" display-message -p '#{window_id}')
 
-while IFS='|' read -r target marker name; do
-  [[ -z "$target" ]] && continue
-  label=${name:-"(unnamed)"}
-  display=$(printf '[W] %s %s/%s' "${marker:- }" "$project" "$label")
-  entries+=("window${TAB}${target}${TAB}${display}")
-done < <("$TMUX_CMD" list-windows -F '#{window_id}|#{?window_active,*, }|#{window_name}')
+while IFS= read -r session; do
+  [[ -n "$session" ]] || continue
+  role=$("$TMUX_CMD" show-options -qv -t "$session" @tms-role 2>/dev/null || true)
+  [[ "$role" == view ]] && continue
+  project=$("$TMUX_CMD" show-options -qv -t "$session" @tms-project 2>/dev/null || true)
+  [[ -n "$project" ]] || project=$session
+  root=$("$TMUX_CMD" show-options -qv -t "$session" @tms-root 2>/dev/null || true)
+  kind=session
+  [[ "$role" == anchor && -n "$root" ]] && kind=project
+  stored_root=${root:--}
 
+  while IFS='|' read -r target name; do
+    [[ -n "$target" ]] || continue
+    [[ "$seen_window_ids" == *" $target "* ]] && continue
+    seen_window_ids+="$target "
+    marker=" "
+    [[ "$target" == "$current_window" ]] && marker="*"
+    label=${name:-"(unnamed)"}
+    display=$(printf '[W] %s %s/%s' "$marker" "$project" "$label")
+    entries+=("${kind}${TAB}${session}${TAB}${stored_root}${TAB}${target}${TAB}${display}")
+  done < <("$TMUX_CMD" list-windows -t "=$session" -F '#{window_id}|#{window_name}')
+done < <("$TMUX_CMD" list-sessions -F '#{session_name}')
 
 if [[ ${#entries[@]} -eq 0 ]]; then
   "$TMUX_CMD" display-message "tmux-fzf-switcher: nothing to select"
   exit 0
 fi
 
-choice=$(printf '%s\n' "${entries[@]}" | "$FZF_BIN" --prompt "$PROMPT" --delimiter '\t' --with-nth=3.. $FZF_OPTS)
+choice=$(printf '%s\n' "${entries[@]}" | "$FZF_BIN" --prompt "$PROMPT" --delimiter '\t' --with-nth=5.. $FZF_OPTS)
 
 if [[ -z "${choice:-}" ]]; then
   exit 0
@@ -37,10 +56,23 @@ fi
 
 choice_type=${choice%%$'\t'*}
 choice_rest=${choice#*$'\t'}
+session=${choice_rest%%$'\t'*}
+choice_rest=${choice_rest#*$'\t'}
+root=${choice_rest%%$'\t'*}
+choice_rest=${choice_rest#*$'\t'}
 target=${choice_rest%%$'\t'*}
 
 case "$choice_type" in
-  window)
+  project)
+    if [[ "$session" != "$current_project" ]]; then
+      TMUX_BIN="$TMUX_CMD" "$TMS_BIN" "$root"
+    fi
+    "$TMUX_CMD" select-window -t "$target"
+    ;;
+  session)
+    if [[ "$session" != "$current_session" ]]; then
+      "$TMUX_CMD" switch-client -t "=$session"
+    fi
     "$TMUX_CMD" select-window -t "$target"
     ;;
   *)

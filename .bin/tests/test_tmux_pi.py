@@ -73,7 +73,7 @@ class TmuxPiTest(unittest.TestCase):
             if (self.root / "pi.args").exists():
                 break
             time.sleep(0.1)
-        self.assertEqual(f"--session {session}", (self.root / "pi.args").read_text().strip())
+        self.assertEqual(f"--session {session} --name TODAY", (self.root / "pi.args").read_text().strip())
 
     def test_grouped_tms_views_snapshot_only_the_project_anchor(self):
         pane = self.tmux("display-message", "-p", "-t", "TestPi:TODAY", "#{pane_id}").stdout.strip()
@@ -151,6 +151,59 @@ class TmuxPiTest(unittest.TestCase):
         self.assertIn("0|TODAY|2", self.tmux("list-windows", "-t", "TestPi", "-F",
                                                   "#{window_index}|#{window_name}|#{window_panes}").stdout)
         self.assertNotEqual(0, self.script("restore", "--file", str(destination)).returncode)
+
+    def test_restore_inside_tmux_adds_named_windows_to_current_session(self):
+        session = self.root / "conversation.jsonl"
+        session.write_text(json.dumps({"type": "session", "version": 3, "cwd": str(self.root),
+                                       "id": "today-session", "timestamp": "2026-10-15T00:00:00Z"}) + "\n")
+        self.tmux("rename-window", "-t", "TestPi:TODAY", "keep")
+        current_pane = self.tmux("display-message", "-p", "-t", "TestPi:keep", "#{pane_id}").stdout.strip()
+        current_window = self.tmux("display-message", "-p", "-t", current_pane, "#{window_id}").stdout.strip()
+        socket_path = self.tmux("display-message", "-p", "-t", current_pane, "#{socket_path}").stdout.strip()
+        snapshot = {
+            "version": 1,
+            "sessions": [{
+                "name": "ArchivedPi",
+                "windows": [{
+                    "index": 0,
+                    "name": "TODAY",
+                    "layout": "",
+                    "active": True,
+                    "panes": [{
+                        "index": 0,
+                        "id": "%999",
+                        "cwd": str(self.root),
+                        "active": True,
+                        "session_file": str(session),
+                        "session_id": "today-session",
+                    }],
+                }],
+                "base_index": 0,
+                "pane_base_index": 0,
+            }],
+        }
+        state = Path(self.env["TMUX_PI_STATE"])
+        state.parent.mkdir(parents=True)
+        state.write_text(json.dumps(snapshot))
+        self.env.update({"TMUX": f"{socket_path},1,0", "TMUX_PANE": current_pane})
+
+        restored = self.script("restore")
+
+        self.assertEqual(0, restored.returncode, restored.stderr)
+        self.assertEqual(["TestPi"], self.tmux("list-sessions", "-F", "#{session_name}").stdout.splitlines())
+        windows = self.tmux("list-windows", "-t", "TestPi", "-F", "#{window_name}").stdout.splitlines()
+        self.assertEqual({"keep", "TODAY"}, set(windows))
+        self.assertEqual(current_window, self.tmux("display-message", "-p", "-t", "TestPi", "#{window_id}").stdout.strip())
+        import time
+        for _ in range(20):
+            if (self.root / "pi.args").exists():
+                break
+            time.sleep(0.1)
+        self.assertEqual(f"--session {session} --name TODAY", (self.root / "pi.args").read_text().strip())
+        repeated = self.script("restore")
+        self.assertNotEqual(0, repeated.returncode)
+        self.assertIn("window names already exist", repeated.stderr)
+        self.assertEqual(2, len(self.tmux("list-windows", "-t", "TestPi", "-F", "#{window_id}").stdout.splitlines()))
 
     def test_work_folder_shortcut_uses_private_snapshot_directory(self):
         session = self.root / "conversation.jsonl"

@@ -35,8 +35,10 @@ A second concurrent client from the same origin gets a numeric suffix such as
 `HelloFresh/ms1-local-2`. `wssh` supplies `<source-host>-wssh` as the remote view
 name.
 
-`C-b O` switches projects. `C-b f` lists the current project's shared windows once
-as `<project>/<window>`.
+`C-b O` opens the project-directory picker. `C-b f` searches windows across all
+project groups and standalone tmux sessions as `<project-or-session>/<window>`.
+Grouped anchor/view copies appear once. Cross-project selection uses `tms`, so the
+client keeps its independent view identity.
 
 ## Existing sessions
 
