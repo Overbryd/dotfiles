@@ -19,7 +19,9 @@ separator, for example `HelloFresh/mba1-wssh:logs`.
 
 Grouped views share window and pane processes. They independently select windows,
 and clients attach with tmux's `active-pane` flag for independent pane selection.
-Typing into the same pane still controls the same underlying process.
+Every attach also resets the view's tmux working directory to the project root, so
+new windows start there rather than in the SSH login directory. Typing into the
+same pane still controls the same underlying process.
 
 ## Commands
 

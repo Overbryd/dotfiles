@@ -125,9 +125,12 @@ case "$command" in
       '$1 == old {$1=new} $3 == old {$3=new} { print }' "$state" > "$tmp"
     mv "$tmp" "$state"
     ;;
-  switch-client)
+  switch-client|attach-session)
     target=$(target_arg "$@")
     printf '%s\n' "$target" >> "$log"
+    if [[ "$command" == attach-session && -n "${FAKE_TMUX_COMMAND_LOG:-}" ]]; then
+      printf '%s %s\n' "$command" "$*" >> "$FAKE_TMUX_COMMAND_LOG"
+    fi
     ;;
   refresh-client)
     ;;
@@ -204,6 +207,19 @@ class TmsTest(unittest.TestCase):
         self.assertEqual("ms1-local", rows["HelloFresh/ms1-local"][6])
         self.assertEqual("HelloFresh/ms1-local", self.switched_to())
 
+    def test_view_attach_sets_the_project_as_its_new_window_directory(self):
+        command_log = self.root / "commands.log"
+
+        result = self.run_command(
+            args=[str(self.workdir)], env={"FAKE_TMUX_COMMAND_LOG": str(command_log)}
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        attach = command_log.read_text()
+        self.assertIn("attach-session", attach)
+        self.assertIn(f"-c {self.workdir.resolve()}", attach)
+        self.assertIn("-f active-pane", attach)
+
     def test_second_attached_client_gets_an_independent_numbered_view(self):
         first = self.run_command(args=[str(self.workdir)])
         self.assertEqual(0, first.returncode, first.stderr)
@@ -266,6 +282,44 @@ class TmsTest(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("tmux"), "tmux is not installed")
 class TmuxGroupBehaviorTest(unittest.TestCase):
+    def test_tms_view_session_is_rooted_for_new_windows(self):
+        socket = f"tms-cwd-test-{os.getpid()}"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "HelloFresh"
+            project.mkdir()
+            environment = {
+                **os.environ,
+                "TMUX_SOCKET": socket,
+                "TMS_VIEW": "mba1-wssh",
+                "TMS_STATE_DIR": str(root / "state"),
+            }
+            environment.pop("TMUX", None)
+            environment.pop("TMUX_PANE", None)
+
+            try:
+                # Creation completes before attach fails because this test has no terminal.
+                subprocess.run(
+                    [str(TMS), str(project)],
+                    cwd=str(root),
+                    env=environment,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=30,
+                )
+                path = subprocess.run(
+                    ["tmux", "-L", socket, "display-message", "-p", "-t",
+                     "HelloFresh/mba1-wssh:", "#{session_path}"],
+                    check=True,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                ).stdout.strip()
+                self.assertEqual(str(project.resolve()), path)
+            finally:
+                subprocess.run(["tmux", "-L", socket, "kill-server"], stderr=subprocess.DEVNULL)
+
     def test_grouped_views_share_windows_but_select_them_independently(self):
         socket = f"tms-test-{os.getpid()}"
 

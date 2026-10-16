@@ -220,7 +220,7 @@ ensure_view() {
   view=${session#"$project/"}
 
   if ! tmux_cmd has-session -t "$session" 2>/dev/null; then
-    tmux_cmd new-session -d -s "$session" -t "$project"
+    tmux_cmd new-session -d -s "$session" -t "$project" -c "$target"
   fi
 
   tmux_cmd set-option -q -t "$session" @tms-root "$target"
@@ -372,10 +372,9 @@ open_target() {
   record_recent "$target"
 
   if [[ -n "${TMUX:-}" ]]; then
-    tmux_cmd switch-client -t "$session"
-    tmux_cmd refresh-client -f active-pane
+    tmux_cmd attach-session -f active-pane -c "$target" -t "$session"
   else
-    exec_tmux attach-session -f active-pane -t "$session"
+    exec_tmux attach-session -f active-pane -c "$target" -t "$session"
   fi
 }
 
