@@ -36,6 +36,10 @@ def pane_option(pane, name):
     return tmux("show-options", "-p", "-qv", "-t", pane, name, check=False).stdout.strip()
 
 
+def session_option(session, name):
+    return tmux("show-options", "-qv", "-t", session, name, check=False).stdout.strip()
+
+
 def session_header(path):
     file = Path(path)
     if not file.is_absolute() or file.suffix != ".jsonl" or not file.is_file():
@@ -70,11 +74,17 @@ def verified_pi(pane):
 def snapshot(session_name=None):
     sessions = []
     errors = []
-    names = [row[0] for row in rows("list-sessions", columns=["#{session_name}"])]
+    all_names = [row[0] for row in rows("list-sessions", columns=["#{session_name}"])]
     if session_name is not None:
-        if session_name not in names:
+        if session_name not in all_names:
             raise ValueError(f"tmux session does not exist: {session_name}")
+        if session_option(session_name, "@tms-role") == "view":
+            session_name = session_option(session_name, "@tms-project")
+            if session_name not in all_names:
+                raise ValueError("tmux project view has no anchor session")
         names = [session_name]
+    else:
+        names = [name for name in all_names if session_option(name, "@tms-role") != "view"]
     for name in names:
         windows = []
         window_rows = rows("list-windows", "-t", name,
@@ -107,8 +117,11 @@ def snapshot(session_name=None):
                             "active": active == "1", "panes": panes})
         base_index = int(tmux("show-options", "-qv", "-t", name, "base-index").stdout or "0")
         pane_base_index = min(p["index"] for w in windows for p in w["panes"])
-        sessions.append({"name": name, "windows": windows,
-                         "base_index": base_index, "pane_base_index": pane_base_index})
+        entry = {"name": name, "windows": windows,
+                 "base_index": base_index, "pane_base_index": pane_base_index}
+        if session_option(name, "@tms-role") == "anchor":
+            entry["tms_root"] = session_option(name, "@tms-root")
+        sessions.append(entry)
     return {"version": 1, "sessions": sessions}, errors
 
 
@@ -211,7 +224,7 @@ def remap_layout(layout, old_ids, new_ids):
 def restore(dry_run=False, layout_only=False, source=STATE):
     data = json.loads(source.read_text())
     validate(data)
-    conflicts = [s["name"] for s in data["sessions"] if tmux("has-session", "-t", f'={s["name"]}', check=False).returncode == 0]
+    conflicts = [s["name"] for s in data["sessions"] if tmux("has-session", "-t", s["name"], check=False).returncode == 0]
     if conflicts and not dry_run:
         raise ValueError("tmux sessions already exist: " + ", ".join(conflicts) + "; refusing to overwrite")
     if layout_only and not os.environ.get("TMUX_PI_SOCKET"):
@@ -242,6 +255,10 @@ def restore(dry_run=False, layout_only=False, source=STATE):
                     args.append(command)
                 tmux(*args)
                 tmux("set-option", "-t", name, "base-index", str(session["base_index"]))
+                if session.get("tms_root"):
+                    tmux("set-option", "-t", name, "@tms-root", session["tms_root"])
+                    tmux("set-option", "-t", name, "@tms-role", "anchor")
+                    tmux("set-option", "-t", name, "@tms-project", name)
                 tmux("set-window-option", "-t", f'{name}:{tmux("list-windows", "-t", name, "-F", "#{window_index}").stdout.strip()}',
                      "pane-base-index", str(session["pane_base_index"]))
                 auto_index = tmux("list-windows", "-t", name, "-F", "#{window_index}").stdout.strip()

@@ -19,10 +19,15 @@ Keep a long-lived tmux session on the other work machine.
 - resolves the peer host with `wsync peer`
 - takes the current directory (or the given one) and uses the *same absolute path*
   on the remote machine, which is what `wsync` keeps mirrored
-- runs `~/.bin/tms <directory>` on the peer through a login shell, so an existing
-  tmux session for that directory is re-attached and a new one is created otherwise
-- attaches with `TMS_ATTACH_DETACH_OTHERS=1`, which detaches the stale client that
-  a dropped connection left behind (otherwise the session stays sized to a dead terminal)
+- passes a view name such as `mba1-wssh` to `~/.bin/tms <directory>` on the peer
+- `tms` keeps a stable project anchor such as `HelloFresh` and attaches wssh to a
+  grouped view such as `HelloFresh/mba1-wssh`; grouped views share windows and
+  processes but select their current window independently
+- concurrent connections from the same origin receive a numbered view, such as
+  `HelloFresh/mba1-wssh-2`
+- attaches without tmux's `-d` flag and with tmux's `active-pane` client flag, so
+  clients neither detach one another nor share pane selection; tmux's
+  `window-size latest` default follows the client with the most recent activity
 - the remote shell prompt and the remote tmux status bar are teal, so it is always
   visible that the session runs on the other machine
 

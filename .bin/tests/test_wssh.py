@@ -51,6 +51,7 @@ class WsshTest(unittest.TestCase):
                 "FAKE_SSH_CODES": " ".join(str(code) for code in codes),
                 "WSSH_SSH": str(self.fake_ssh),
                 "WSSH_HOST": "peer1",
+                "WSSH_LOCAL_HOST": "mba1",
                 "WSSH_MIN_BACKOFF": "0",
                 "WSSH_MAX_BACKOFF": "0",
             }
@@ -82,7 +83,9 @@ class WsshTest(unittest.TestCase):
         self.assertIn("peer1", calls[0])
         self.assertIn("$HOME/.bin/tms", calls[0])
         self.assertIn(str(self.workdir), calls[0])
-        self.assertIn("TMS_ATTACH_DETACH_OTHERS=1", calls[0])
+        self.assertNotIn("TMS_ATTACH_DETACH_OTHERS", calls[0])
+        self.assertIn("TMS_VIEW=", calls[0])
+        self.assertIn("mba1-wssh", calls[0])
         self.assertIn("detached from peer1", result.stderr)
 
     def test_reconnects_after_a_dropped_connection(self):

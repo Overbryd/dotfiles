@@ -27,6 +27,12 @@
 - Single big file to one of my own machines: `wsync send <file> [remote-dir]`, resumable, remote dir defaults to `~/transfer`; then `mv` into place. Never stream into a synced folder like `~/Dropbox`.
 - On explicit request, notify completion with `notify '<title>' '<short message>'`; never include secrets.
 
+# Repository facts
+
+- `tms` models each work directory as a stable tmux anchor/group and each terminal origin as a grouped view session; views share windows but navigate independently.
+- `wssh` passes `<local-host>-wssh` as its `TMS_VIEW` and must never detach other tmux clients.
+- `tmux-pi` snapshots project anchors, not their grouped `tms` views, because grouped views reference the same panes.
+
 # Language and platform
 
 - Elixir: read `elixir` skill before editing `.ex`/`.exs`. Done = `mix format`, `mix compile --warnings-as-errors`, relevant `mix test`.

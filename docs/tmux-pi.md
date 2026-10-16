@@ -9,13 +9,13 @@ tmux-pi restore --dry-run
 For **one tmux session** (all its named windows and panes), store a separate snapshot in a work folder:
 
 ```sh
-tmux-pi status --session HelloFresh0
-tmux-pi save --session HelloFresh0 --work-folder ~/Work/HelloFresh
+tmux-pi status --session HelloFresh
+tmux-pi save --session HelloFresh --work-folder ~/Work/HelloFresh
 tmux-pi restore --dry-run --work-folder ~/Work/HelloFresh
 tmux-pi restore --work-folder ~/Work/HelloFresh
 ```
 
-This writes `~/Work/HelloFresh/.pi/tmux-pi/snapshot.json`; it does **not** overwrite the global all-sessions snapshot. Restore creates `HelloFresh0` even if other tmux sessions exist, but refuses if `HelloFresh0` already exists. To choose another private location, use `--file /absolute/path/snapshot.json` on `save` and `restore` instead of `--work-folder`. A scoped `save --session` always requires one of these destinations. Names match exactly, never by prefix. The snapshot directory must be private (700); an already-accessible directory/file is rejected rather than silently chmodded. Do not put snapshots in Git or a synced folder.
+This writes `~/Work/HelloFresh/.pi/tmux-pi/snapshot.json`; it does **not** overwrite the global all-sessions snapshot. Restore creates the stable `HelloFresh` project anchor but refuses if it already exists. Grouped `tms` view sessions such as `HelloFresh/ms1-local` are not duplicated in snapshots; they are recreated on demand by `tms` or `wssh`. Passing a view to `--session` resolves to its project anchor. To choose another private location, use `--file /absolute/path/snapshot.json` on `save` and `restore` instead of `--work-folder`. A scoped `save --session` always requires one of these destinations. Names match exactly, never by prefix. The snapshot directory must be private (700); an already-accessible directory/file is rejected rather than silently chmodded. Do not put snapshots in Git or a synced folder.
 
 The snapshot is `~/.local/state/tmux-pi/snapshot.json` (directory 700, file 600). It records tmux session/window names, indexes, pane layout, pane directories, and **exact** Pi JSONL paths and IDs. It is not an export or backup of the transcripts themselves: keep `~/.pi/agent/sessions/` too. Never commit or share the snapshot; paths and transcripts can be sensitive.
 
@@ -24,7 +24,7 @@ To shut down safely, finish or abort active Pi/tool runs, then save again. Only 
 ```sh
 tmux-pi restore --dry-run
 tmux-pi restore
-tmux attach -t HelloFresh0  # or your chosen session
+tms ~/Work/HelloFresh
 ```
 
 Restore refuses to overwrite existing tmux session names. It starts Pi using the saved session file, not `--continue`; non-Pi panes become shells. For directories under `~/Work`, it loads the directory's direnv environment before Pi. Run `tmux-pi save` again after a Pi `/new`, `/resume` or fork, or changing the tmux layout. A loaded Pi extension updates the active Pi file mapping after those commands; on pre-extension processes, `/reload` attaches it. `status` refuses to guess: if a pane is unresolved, use `/session` inside that Pi and `tmux-pi bind %PANE /absolute/path/to/session.jsonl`, then re-run `save`. Never bind by modification time alone.

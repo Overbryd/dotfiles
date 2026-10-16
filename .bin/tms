@@ -8,7 +8,7 @@ PROMPT=${TMS_PROMPT:-"open> "}
 FZF_OPTS=${TMS_FZF_OPTS:-"--height 100% --reverse"}
 WORK_ROOT=${TMS_WORK_ROOT:-$HOME/Work}
 PROJECTS_ROOT=${TMS_PROJECTS_ROOT:-$HOME/Projects}
-ATTACH_DETACH_OTHERS=${TMS_ATTACH_DETACH_OTHERS:-}
+VIEW_NAME=${TMS_VIEW:-}
 STATE_DIR=${TMS_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/tms}
 RECENTS_FILE=${TMS_RECENTS_FILE:-$STATE_DIR/recent.tsv}
 TAB=$'\t'
@@ -20,7 +20,9 @@ Usage: tms [--list] [directory]
 
 Without arguments, pick a directory with fzf and open/switch a tmux session there.
 With a directory argument, open/switch directly.
-With --new, always start a new session.
+Each directory has one stable project session; clients use grouped
+<project>/<host>-local views that share windows but navigate independently.
+With --new, always start another independent view of the shared project windows.
 With --list, print candidates and exit.
 EOF
 }
@@ -91,81 +93,141 @@ session_label_for_path() {
   printf '%s\n' "$label"
 }
 
-session_name_hint() {
-  local path=$1
-  local raw
+safe_name() {
+  local raw=$1
 
-  raw=$(session_label_for_path "$path")
   raw=${raw// /-}
   raw=${raw//:/-}
-  raw=${raw//\//-}
-  raw=$(printf '%s' "$raw" | tr -cd '[:alnum:]_.-')
+  raw=$(printf '%s' "$raw" | tr -cd '[:alnum:]_./-')
+  raw=$(printf '%s' "$raw" | sed -E 's#/{2,}#/#g; s#^/+##; s#/+$##')
 
-  if [[ -z "$raw" ]]; then
-    raw=main
-  fi
-
+  [[ -n "$raw" ]] || raw=main
   printf '%s\n' "$raw"
 }
 
-find_session_for_path() {
-  local target=$1
-  local base session root suffix rank
-
-  base=$(session_name_hint "$target")
-
-  tmux_cmd list-sessions -F '#{session_name}' 2>/dev/null | while IFS= read -r session; do
-    if [[ "$session" == "${base}0" ]]; then
-      printf '0\t%s\n' "$session"
-      continue
-    fi
-
-    root=$(tmux_cmd show-options -qv -t "$session" @tms-root 2>/dev/null || true)
-
-    if [[ -z "$root" ]]; then
-      root=$(tmux_cmd display-message -p -t "$session:" '#{session_path}' 2>/dev/null || true)
-    fi
-
-    if [[ -z "$root" ]]; then
-      continue
-    fi
-
-    root=$(canonical_path "$root" 2>/dev/null || true)
-
-    if [[ "$root" != "$target" ]]; then
-      continue
-    fi
-
-    if [[ "$session" == "$base" ]]; then
-      # Keep legacy unsuffixed sessions usable, but prefer every numbered one.
-      rank=1000000000
-    elif [[ "$session" == "$base"* ]]; then
-      suffix=${session#"$base"}
-      if [[ "$suffix" =~ ^[0-9]+$ ]]; then
-        rank=$((10#$suffix))
-      else
-        rank=1000000001
-      fi
-    else
-      rank=1000000001
-    fi
-
-    printf '%s\t%s\n' "$rank" "$session"
-  done | sort -n -k1,1 | awk -F '\t' 'NR == 1 { print $2 }'
+project_name_for_path() {
+  safe_name "$(session_label_for_path "$1")"
 }
 
-unique_session_name() {
+default_view_name() {
+  local host
+
+  host=${HOSTNAME:-$(hostname -s 2>/dev/null || hostname)}
+  host=${host%%.*}
+  safe_name "${host}-local"
+}
+
+session_root() {
+  local session=$1
+  local root
+
+  root=$(tmux_cmd show-options -qv -t "$session" @tms-root 2>/dev/null || true)
+  if [[ -z "$root" ]]; then
+    root=$(tmux_cmd display-message -p -t "$session:" '#{session_path}' 2>/dev/null || true)
+  fi
+  [[ -n "$root" ]] && canonical_path "$root" 2>/dev/null || true
+}
+
+project_sessions_for_path() {
   local target=$1
-  local base i
+  local session root
 
-  base=$(session_name_hint "$target")
-  i=0
+  tmux_cmd list-sessions -F '#{session_name}' 2>/dev/null | while IFS= read -r session; do
+    root=$(session_root "$session")
+    [[ "$root" == "$target" ]] && printf '%s\n' "$session"
+  done
+}
 
-  while tmux_cmd has-session -t "${base}${i}" 2>/dev/null; do
+ensure_project_anchor() {
+  local target=$1
+  local project=$2
+  local role root
+  local -a legacy=()
+
+  if tmux_cmd has-session -t "$project" 2>/dev/null; then
+    root=$(session_root "$project")
+    if [[ "$root" != "$target" ]]; then
+      printf 'tms: session name %s already belongs to %s\n' "$project" "$root" >&2
+      return 1
+    fi
+  else
+    while IFS= read -r session; do
+      role=$(tmux_cmd show-options -qv -t "$session" @tms-role 2>/dev/null || true)
+      [[ "$role" == view ]] || legacy+=("$session")
+    done < <(project_sessions_for_path "$target")
+
+    if [[ ${#legacy[@]} -eq 1 ]]; then
+      tmux_cmd rename-session -t "${legacy[0]}" -n "$project"
+    elif [[ ${#legacy[@]} -gt 1 ]]; then
+      printf 'tms: multiple legacy sessions use %s: %s\n' "$target" "${legacy[*]}" >&2
+      printf 'tms: refusing to merge live sessions; keep one project session, then retry\n' >&2
+      return 1
+    else
+      tmux_cmd new-session -d -s "$project" -c "$target"
+    fi
+  fi
+
+  tmux_cmd set-option -q -t "$project" @tms-root "$target"
+  tmux_cmd set-option -q -t "$project" @tms-role anchor
+  tmux_cmd set-option -q -t "$project" @tms-project "$project"
+}
+
+current_view_name() {
+  local current view
+
+  if [[ -n "${TMUX:-}" ]]; then
+    current=$(tmux_cmd display-message -p '#S' 2>/dev/null || true)
+    if [[ -n "$current" ]]; then
+      view=$(tmux_cmd show-options -qv -t "$current" @tms-view 2>/dev/null || true)
+      [[ -n "$view" ]] && { printf '%s\n' "$view"; return; }
+    fi
+  fi
+
+  safe_name "${VIEW_NAME:-$(default_view_name)}"
+}
+
+available_view_name() {
+  local project=$1
+  local requested=$2
+  local force_new=$3
+  local candidate attached current i
+
+  candidate="$project/$requested"
+  current=$(tmux_cmd display-message -p '#S' 2>/dev/null || true)
+  i=2
+
+  while tmux_cmd has-session -t "$candidate" 2>/dev/null; do
+    attached=$(tmux_cmd display-message -p -t "$candidate:" '#{session_attached}' 2>/dev/null || printf '1')
+    if [[ "$force_new" != true && ( "$candidate" == "$current" || "$attached" == 0 ) ]]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+    candidate="$project/$requested-$i"
     i=$((i + 1))
   done
 
-  printf '%s%s\n' "$base" "$i"
+  printf '%s\n' "$candidate"
+}
+
+ensure_view() {
+  local project=$1
+  local target=$2
+  local requested=$3
+  local force_new=$4
+  local session view
+
+  session=$(available_view_name "$project" "$requested" "$force_new")
+  view=${session#"$project/"}
+
+  if ! tmux_cmd has-session -t "$session" 2>/dev/null; then
+    tmux_cmd new-session -d -s "$session" -t "$project"
+  fi
+
+  tmux_cmd set-option -q -t "$session" @tms-root "$target"
+  tmux_cmd set-option -q -t "$session" @tms-role view
+  tmux_cmd set-option -q -t "$session" @tms-project "$project"
+  tmux_cmd set-option -q -t "$session" @tms-view "$view"
+  printf '%s\n' "$session"
 }
 
 record_recent() {
@@ -294,7 +356,7 @@ build_candidates() {
 open_target() {
   local target=$1
   local force_new=${2:-false}
-  local session=
+  local project requested session
 
   target=$(canonical_path "$target")
 
@@ -303,39 +365,17 @@ open_target() {
     exit 1
   fi
 
-  if [[ "$force_new" != true ]]; then
-    session=$(find_session_for_path "$target" || true)
-
-    if [[ -n "$session" && "$session" == "$(session_name_hint "$target")" ]]; then
-      if tmux_cmd has-session -t "${session}0" 2>/dev/null; then
-        session=
-      else
-        tmux_cmd rename-session -t "$session" -n "${session}0"
-        session="${session}0"
-      fi
-    fi
-  fi
-
-  if [[ -z "$session" ]]; then
-    session=$(unique_session_name "$target")
-    record_recent "$target"
-
-    if tmux_cmd list-sessions >/dev/null 2>&1; then
-      tmux_cmd new-session -d -s "$session" -c "$target"
-      tmux_cmd set-option -q -t "$session" @tms-root "$target"
-    else
-      exec_tmux new-session -s "$session" -c "$target"
-    fi
-  else
-    record_recent "$target"
-  fi
+  project=$(project_name_for_path "$target")
+  requested=$(current_view_name)
+  ensure_project_anchor "$target" "$project"
+  session=$(ensure_view "$project" "$target" "$requested" "$force_new")
+  record_recent "$target"
 
   if [[ -n "${TMUX:-}" ]]; then
     tmux_cmd switch-client -t "$session"
-  elif [[ -n "$ATTACH_DETACH_OTHERS" ]]; then
-    exec_tmux attach-session -d -t "$session"
+    tmux_cmd refresh-client -f active-pane
   else
-    exec_tmux attach-session -t "$session"
+    exec_tmux attach-session -f active-pane -t "$session"
   fi
 }
 

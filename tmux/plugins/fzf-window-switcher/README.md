@@ -1,11 +1,12 @@
 # fzf-window-switcher
 
-A tiny tmux plugin that replaces `C-b w` with an `fzf` powered picker for windows and panes. It keeps the familiar workflow of pressing `C-b w`, but shows a searchable list that you can filter before pressing `Enter` to jump to the selected window or pane.
+A tiny tmux plugin that opens an `fzf` picker for the windows shared by the current project group.
 
 ## Features
 
-- Lists **all windows** (across sessions) and **all panes** with their session/index, current command, and working directory
-- Highlights the currently active window/pane so you always know where you are
+- Lists each shared project window once as `<project>/<window>`
+- Keeps the client in its independent grouped view when switching windows
+- Highlights the currently active window
 - Uses a tmux popup so it feels native and disappears automatically after selection or cancel
 - Respects `fzf`, so you can navigate with the usual keys and fuzzy matching rules
 
@@ -25,10 +26,10 @@ The script honors a few optional environment variables that you can export befor
 The dotfiles already contain this binding (in `.tmux.conf`):
 
 ```tmux
-unbind w
-bind-key w display-popup -E "$HOME/dotfiles/tmux/plugins/fzf-window-switcher/bin/fzf-window-switcher" -w 90% -h 75% -x C -y C
+unbind f
+bind-key f display-popup -E "$HOME/dotfiles/tmux/plugins/fzf-window-switcher/bin/fzf-window-switcher" -w 90% -h 75% -x C -y C
 ```
 
-Pressing `C-b w` now opens the fuzzy picker. Hit `Enter` on a window to switch to it, or on a pane to jump straight to that pane. Press `Esc` or `Ctrl-c` to close the popup without making a selection.
+Pressing `C-b f` opens the fuzzy picker. Hit `Enter` on a window to switch to it. Press `Esc` or `Ctrl-c` to close the popup without making a selection. Use `C-b O` to switch project groups.
 
 Make sure [`fzf`](https://github.com/junegunn/fzf) is installed and available in your `PATH`.

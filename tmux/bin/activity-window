@@ -10,10 +10,10 @@ case "$direction" in
   *) exit 2 ;;
 esac
 
-current=$("$TMUX_CMD" display-message -p '#{session_id}:#{window_id}')
+current=$("$TMUX_CMD" display-message -p '#{window_id}')
 
 target=$(
-  "$TMUX_CMD" list-windows -a -F '#{session_id}:#{window_id}|#{window_activity_flag}' |
+  "$TMUX_CMD" list-windows -F '#{window_id}|#{window_activity_flag}' |
     awk -F '|' -v current="$current" -v offset="$offset" '
       {
         count++
@@ -38,5 +38,4 @@ if [[ -z "$target" ]]; then
   exit 0
 fi
 
-"$TMUX_CMD" switch-client -t "${target%%:*}"
 "$TMUX_CMD" select-window -t "$target"

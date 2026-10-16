@@ -18,6 +18,8 @@ MAX_BACKOFF=${WSSH_MAX_BACKOFF:-15}
 PROBE_TIMEOUT=${WSSH_PROBE_TIMEOUT:-5}
 ALIVE_INTERVAL=${WSSH_ALIVE_INTERVAL:-10}
 ALIVE_COUNT=${WSSH_ALIVE_COUNT:-3}
+LOCAL_HOST=${WSSH_LOCAL_HOST:-${HOSTNAME:-$(hostname -s 2>/dev/null || hostname)}}
+VIEW_NAME=${WSSH_VIEW:-${LOCAL_HOST%%.*}-wssh}
 retry=true
 directory=
 
@@ -137,7 +139,7 @@ on_interrupt() {
   exit 130
 }
 
-remote_command="TMS_ATTACH_DETACH_OTHERS=1 exec $REMOTE_TMS $(shell_quote "$directory")"
+remote_command="TMS_VIEW=$(shell_quote "$VIEW_NAME") exec $REMOTE_TMS $(shell_quote "$directory")"
 remote_login="bash -lc $(shell_quote "$remote_command")"
 
 ssh_args=(

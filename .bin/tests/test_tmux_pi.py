@@ -75,6 +75,30 @@ class TmuxPiTest(unittest.TestCase):
             time.sleep(0.1)
         self.assertEqual(f"--session {session}", (self.root / "pi.args").read_text().strip())
 
+    def test_grouped_tms_views_snapshot_only_the_project_anchor(self):
+        pane = self.tmux("display-message", "-p", "-t", "TestPi:TODAY", "#{pane_id}").stdout.strip()
+        pid = self.tmux("display-message", "-p", "-t", pane, "#{pane_pid}").stdout.strip()
+        self.tmux("set-option", "-p", "-t", pane, "@tmux-pi-shell", pid)
+        for option, value in (("@tms-root", str(self.root)), ("@tms-role", "anchor"),
+                              ("@tms-project", "TestPi")):
+            self.tmux("set-option", "-t", "TestPi", option, value)
+        self.tmux("new-session", "-d", "-s", "TestPi/ms1-local", "-t", "TestPi")
+        for option, value in (("@tms-root", str(self.root)), ("@tms-role", "view"),
+                              ("@tms-project", "TestPi"), ("@tms-view", "ms1-local")):
+            self.tmux("set-option", "-t", "TestPi/ms1-local", option, value)
+
+        saved = self.script("save")
+
+        self.assertEqual(0, saved.returncode, saved.stderr)
+        data = json.loads(Path(self.env["TMUX_PI_STATE"]).read_text())
+        self.assertEqual(["TestPi"], [session["name"] for session in data["sessions"]])
+        self.assertEqual(str(self.root), data["sessions"][0]["tms_root"])
+        self.tmux("kill-server")
+        restored = self.script("restore")
+        self.assertEqual(0, restored.returncode, restored.stderr)
+        self.assertEqual("anchor", self.tmux("show-options", "-qv", "-t", "TestPi", "@tms-role").stdout.strip())
+        self.assertEqual(str(self.root), self.tmux("show-options", "-qv", "-t", "TestPi", "@tms-root").stdout.strip())
+
     def test_layout_only_restore_does_not_launch_pi(self):
         session = self.root / "conversation.jsonl"
         session.write_text(json.dumps({"type": "session", "version": 3, "cwd": str(self.root),

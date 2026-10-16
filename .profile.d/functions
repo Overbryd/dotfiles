@@ -4,12 +4,12 @@ function session-name-from-pwd {
   | sed -e s/\[^a-zA-Z0-9\\\//\$]/-/g -e s/--*/-/g
 }
 
-# Start a new session
+# Start another independent view of this project's shared windows
 function tmn {
   "$HOME/.bin/tmn" "$@"
 }
 
-# Start a new session or join the first one in this folder
+# Open this folder's project through a host-local grouped view
 function tms {
   if [[ $# -eq 0 ]]; then
     "$HOME/.bin/tms" "$PWD"

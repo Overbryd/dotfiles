@@ -13,13 +13,15 @@ if ! command -v "$FZF_BIN" >/dev/null 2>&1; then
 fi
 
 entries=()
+project=$("$TMUX_CMD" show-options -qv @tms-project 2>/dev/null || true)
+[[ -n "$project" ]] || project=$("$TMUX_CMD" display-message -p '#S')
 
 while IFS='|' read -r target marker name; do
   [[ -z "$target" ]] && continue
   label=${name:-"(unnamed)"}
-  display=$(printf '[W] %s %-12s %s' "${marker:- }" "$target" "$label")
+  display=$(printf '[W] %s %s/%s' "${marker:- }" "$project" "$label")
   entries+=("window${TAB}${target}${TAB}${display}")
-done < <("$TMUX_CMD" list-windows -a -F '#{session_name}:#{window_index}|#{?window_active,*, }|#{window_name}')
+done < <("$TMUX_CMD" list-windows -F '#{window_id}|#{?window_active,*, }|#{window_name}')
 
 
 if [[ ${#entries[@]} -eq 0 ]]; then
@@ -36,11 +38,9 @@ fi
 choice_type=${choice%%$'\t'*}
 choice_rest=${choice#*$'\t'}
 target=${choice_rest%%$'\t'*}
-session=${target%%:*}
 
 case "$choice_type" in
   window)
-    "$TMUX_CMD" switch-client -t "$session"
     "$TMUX_CMD" select-window -t "$target"
     ;;
   *)

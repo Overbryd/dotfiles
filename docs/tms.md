@@ -1,0 +1,46 @@
+# tms project groups
+
+`tms` models one work directory as one tmux project group. The stable anchor owns
+the shared windows; each terminal origin attaches through an independent grouped
+view session.
+
+For `~/Work/HelloFresh`:
+
+```text
+anchor/group: HelloFresh
+views:        HelloFresh/ms1-local
+              HelloFresh/mba1-wssh
+windows:      editor, server, logs
+picker labels: HelloFresh/editor, HelloFresh/server, HelloFresh/logs
+```
+
+The actual tmux target combines a view session and shared window with tmux's `:`
+separator, for example `HelloFresh/mba1-wssh:logs`.
+
+Grouped views share window and pane processes. They independently select windows,
+and clients attach with tmux's `active-pane` flag for independent pane selection.
+Typing into the same pane still controls the same underlying process.
+
+## Commands
+
+```sh
+tms                         # pick/open a project
+tms ~/Work/HelloFresh       # open one directly
+tmn                         # force another independent view
+```
+
+A second concurrent client from the same origin gets a numeric suffix such as
+`HelloFresh/ms1-local-2`. `wssh` supplies `<source-host>-wssh` as the remote view
+name.
+
+`C-b O` switches projects. `C-b f` lists the current project's shared windows once
+as `<project>/<window>`.
+
+## Existing sessions
+
+When exactly one old session points at a directory, `tms` renames it to the stable
+project anchor and preserves its windows and processes. If multiple old sessions
+point at the same directory, `tms` refuses to guess or merge them.
+
+`tmux-pi` saves project anchors only. Grouped views are references to the same
+windows and are recreated by `tms` or `wssh` after restore.
