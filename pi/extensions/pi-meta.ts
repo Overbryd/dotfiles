@@ -64,7 +64,8 @@ export type TreeSearchMatch = {
 
 type MetaAction =
 	| { type: "switch_session"; path: string; label: string }
-	| { type: "navigate_tree"; entryId: string; label: string };
+	| { type: "navigate_tree"; entryId: string; label: string }
+	| { type: "create_session"; prompt: string; edit: boolean; label: string };
 
 type NavigationFrame = {
 	type: "session" | "tree";
@@ -116,6 +117,10 @@ const NavigateTreeParameters = Type.Object({
 	entryId: Type.String({ description: "Exact entry id to make the current session leaf" }),
 });
 
+const CreateSessionParameters = Type.Object({
+	edit: Type.Boolean({ description: "Whether to let the user edit the response before starting the new session" }),
+});
+
 const META_TOOLS: Tool[] = [
 	{
 		name: "search_sessions",
@@ -147,6 +152,11 @@ const META_TOOLS: Tool[] = [
 		description: "Immediately move the current session to an exact tree entry. Use the best match; do not ask for confirmation. The user can undo afterward.",
 		parameters: NavigateTreeParameters,
 	},
+	{
+		name: "create_session",
+		description: "Create a new session whose first user message is the current branch's last assistant response. Set edit to true when the user wants to review or edit that message first. The user can undo afterward.",
+		parameters: CreateSessionParameters,
+	},
 ];
 
 const SYSTEM_PROMPT = `You control the current Pi process from an isolated meta conversation.
@@ -154,8 +164,9 @@ const SYSTEM_PROMPT = `You control the current Pi process from an isolated meta 
 Your primary jobs:
 - Find and switch to saved sessions in the current working directory.
 - Find and navigate to points in any branch of the current session tree.
+- Create a new session from the current branch's last assistant response, optionally letting the user edit it first.
 
-Use tools instead of guessing. Search broadly, inspect when useful, then always choose the best result and call switch_session or navigate_tree without asking for confirmation. The user can undo navigation with /pi undo.
+Use tools instead of guessing. For navigation requests, search broadly, inspect when useful, then always choose the best result and call switch_session or navigate_tree without asking for confirmation. For a new session from the last response, call create_session; set edit to true only when the user asks to review or edit the message first. The user can undo session and tree changes with /pi undo.
 
 Interpret relative requests carefully. For example, "the last response before SIDEQUEST" means search for SIDEQUEST, inspect its ancestry, and navigate to the immediately preceding assistant response—not the SIDEQUEST user message.
 
@@ -272,6 +283,15 @@ function entryText(entry: SessionEntry): string {
 	if (entry.type === "custom_message") return contentText(entry.content);
 	if (entry.type === "session_info") return entry.name ?? "";
 	return "";
+}
+
+export function lastAssistantResponse(entries: SessionEntry[]): string | undefined {
+	for (let index = entries.length - 1; index >= 0; index--) {
+		const entry = entries[index];
+		if (entry.type !== "message" || !("role" in entry.message) || entry.message.role !== "assistant") continue;
+		return entryText(entry).trim() || undefined;
+	}
+	return undefined;
 }
 
 function summarizeEntry(entry: SessionEntry, labels: Map<string, string>): TreeEntrySummary {
@@ -419,6 +439,15 @@ async function executeMetaTool(
 		return textResult(searchTreeEntries(ctx.sessionManager.getEntries(), query, limit));
 	}
 
+	if (name === "create_session") {
+		const prompt = lastAssistantResponse(ctx.sessionManager.getBranch());
+		if (!prompt) return errorResult("The current branch has no assistant response with text.");
+		const edit = args.edit === true;
+		const label = excerptAround(prompt, "", 120);
+		setAction({ type: "create_session", prompt, edit, label });
+		return textResult(`New session scheduled from the last assistant response${edit ? " with editing" : ""}.`);
+	}
+
 	if (name === "inspect_tree_entry" || name === "navigate_tree") {
 		const entryId = typeof args.entryId === "string" ? args.entryId : "";
 		const entries = ctx.sessionManager.getEntries();
@@ -516,6 +545,39 @@ async function applyAction(action: MetaAction, ctx: ExtensionCommandContext): Pr
 		return;
 	}
 
+	if (action.type === "create_session") {
+		let prompt = action.prompt;
+		if (action.edit) {
+			const edited = await ctx.ui.editor("Edit new session message", prompt);
+			if (edited === undefined) {
+				ctx.ui.notify("New session cancelled", "info");
+				return;
+			}
+			prompt = edited.trim();
+			if (!prompt) {
+				ctx.ui.notify("New session message cannot be empty", "warning");
+				return;
+			}
+		}
+
+		const frame: NavigationFrame = { type: "session", sessionFile: currentSessionFile };
+		const result = await ctx.newSession({
+			parentSession: currentSessionFile,
+			withSession: async (replacementCtx) => {
+				navigationState().stack.push(frame);
+				replacementCtx.ui.notify(`Created session from last response: ${action.label}\nUndo: /pi undo`, "info");
+				void replacementCtx.sendUserMessage(prompt).catch((error) => {
+					replacementCtx.ui.notify(
+						`Starting new session failed: ${error instanceof Error ? error.message : String(error)}`,
+						"error",
+					);
+				});
+			},
+		});
+		if (result.cancelled) ctx.ui.notify("New session cancelled", "warning");
+		return;
+	}
+
 	const leafId = ctx.sessionManager.getLeafId();
 	if (!leafId) throw new Error("Current tree position cannot be restored.");
 	const result = await ctx.navigateTree(action.entryId, { summarize: false });
@@ -593,7 +655,7 @@ export default function piMeta(pi: ExtensionAPI) {
 				return;
 			}
 			if (initial.toLowerCase() === "help") {
-				ctx.ui.notify("/pi <request> starts an isolated session/tree navigation assistant. Escape, /exit, or /quit leaves it. /pi undo (or /pi back) reverses the last navigation.", "info");
+				ctx.ui.notify("/pi <request> starts an isolated session/tree assistant that can switch, navigate, or create a session from the last response. Escape, /exit, or /quit leaves it. /pi undo (or /pi back) reverses the last session or tree change.", "info");
 				return;
 			}
 
