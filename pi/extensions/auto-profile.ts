@@ -18,6 +18,7 @@ const LEGACY_SOL_MODEL_ID = "gpt-5.6-sol";
 const TERRA_MODEL_ID = "gpt-5.6-terra";
 const GPT_FAMILY_ID = "gpt-5.6-6";
 const CLAUDE_FAMILY_ID = "claude-5";
+const GEMINI_ARGON_MODEL_ID = "gemini-4-argon";
 const GPT_FAMILY_MODEL_IDS = [CLASSIFIER_MODEL_ID, TERRA_MODEL_ID, SOL_MODEL_ID, ASTRA_MODEL_ID] as const;
 const GPT_FAMILY_MODEL_CANDIDATES = [
 	[CLASSIFIER_MODEL_ID],
@@ -766,6 +767,9 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 			...(region ? [[targetProviderId, `${region}.openai.${CLASSIFIER_MODEL_ID}`] as [string, string]] : []),
 			[targetProviderId, `global.openai.${CLASSIFIER_MODEL_ID}`],
 			[targetProviderId, `openai.${CLASSIFIER_MODEL_ID}`],
+			...(targetProviderId === "google-vertex" && targetModelId
+				? [[targetProviderId, targetModelId] as [string, string]]
+				: []),
 			["openai", CLASSIFIER_MODEL_ID],
 			["openai-codex", CLASSIFIER_MODEL_ID],
 		];
@@ -1013,6 +1017,9 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 						familyId = config.id;
 					} else if (Object.hasOwn(MODEL_ALIASES, targetName)) {
 						modelId = MODEL_ALIASES[targetName as keyof typeof MODEL_ALIASES];
+					} else if (targetName === GEMINI_ARGON_MODEL_ID) {
+						providerId = "google-vertex";
+						modelId = GEMINI_ARGON_MODEL_ID;
 					} else {
 						const resolution = resolveAutoTarget(target, ctx);
 						if ("error" in resolution) {
@@ -1114,7 +1121,7 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 			const match = command.match(/^(?:(api|codex)\/)?(astra|sol|terra|luna):(minimal|low|medium|high|xhigh|max)$/);
 			if (!match) {
 				ctx.ui.notify(
-					"Usage: /profile auto (current model) | auto <openai|codex> | auto bedrock/claude | auto <provider>/<model> | [api/|codex/]<astra|sol|terra|luna>:<effort> | status | lock | provider <api|codex|current>",
+					"Usage: /profile auto (current model) | auto <openai|codex> | auto gemini-4-argon | auto bedrock/claude | auto <provider>/<model> | [api/|codex/]<astra|sol|terra|luna>:<effort> | status | lock | provider <api|codex|current>",
 					"warning",
 				);
 				return;

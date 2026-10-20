@@ -132,6 +132,12 @@ function harness(
 		api: "anthropic-messages",
 		reasoning: true,
 	});
+	models.set("google-vertex/gemini-4-argon", {
+		id: "gemini-4-argon",
+		provider: "google-vertex",
+		api: "google-vertex",
+		reasoning: true,
+	});
 	let currentModel = models.get(`${initialProvider}/${initialModelId}`)!;
 	let thinkingLevel = "medium";
 	let responseIndex = 0;
@@ -208,7 +214,7 @@ function harness(
 				return models.get(`${provider}/${id}`);
 			},
 			async complete(model: any, requestContext: any, options: any) {
-				assert.match(model.id, /(?:^|\.)gpt-5\.6-luna$/);
+				assert.match(model.id, /(?:^|\.)(?:gpt-5\.6-luna|gemini-4-argon)$/);
 				classifierProviders.push(model.provider);
 				assert.equal(options.reasoning, "minimal");
 				assert.equal(options.maxTokens, 512);
@@ -366,6 +372,24 @@ test("auto resolves Bedrock models through canonical, API-inferred, and regional
 		assert.equal(h.thinkingLevel, "medium", command);
 		assert.deepEqual(h.classifierProviders, ["amazon-bedrock"], command);
 	}
+});
+
+test("Gemini Argon shorthand uses Vertex and keeps automatic thinking on that model", async () => {
+	const h = harness([assistantClassification("routine"), assistantClassification("complex")]);
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.commands.get("profile").handler("auto gemini-4-argon", h.context);
+
+	assert.equal(h.providerId, "google-vertex");
+	assert.equal(h.modelId, "gemini-4-argon");
+	assert.equal(h.entries.at(-1).data.autoScope, "thinking");
+
+	for (const effort of ["medium", "high"]) {
+		await h.handlers.get("before_agent_start")?.({ prompt: "Next task" }, h.context);
+		assert.equal(h.providerId, "google-vertex");
+		assert.equal(h.modelId, "gemini-4-argon");
+		assert.equal(h.thinkingLevel, effort);
+	}
+	assert.deepEqual(h.classifierProviders, ["google-vertex", "google-vertex"]);
 });
 
 test("qualified auto preserves case-sensitive model IDs", async () => {

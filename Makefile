@@ -634,11 +634,6 @@ $(PI_FORK_ROOT)/.git:
 	cd ~ && ln -svf $(DOTFILES_ROOT)/$(notdir $@) $@
 
 docker:
-	# Run colima as administrator after install to setup the network.
-	# Works for low privileged users afterwards.
-	# $ colima start --cpu 4 --memory 4 --disk 50 --mount-type=virtiofs --network-address
-	# $ colima stop
-	$(BREW) install colima
 	$(BREW) install docker docker-completion
 
 # Here is a comprehensive guide: https://github.com/drduh/macOS-Security-and-Privacy-Guide
