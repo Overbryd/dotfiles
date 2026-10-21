@@ -7,6 +7,9 @@ module.exports = {
   handlers: [
     {
       match: finicky.matchHostnames([
+        // Atlassian authentication must stay on this machine for loopback callbacks
+        'auth.atlassian.com',
+        'id.atlassian.com',
         // Google
         /.*\.?google\.com$/,
         /.*\.?google$/,
