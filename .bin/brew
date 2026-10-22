@@ -2,5 +2,5 @@
 
 brew="$HOMEBREW_PREFIX/bin/brew $@"
 
-sudo -Eubinary /bin/bash -c "cd $HOMEBREW_PREFIX; $brew"
+HOME="$HOMEBREW_PREFIX" sudo -Eubinary /bin/bash -c "cd $HOMEBREW_PREFIX; $brew"
 
