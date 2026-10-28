@@ -1,12 +1,23 @@
-#!/usr/bin/env bash
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+require "net/http"
+require "open3"
+require "uri"
 
-project_id="$1"
-job_id="$2"
-
-if [[ -z "$project_id" || -z "$job_id" ]]; then
-  die "Usage: bq-cancel-job <project_id> <job_id>"
-fi
-
-curl -XPOST -H "Authorization: Bearer $(gcloud auth print-access-token)" \
-  https://bigquery.googleapis.com/bigquery/v2/projects/$project_id/jobs/$job_id/cancel
-
+project, job = ARGV
+unless ARGV.length == 2 && [project, job].all? { |v| v.match?(/\A[A-Za-z0-9_.:-]+\z/) }
+  warn "Usage: bq-cancel-job <project_id> <job_id>"
+  exit 64
+end
+stdout, _stderr, status = Open3.capture3("token-exchange", "google", "token", "--for", "gcloud")
+unless status.success?
+  warn "Could not ensure Google credentials."
+  exit 78
+end
+token = stdout.strip
+uri = URI("https://bigquery.googleapis.com/bigquery/v2/projects/#{URI.encode_www_form_component(project)}/jobs/#{URI.encode_www_form_component(job)}/cancel")
+request = Net::HTTP::Post.new(uri)
+request["Authorization"] = "Bearer #{token}"
+response = Net::HTTP.start(uri.host, uri.port, use_ssl: true, read_timeout: 30) { |http| http.request(request) }
+puts response.body
+exit(response.is_a?(Net::HTTPSuccess) ? 0 : 1)

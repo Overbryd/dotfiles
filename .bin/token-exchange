@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CLIENT="${TOKEN_EXCHANGE_BIN:-$HOME/.local/libexec/token-exchange}"
+if [[ ! -x "$CLIENT" ]]; then
+  printf 'Token Exchange client missing: %s\nInstall the release binary there or set TOKEN_EXCHANGE_BIN.\n' "$CLIENT" >&2
+  exit 127
+fi
+exec "$CLIENT" "$@"
