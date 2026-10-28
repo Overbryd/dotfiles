@@ -1,4 +1,5 @@
 # Pin down google cloud sdk python executable
-export CLOUDSDK_PYTHON="$HOMEBREW_PREFIX/opt/python@3.8/libexec/bin/python"
+export CLOUDSDK_PYTHON="$HOMEBREW_PREFIX/opt/python@3.13/libexec/bin/python"
+export CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE="$HOMEBREW_PREFIX/etc/ca-certificates/cert.pem"
 source "$HOMEBREW_PREFIX/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/path.bash.inc"
 source "$HOMEBREW_PREFIX/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/completion.bash.inc"

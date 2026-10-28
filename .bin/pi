@@ -4,6 +4,19 @@ set -euo pipefail
 # Overlay the Homebrew pi install with the local fork (github.com/Overbryd/pi)
 # whenever that fork is built. Falls back to the packaged pi otherwise.
 FORK_CLI="${PI_FORK_ROOT:-$HOME/Projects/JavaScript/pi}/packages/coding-agent/dist/cli.js"
+VIDEO_ROOT="${PI_VIDEO_SKILLS_ROOT:-$HOME/Dropbox/Videos}"
+
+# Keep expensive video-skill descriptions out of ordinary sessions. The Videos
+# workspace opts into both global video skills and its local production skill.
+if [[ -d "$VIDEO_ROOT" ]] && [[ "$(pwd -P)/" == "$(cd "$VIDEO_ROOT" && pwd -P)/"* ]]; then
+  set -- \
+    --skill "$HOME/.agents/skills" \
+    --skill "$HOME/.pi/agent/skills/software-tour-video" \
+    --skill "$HOME/.pi/agent/skills/video-edit-prep" \
+    --skill "$HOME/.pi/agent/skills/transcribe" \
+    --skill "$VIDEO_ROOT/.pi/skills" \
+    "$@"
+fi
 
 if [[ -x "$FORK_CLI" ]]; then
   exec "$FORK_CLI" "$@"

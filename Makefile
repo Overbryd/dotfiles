@@ -4,6 +4,7 @@ DOT_CONFIG_FILES := $(addprefix ~/, $(wildcard .config/*))
 PI_CONFIG_SOURCES := $(filter-out pi/settings.json,$(wildcard pi/*.json))
 PI_CONFIG_FILES := $(addprefix ~/.pi/agent/, $(notdir $(PI_CONFIG_SOURCES)))
 PI_EXTENSIONS := $(addprefix ~/.pi/agent/extensions/, $(notdir $(wildcard pi/extensions/*.ts)))
+PI_LIB_FILES := $(addprefix ~/.pi/agent/lib/, $(notdir $(wildcard pi/lib/*.ts)))
 PI_AGENT_FILES := ~/.pi/agent/AGENTS.md
 PI_AGENT_SKILLS := $(patsubst .agent/skills/%,~/.pi/agent/skills/%,$(shell find .agent/skills -mindepth 2 -type f ! -path '*/__pycache__/*' ! -name '*.pyc' 2>/dev/null))
 LAUNCH_AGENTS := $(addprefix ~/Library/, $(wildcard LaunchAgents/*))
@@ -534,6 +535,7 @@ dotfiles: \
 	$(DOT_CONFIG_FILES) \
 	$(PI_CONFIG_FILES) \
 	$(PI_EXTENSIONS) \
+	$(PI_LIB_FILES) \
 	$(PI_AGENT_FILES) \
 	$(PI_AGENT_SKILLS) \
 	$(PNPM_CONFIG_FILES) \
@@ -621,6 +623,12 @@ $(PI_FORK_ROOT)/.git:
 	ln -svf $(DOTFILES_ROOT)/$< $@
 
 ~/.pi/agent/extensions:
+	mkdir -p $@
+
+~/.pi/agent/lib/%: pi/lib/% | ~/.pi/agent/lib
+	ln -svf $(DOTFILES_ROOT)/$< $@
+
+~/.pi/agent/lib:
 	mkdir -p $@
 
 ~/.pi/agent/skills/%: .agent/skills/%

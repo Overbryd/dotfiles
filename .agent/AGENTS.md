@@ -29,9 +29,13 @@
 
 # Repository facts
 
+- On `ms1`, Homebrew belongs to `binary` (`_binary`); `.bin/brew` runs it through sudo with `HOME=/opt/homebrew`. Preserve that HOME and run Brew as its owner, never root.
+- On `ms1`, `garmisch` uses a separate dotfiles checkout at `/usr/local/dotfiles`; edits to `partenkirchen`'s `~/Projects/dotfiles` do not update it.
+- `.profile.d/ca-certificates` points pip, Requests, and AWS SDKs at Homebrew's maintained CA bundle while preserving explicit overrides. `.profile.d/google-cloud-sdk` separately pins a supported Python and the SDK's CA-store property.
 - `tms` models each work directory as a stable tmux anchor/group and each terminal origin as a grouped view session; views share windows but navigate independently.
 - `wssh` passes `<local-host>-wssh` as its `TMS_VIEW` and must never detach other tmux clients.
 - `tmux-pi` snapshots project anchors, not their grouped `tms` views, because grouped views reference the same panes.
+- `pi/settings.json` excludes video/HyperFrames/transcription skills by default; `.bin/pi` opts them in only under `~/Dropbox/Videos` (override its boundary with `PI_VIDEO_SKILLS_ROOT`). Deploy settings with `make pi-settings`.
 
 # Language and platform
 

@@ -29,6 +29,7 @@ source ~/.profile.d/aliases
 source ~/.profile.d/functions
 source ~/.profile.d/prompt
 source ~/.profile.d/homebrew
+source ~/.profile.d/ca-certificates
 source ~/.profile.d/pyenv
 source ~/.profile.d/rbenv
 source ~/.profile.d/nodenv

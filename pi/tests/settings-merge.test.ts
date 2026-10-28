@@ -38,6 +38,20 @@ test("settings merge preserves Pi runtime model and thinking defaults", () => {
 	assert.equal(result.lastChangelogVersion, "0.84.2");
 });
 
+test("settings merge excludes video skills from normal sessions", () => {
+	const managed = JSON.parse(readFileSync(new URL("../settings.json", import.meta.url), "utf8"));
+	const result = mergeSettings({}, managed);
+	assert.deepEqual(result.skills, [
+		"!hyperframes*",
+		"!general-video",
+		"!media-use",
+		"!talking-head-recut",
+		"!software-tour-video",
+		"!video-edit-prep",
+		"!transcribe",
+	]);
+});
+
 test("settings merge seeds managed defaults when Pi has none", () => {
 	const managed = JSON.parse(readFileSync(new URL("../settings.json", import.meta.url), "utf8"));
 	const result = mergeSettings({ lastChangelogVersion: "0.84.2" }, managed);

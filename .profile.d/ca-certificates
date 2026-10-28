@@ -1,0 +1,6 @@
+# Use the maintained bundle instead of private, potentially stale Python CA copies.
+if test -r "$HOMEBREW_PREFIX/etc/ca-certificates/cert.pem"; then
+  export PIP_CERT="${PIP_CERT:-$HOMEBREW_PREFIX/etc/ca-certificates/cert.pem}"
+  export AWS_CA_BUNDLE="${AWS_CA_BUNDLE:-$HOMEBREW_PREFIX/etc/ca-certificates/cert.pem}"
+  export REQUESTS_CA_BUNDLE="${REQUESTS_CA_BUNDLE:-$HOMEBREW_PREFIX/etc/ca-certificates/cert.pem}"
+fi
