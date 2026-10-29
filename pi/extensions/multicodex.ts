@@ -1,12 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { requestToken as requestBrokerToken } from "../lib/codex-broker.mjs";
+import { loadBrokerRegistry } from "../lib/codex-registry.mjs";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { getModels, openAICodexResponsesApi } from "@earendil-works/pi-ai/compat";
 import type {
 	Api,
 	AssistantMessageEvent,
-	Context,
+	TranscriptContext,
 	Model,
 	SimpleStreamOptions,
 	Usage,
@@ -58,12 +60,16 @@ type OAuthCredentials = {
 	accountId?: string;
 };
 
+type BrokerBinding = { account: string; property: string; actor: string; clientId: string };
+type BrokerRegistry = { binary: string; config: string; accounts: BrokerBinding[] };
+
 type Account = {
 	email: string;
 	accessToken: string;
 	refreshToken: string;
 	expiresAt: number;
 	accountId?: string;
+	brokerBinding?: BrokerBinding;
 	lastUsed?: number;
 	quotaExhaustedUntil?: number;
 	needsReauth?: boolean;
@@ -801,8 +807,53 @@ export function pickBestAccount(
 	return unknown[Math.floor(Math.random() * unknown.length)];
 }
 
-class AccountManager {
-	private data = loadStorage();
+export class AccountManager {
+	private data: StorageData;
+	private broker: BrokerRegistry | undefined;
+	private brokerError = false;
+	private brokerAccounts: Account[];
+	private writeStorage: (data: StorageData) => void;
+	private brokerToken: typeof requestBrokerToken;
+	private brokerController = new AbortController();
+	constructor(options?: { data?: StorageData; save?: (data: StorageData) => void; broker?: BrokerRegistry; requestToken?: typeof requestBrokerToken }) {
+		this.data = options?.data ?? loadStorage();
+		this.writeStorage = options?.save ?? saveStorage;
+		try { this.broker = options?.broker ?? loadBrokerRegistry(join(agentDir(), "codex-broker.json")); }
+		catch { this.brokerError = true; }
+		this.brokerToken = options?.requestToken ?? requestBrokerToken;
+		this.brokerAccounts = (this.broker?.accounts ?? []).map(binding => {
+			const previous = this.data.accounts.find(account => account.email === binding.account);
+			return { email: binding.account, brokerBinding: binding, accessToken: "", refreshToken: "", expiresAt: 0,
+				lastUsed: previous?.lastUsed, quotaExhaustedUntil: previous?.quotaExhaustedUntil };
+		});
+		if (this.broker) {
+			const unexpected = this.data.accounts.some(account => !this.hasBrokerAccount(account.email));
+			if (unexpected) this.brokerError = true; // Partial migration cannot introduce a competing legacy writer.
+		}
+	}
+	isBrokerAccount(account: Account) { return this.brokerAccounts.includes(account); }
+	hasBrokerAccounts() { return this.brokerError || this.brokerAccounts.length > 0; }
+	hasBrokerAccount(email: string) { return this.brokerAccounts.some(account => account.email === email); }
+	shutdownBrokerRequests() { this.brokerController.abort(); }
+	private async obtainBrokerToken(account: Account, signal?: AbortSignal, login = false) {
+		if (!this.broker || !account.brokerBinding || !this.isBrokerAccount(account)) throw new Error("Codex broker request failed");
+		const combined = signal ? AbortSignal.any([signal, this.brokerController.signal]) : this.brokerController.signal;
+		try {
+			const value = await this.brokerToken({ binary: this.broker.binary, config: this.broker.config,
+				binding: account.brokerBinding, signal: combined, login });
+			if (combined.aborted) throw new Error();
+			if (value.account !== account.email || value.clientId !== account.brokerBinding.clientId || !value.accessToken || value.expiresAt <= Date.now()) throw new Error();
+			account.accessToken = value.accessToken; account.expiresAt = value.expiresAt; account.accountId = value.accountId;
+			account.needsReauth = undefined; this.notifyStateChanged(); return account.accessToken;
+		} catch {
+			throw new Error(combined.aborted ? "Codex broker request cancelled" : "Codex broker request failed");
+		}
+	}
+	async loginBrokerAccount(email: string, signal?: AbortSignal) {
+		const account = this.brokerAccounts.find(account => account.email === email);
+		if (!account) throw new Error("Unknown Codex broker account");
+		await this.obtainBrokerToken(account, signal, true); return account;
+	}
 	private piAuthAccount: Account | undefined;
 	private usageCache = new Map<string, UsageSnapshot>();
 	private usageErrors = new Map<string, string>();
@@ -852,10 +903,16 @@ class AccountManager {
 	}
 
 	private save() {
-		saveStorage(this.data);
+		if (this.broker || this.brokerError) return; // Legacy snapshot is not a writer for enrolled broker sessions.
+		this.writeStorage(this.data);
 	}
 
 	loadPiAuth() {
+		if (this.broker || this.brokerError) {
+			this.piAuthAccount = undefined;
+			this.notifyStateChanged();
+			return; // Broker registry is an explicit account set, never auth.json adoption.
+		}
 		const imported = loadPiCodexAuth();
 		if (!imported || this.data.accounts.some((account) => account.email === imported.email)) {
 			this.piAuthAccount = undefined;
@@ -866,7 +923,9 @@ class AccountManager {
 	}
 
 	getAccounts() {
-		return this.piAuthAccount ? [...this.data.accounts, this.piAuthAccount] : this.data.accounts;
+		if (this.brokerError) return [];
+		const accounts = [...this.data.accounts.filter(account => !this.hasBrokerAccount(account.email)), ...this.brokerAccounts];
+		return this.piAuthAccount ? [...accounts, this.piAuthAccount] : accounts;
 	}
 
 	getManagedAccounts() {
@@ -874,8 +933,9 @@ class AccountManager {
 	}
 
 	getAccount(email: string) {
+		if (this.brokerError) return undefined;
 		if (this.piAuthAccount?.email === email) return this.piAuthAccount;
-		return this.data.accounts.find((account) => account.email === email);
+		return this.brokerAccounts.find(account => account.email === email) ?? this.data.accounts.find((account) => account.email === email);
 	}
 
 	isPiAuthAccount(account: Account) {
@@ -883,6 +943,7 @@ class AccountManager {
 	}
 
 	addOrUpdateAccount(identifier: string, credentials: OAuthCredentials) {
+		if (this.broker || this.brokerError) throw new Error("Legacy Codex store is read-only while broker bindings are enabled");
 		const email = getProfileEmail(credentials.access) || identifier.trim();
 		const existing = this.data.accounts.find((account) => account.email === email);
 		const accountId = credentials.accountId || getAccountId(credentials.access);
@@ -913,6 +974,7 @@ class AccountManager {
 	}
 
 	removeAccount(email: string) {
+		if (this.broker || this.brokerError) return false;
 		const index = this.data.accounts.findIndex((account) => account.email === email);
 		if (index < 0) return false;
 		this.data.accounts.splice(index, 1);
@@ -929,7 +991,7 @@ class AccountManager {
 		const manual = this.getManualAccount();
 		if (manual) return manual;
 		if (this.data.activeEmail) return this.getAccount(this.data.activeEmail);
-		return this.data.accounts[0] || this.piAuthAccount;
+		return this.getAccounts()[0];
 	}
 
 	getManualAccount() {
@@ -1006,6 +1068,7 @@ class AccountManager {
 	}
 
 	availabilityError() {
+		if (this.brokerError) return "Invalid Codex broker registry; no legacy fallback.";
 		const down = this.downEmails();
 		if (down.size === 0) return "No available MultiCodex accounts. Use /multicodex add <email>.";
 		return `OpenAI Codex unavailable for ${down.size} account${down.size === 1 ? "" : "s"}. ${this.lastOpenAIStatusAdvice || `Check ${OPENAI_STATUS_URL}.`}`;
@@ -1014,7 +1077,7 @@ class AccountManager {
 	private async markDown(account: Account, error: unknown) {
 		this.downUntil.set(account.email, Date.now() + CODEX_DOWN_RETRY_MS);
 		this.lastOpenAIStatusAdvice = await getOpenAIStatusAdvice();
-		const message = `${messageFromUnknown(error)}. ${this.lastOpenAIStatusAdvice}`;
+		const message = `${this.isBrokerAccount(account) ? "Codex provider unavailable" : messageFromUnknown(error)}. ${this.lastOpenAIStatusAdvice}`;
 		this.usageErrors.set(account.email, message);
 		if (this.warnedUsageFailures.get(account.email) !== message) {
 			this.warnedUsageFailures.set(account.email, message);
@@ -1038,6 +1101,10 @@ class AccountManager {
 	}
 
 	notifyAuthFailure(account: Account, error: unknown) {
+		if (this.isBrokerAccount(account)) {
+			this.warningHandler?.(`MultiCodex broker unavailable for ${account.email}. Retry or use /multicodex reauth ${account.email}.`);
+			return;
+		}
 		this.markNeedsReauth(account);
 		if (this.warnedAuthFailures.has(account.email)) return;
 		this.warnedAuthFailures.add(account.email);
@@ -1045,7 +1112,10 @@ class AccountManager {
 		this.warningHandler?.(`MultiCodex skipped ${account.email}: ${messageFromUnknown(error)}. Repair with ${hint}.`);
 	}
 
-	async ensureValidToken(account: Account) {
+	async ensureValidToken(account: Account, signal?: AbortSignal) {
+		if (this.brokerError) throw new Error("Invalid Codex broker registry");
+		if (this.isBrokerAccount(account)) return this.obtainBrokerToken(account, signal);
+		if (signal?.aborted) throw new Error("Request cancelled");
 		if (account.needsReauth) throw new Error(`${account.email}: re-authentication required`);
 		if (Date.now() < account.expiresAt - 5 * 60 * 1000) return account.accessToken;
 
@@ -1091,12 +1161,12 @@ class AccountManager {
 		if (!options.force && this.isDown(account.email)) return cached;
 		if (!options.force && !isUsageStale(cached)) return cached;
 
-		const inflight = this.usagePromises.get(account.email);
+		const inflight = this.isBrokerAccount(account) ? undefined : this.usagePromises.get(account.email);
 		if (inflight) return inflight;
 
 		const promise = (async () => {
 			try {
-				const token = await this.ensureValidToken(account);
+				const token = await this.ensureValidToken(account, options.signal);
 				const usage = await fetchUsage(token, account.accountId, options.signal);
 				this.usageCache.set(account.email, usage);
 				this.usageErrors.delete(account.email);
@@ -1109,7 +1179,7 @@ class AccountManager {
 					await this.markDown(account, error);
 					return cached;
 				}
-				const message = messageFromUnknown(error);
+				const message = this.isBrokerAccount(account) ? "Codex broker usage request failed" : messageFromUnknown(error);
 				this.usageErrors.set(account.email, message);
 				if (options.force || this.warnedUsageFailures.get(account.email) !== message) {
 					this.warnedUsageFailures.set(account.email, message);
@@ -1117,11 +1187,11 @@ class AccountManager {
 				}
 				return cached;
 			} finally {
-				this.usagePromises.delete(account.email);
+				if (!this.isBrokerAccount(account)) this.usagePromises.delete(account.email);
 			}
 		})();
 
-		this.usagePromises.set(account.email, promise);
+		if (!this.isBrokerAccount(account)) this.usagePromises.set(account.email, promise);
 		return promise;
 	}
 
@@ -1217,7 +1287,7 @@ export function createStreamWrapper(
 	baseStreamSimple: StreamSimple,
 	getTouchGrass: () => TouchGrassController | undefined,
 ) {
-	return (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => {
+	return (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {
 		const stream = createAssistantMessageEventStream();
 
 		void (async () => {
@@ -1261,8 +1331,9 @@ export function createStreamWrapper(
 
 					let token: string;
 					try {
-						token = await accountManager.ensureValidToken(account);
+						token = await accountManager.ensureValidToken(account, options?.signal);
 					} catch (error) {
+						if (options?.signal?.aborted) throw new Error("Request cancelled");
 						accountManager.notifyAuthFailure(account, error);
 						if (usingManual) accountManager.clearManualAccount();
 						excludedEmails.add(account.email);
@@ -1303,7 +1374,7 @@ export function createStreamWrapper(
 								stream.end();
 								return;
 							}
-							stream.push(event);
+							stream.push(accountManager.isBrokerAccount(account) ? { ...event, error: { ...event.error, errorMessage: "Codex provider request failed" } } : event);
 							stream.end();
 							return;
 						}
@@ -1321,7 +1392,7 @@ export function createStreamWrapper(
 					return;
 				}
 			} catch (error) {
-				stream.push(createErrorEvent(model, `MultiCodex failed: ${messageFromUnknown(error)}`));
+				stream.push(createErrorEvent(model, options?.signal?.aborted ? "Request was aborted" : `MultiCodex failed: ${messageFromUnknown(error)}`, options?.signal?.aborted ? "aborted" : "error"));
 				stream.end();
 			}
 		})();
@@ -1345,6 +1416,7 @@ function toModelDefinitions(models: readonly Model<Api>[]) {
 
 function activeApiKey(accountManager: AccountManager) {
 	const active = accountManager.getActiveAccount();
+	if (active && accountManager.isBrokerAccount(active)) return "pending-broker";
 	if (active && !active.needsReauth) return active.accessToken;
 	return accountManager.getAccounts().find((account) => !account.needsReauth && account.accessToken)?.accessToken || "pending-login";
 }
@@ -1436,6 +1508,7 @@ function formatAccount(accountManager: AccountManager, account: Account) {
 	const tags = [
 		accountManager.getActiveAccount()?.email === account.email ? "active" : undefined,
 		accountManager.getManualAccount()?.email === account.email ? "manual" : undefined,
+		accountManager.isBrokerAccount(account) ? "broker" : undefined,
 		accountManager.isPiAuthAccount(account) ? "pi-auth" : undefined,
 		account.needsReauth ? "reauth" : undefined,
 		account.quotaExhaustedUntil && account.quotaExhaustedUntil > Date.now() ? "quota" : undefined,
@@ -1510,6 +1583,10 @@ async function loginAndUse(_pi: ExtensionAPI, ctx: ExtensionCommandContext, acco
 		notify(ctx, "Missing account identifier/email.", "warning");
 		return;
 	}
+	if (accountManager.hasBrokerAccounts() && !accountManager.hasBrokerAccount(trimmed)) {
+		notify(ctx, "Manage broker account bindings separately; legacy login is disabled while bindings are enabled.", "warning");
+		return;
+	}
 	if (!ctx.hasUI) {
 		console.log("MultiCodex login needs interactive UI.");
 		return;
@@ -1517,6 +1594,14 @@ async function loginAndUse(_pi: ExtensionAPI, ctx: ExtensionCommandContext, acco
 
 	const controller = new AbortController();
 	try {
+		if (accountManager.hasBrokerAccount(trimmed)) {
+			notify(ctx, `Approve ${trimmed} on the enrolled phone.`, "info");
+			const account = await accountManager.loginBrokerAccount(trimmed, ctx.signal);
+			accountManager.setManualAccount(account.email);
+			await accountManager.refreshUsageForAccount(account, { force: true, signal: ctx.signal });
+			notify(ctx, `Now using ${account.email}`, "info");
+			return;
+		}
 		const credentials = await loginOpenAICodexDeviceCode((device) => {
 			const message = `Open ${OPENAI_CODEX_DEVICE_VERIFY_URL} and enter code: ${device.userCode}`;
 			notify(ctx, message, "info");
@@ -1544,6 +1629,10 @@ async function useAccount(pi: ExtensionAPI, ctx: ExtensionCommandContext, accoun
 		accountManager.setManualAccount(account.email);
 		notify(ctx, `Now using ${account.email}`, "info");
 	} catch {
+		if (accountManager.isBrokerAccount(account)) {
+			notify(ctx, `Broker unavailable for ${account.email}; use /multicodex reauth explicitly if needed.`, "warning");
+			return;
+		}
 		notify(ctx, `Stored auth for ${account.email} needs reauth. Starting login.`, "warning");
 		await loginAndUse(pi, ctx, accountManager, account.email);
 	}
@@ -1654,6 +1743,7 @@ export default function multicodex(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		accountManager.shutdownBrokerRequests();
 		if (refreshTimer) clearInterval(refreshTimer);
 		refreshTimer = undefined;
 		ctx.ui.setStatus(STATUS_KEY, undefined);
@@ -1752,6 +1842,7 @@ export default function multicodex(pi: ExtensionAPI) {
 				const email = rest || (await chooseAccount(ctx, accountManager, "Remove MultiCodex account")) || "";
 				const account = accountManager.getAccount(email);
 				if (!account) return notify(ctx, `Unknown account: ${email}`, "warning");
+				if (accountManager.isBrokerAccount(account)) return notify(ctx, "Broker bindings are managed separately; no grant or legacy store removed.", "warning");
 				if (accountManager.isPiAuthAccount(account)) return notify(ctx, "Cannot remove ephemeral pi auth. Use /logout openai-codex if needed.", "warning");
 				if (ctx.hasUI && !(await ctx.ui.confirm("Remove MultiCodex account", `Remove ${email}?`))) return;
 				accountManager.removeAccount(email);

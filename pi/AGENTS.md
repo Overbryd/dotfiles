@@ -1,0 +1,9 @@
+# Pi consumer integrations
+
+- Active user extensions/helper files symlink to this checkout through `~/dotfiles`; changes affect future Pi reloads. `/usr/local/dotfiles` remains a separate checkout.
+- MultiCodex's optional private `<agent-dir>/codex-broker.json` registry selects explicit binary/pinned-client config and exact unique email/property/actor/client bindings. Absence preserves legacy mode; invalid or partial bindings fail closed. Current owner scope is `andreas@parlant.co` and `lukas+openai@parlant.co`.
+- Broker mode shadows legacy slots with in-memory account-bound access tokens; never save broker access/refresh values, adopt `auth.json` identities, extract old grants or locally refresh enrolled accounts. `codex-accounts.json` stays read-only. Manual/quota/credit state remains in memory and existing consumer routing is preserved.
+- Ordinary use denies fresh login; only explicit enrolled add/reauth requests signed phone authorization. Shutdown/caller cancellation affect owned requests only. No provider/device code/stderr/token logging; no replay after forwarded stream output.
+- Existing touch-grass/model-switch edits may be independent work. Preserve them when staging integration changes; never blanket-add other Pi auth/retry/Makefile modifications.
+- Verify from a synthetic `PI_CODING_AGENT_DIR` and isolated public source copy using installed Pi jiti/packages, never the real account store. Targeted tests: `pi/tests/multicodex-broker.test.ts`, `multicodex.test.ts`, `touch-grass.test.ts`; Token Exchange scripts cover integration/private-pipe/registry mutation gates.
+- `Makefile` includes `.mjs` and `.mts` helpers under `pi/lib/`; relative helper imports need all files when deploying. New source is not a migrated private registry or production provider acceptance.
