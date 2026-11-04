@@ -1,12 +1,12 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { needsGoogleReauth, repairGoogleAdc } from "../lib/google-auth.ts";
+import { needsGoogleReauth, repairGoogleAdc, scopedGoogleEnv } from "../lib/google-auth.ts";
 
 async function reauthenticateVertex(ctx: ExtensionCommandContext): Promise<void> {
 	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model!);
 	if (!auth.ok) throw new Error(auth.error);
 	ctx.ui.setStatus?.("google-auth", "Google credentials: checking / waiting for phone…");
 	try {
-		await repairGoogleAdc({ ...process.env, ...auth.env }, ctx.signal);
+		await repairGoogleAdc(scopedGoogleEnv(process.env, auth.env), ctx.signal);
 	} finally {
 		ctx.ui.setStatus?.("google-auth", undefined);
 	}

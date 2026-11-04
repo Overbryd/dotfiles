@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { TouchGrassGate } from "../extensions/touch-grass.ts";
 import multicodex, {
 	createStreamWrapper,
 	formatAccountBar,
@@ -65,6 +67,86 @@ test("aborting a touch-grass wait completes the provider stream", async () => {
 	assert.equal(typeof result === "object" ? result.stopReason : undefined, "aborted");
 });
 
+test("switching away from openai-codex during a touch-grass pause resumes on the newly selected provider", async () => {
+	const gate = new TouchGrassGate();
+	let selectedModel: any = { api: "openai-codex-responses", provider: "openai-codex", id: "gpt-6.1-sol", maxTokens: 65_536 };
+	const forwardedCalls: Array<{ model: any; options: any }> = [];
+	const accountManager = {
+		waitUntilReady: async () => {},
+		getAvailableManualAccount: () => undefined,
+		hasManualAccount: () => false,
+		activateBestAccount: async () => undefined,
+		getNextStandardQuotaResetAt: () => Date.now() + 60_000,
+	};
+	const wrapped = createStreamWrapper(
+		accountManager as never,
+		(() => {
+			throw new Error("codex stream should not start");
+		}) as never,
+		() => gate,
+		{
+			getSelectedModel: () => selectedModel,
+			getThinkingLevel: () => "high",
+			streamSelectedModel: (model, _context, options) => {
+				forwardedCalls.push({ model, options });
+				const redirected = createAssistantMessageEventStream();
+				queueMicrotask(() => {
+					redirected.push({
+						type: "done",
+						reason: "stop",
+						message: {
+							role: "assistant",
+							api: model.api,
+							provider: model.provider,
+							model: model.id,
+							content: [{ type: "text", text: "Resumed on Gemini" }],
+							usage: {
+								input: 10,
+								output: 5,
+								cacheRead: 0,
+								cacheWrite: 0,
+								totalTokens: 15,
+								cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+							},
+							stopReason: "stop",
+							timestamp: Date.now(),
+						},
+					});
+					redirected.end();
+				});
+				return redirected;
+			},
+		},
+	);
+
+	const stream = wrapped(selectedModel, { messages: [] } as never, {
+		apiKey: "codex-token",
+		headers: { Authorization: "Bearer codex-token" },
+		env: { OPENAI_API_KEY: "codex-only" },
+		reasoning: "medium",
+	});
+	await new Promise((resolve) => setTimeout(resolve, 10));
+	assert.match(gate.getPausedStatus() ?? "", /loop paused/);
+
+	selectedModel = { api: "google-vertex", provider: "google-vertex", id: "gemini-4-argon", maxTokens: 65_536 };
+	gate.clearPause();
+
+	const result = await Promise.race([
+		stream.result(),
+		new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 100)),
+	]);
+
+	assert.notEqual(result, "timeout");
+	assert.equal(typeof result === "object" ? result.provider : undefined, "google-vertex");
+	assert.equal(typeof result === "object" ? result.model : undefined, "gemini-4-argon");
+	assert.equal(forwardedCalls.length, 1);
+	assert.equal(forwardedCalls[0]?.options?.apiKey, undefined);
+	assert.equal(forwardedCalls[0]?.options?.headers, undefined);
+	assert.equal(forwardedCalls[0]?.options?.env, undefined);
+	assert.equal(forwardedCalls[0]?.options?.reasoning, "high");
+	assert.equal(gate.getPausedStatus(), undefined);
+});
+
 test("refreshes usage after agent settles rather than after every turn", () => {
 	const events: string[] = [];
 	multicodex({
@@ -81,6 +163,60 @@ test("refreshes usage after agent settles rather than after every turn", () => {
 
 	assert.equal(events.includes("turn_end"), false);
 	assert.equal(events.includes("agent_settled"), true);
+});
+
+test("registerProvider preserves Pi's dynamic models-store catalog instead of overwriting models with static compat data", () => {
+	let registeredConfig: Record<string, unknown> | undefined;
+	multicodex({
+		on() {},
+		registerProvider(_id: string, config: Record<string, unknown>) {
+			registeredConfig = config;
+		},
+		registerCommand() {},
+		getThinkingLevel: () => "medium",
+		events: {
+			on() { return () => {}; },
+			emit() {},
+		},
+	} as never);
+
+	assert.ok(registeredConfig);
+	assert.equal(registeredConfig.models, undefined);
+});
+
+test("model_select keeps touch-grass paused across codex models without quota and clears it when switching providers", async () => {
+	const handlers = new Map<string, (event: any, ctx: any) => void>();
+	const gate = new TouchGrassGate();
+	multicodex({
+		on(event: string, handler: (event: any, ctx: any) => void) {
+			handlers.set(event, handler);
+		},
+		registerProvider() {},
+		registerCommand() {},
+		getThinkingLevel: () => "medium",
+		events: {
+			on() { return () => {}; },
+			emit(_channel: string, payload: { accept?: (controller: unknown) => void }) {
+				payload?.accept?.(gate);
+			},
+		},
+	} as never);
+
+	const waiting = gate.waitUntil(Date.now() + 60_000);
+	const codexModel = { provider: "openai-codex", id: "gpt-5.6-luna" };
+	handlers.get("model_select")?.(
+		{ model: codexModel, previousModel: { provider: "openai-codex", id: "gpt-6.1-sol" }, source: "set" },
+		{ hasUI: false, model: codexModel },
+	);
+	assert.match(gate.getPausedStatus() ?? "", /loop paused/);
+
+	const geminiModel = { provider: "google-vertex", id: "gemini-4-argon" };
+	handlers.get("model_select")?.(
+		{ model: geminiModel, previousModel: codexModel, source: "set" },
+		{ hasUI: false, model: geminiModel },
+	);
+	assert.equal(await waiting, "resumed");
+	assert.equal(gate.getPausedStatus(), undefined);
 });
 
 test("parseUsageResponse reads workspace credits and spend control", () => {

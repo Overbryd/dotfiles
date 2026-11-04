@@ -9,6 +9,16 @@ export function phoneAuthConfigured(env: NodeJS.ProcessEnv): boolean {
 	return !!env.HOME; // The client also resolves its private per-user Google configuration.
 }
 
+export function scopedGoogleEnv(baseEnv: NodeJS.ProcessEnv, providerEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const env: NodeJS.ProcessEnv = { ...baseEnv };
+	if (providerEnv?.GOOGLE_APPLICATION_CREDENTIALS) {
+		delete env.CLOUDSDK_CONFIG;
+		delete env.CLOUDSDK_CORE_ACCOUNT;
+		delete env.CLOUDSDK_ACTIVE_CONFIG_NAME;
+	}
+	return { ...env, ...providerEnv };
+}
+
 export async function repairGoogleAdc(env: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<void> {
 	await new Promise<void>((resolve, reject) => {
 		const child = childProcess.spawn("token-exchange", [

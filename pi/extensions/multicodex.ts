@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { requestToken as requestBrokerToken } from "../lib/codex-broker.mjs";
 import { loadBrokerRegistry } from "../lib/codex-registry.mjs";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import { getModels, openAICodexResponsesApi } from "@earendil-works/pi-ai/compat";
+import { openAICodexResponsesApi } from "@earendil-works/pi-ai/compat";
 import type {
 	Api,
 	AssistantMessageEvent,
@@ -124,10 +124,20 @@ type StreamSimple = ReturnType<typeof openAICodexResponsesApi>["streamSimple"];
 
 type TouchGrassController = {
 	isEnabled(): boolean;
-	waitUntil(resetAt: number, signal?: AbortSignal): Promise<"elapsed" | "disabled" | "aborted">;
+	waitUntil(resetAt: number, signal?: AbortSignal): Promise<"elapsed" | "disabled" | "resumed" | "aborted">;
 	clearPause(): void;
 	getPausedStatus(now?: number): string | undefined;
 	onChange(handler: () => void): () => void;
+};
+
+type StreamRedirectHooks = {
+	getSelectedModel?: () => Model<Api> | undefined;
+	getThinkingLevel?: () => SimpleStreamOptions["reasoning"] | "off" | undefined;
+	streamSelectedModel?: (
+		model: Model<Api>,
+		context: TranscriptContext,
+		options?: SimpleStreamOptions,
+	) => ReturnType<typeof createAssistantMessageEventStream>;
 };
 
 function isTouchGrassController(value: unknown): value is TouchGrassController {
@@ -1286,11 +1296,13 @@ export function createStreamWrapper(
 	accountManager: AccountManager,
 	baseStreamSimple: StreamSimple,
 	getTouchGrass: () => TouchGrassController | undefined,
+	hooks?: StreamRedirectHooks,
 ) {
 	return (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {
 		const stream = createAssistantMessageEventStream();
 
 		void (async () => {
+			let currentModel = model;
 			try {
 				await accountManager.waitUntilReady();
 				const excludedEmails = new Set<string>();
@@ -1314,9 +1326,44 @@ export function createStreamWrapper(
 							const retryAt = resetAt > Date.now() ? resetAt : Date.now() + CODEX_DOWN_RETRY_MS;
 							const waitResult = await touchGrass.waitUntil(retryAt, options?.signal);
 							if (waitResult === "aborted") {
-								stream.push(createErrorEvent(model, "Request was aborted", "aborted"));
+								stream.push(createErrorEvent(currentModel, "Request was aborted", "aborted"));
 								stream.end();
 								return;
+							}
+							await Promise.resolve();
+							const selectedModel = hooks?.getSelectedModel?.();
+							if (selectedModel && selectedModel.provider !== PROVIDER_ID && hooks?.streamSelectedModel) {
+								currentModel = selectedModel;
+								touchGrass.clearPause();
+								const { apiKey: _apiKey, headers: _headers, env: _env, ...rest } = options ?? {};
+								const maxTokens =
+									rest.maxTokens && selectedModel.maxTokens > 0
+										? Math.min(rest.maxTokens, selectedModel.maxTokens)
+										: rest.maxTokens;
+								const thinkingLevel = hooks.getThinkingLevel?.();
+								const reasoning =
+									thinkingLevel === undefined
+										? rest.reasoning
+										: thinkingLevel === "off"
+											? undefined
+											: thinkingLevel;
+								const redirected = hooks.streamSelectedModel(selectedModel, context, {
+									...rest,
+									maxTokens,
+									reasoning,
+								});
+								for await (const event of redirected) {
+									stream.push(event);
+									if (event.type === "done" || event.type === "error") {
+										stream.end();
+										return;
+									}
+								}
+								stream.end();
+								return;
+							}
+							if (selectedModel && selectedModel.provider === PROVIDER_ID) {
+								currentModel = selectedModel;
 							}
 							if (waitResult === "elapsed") {
 								await accountManager.refreshUsageForAllAccounts({ force: true, signal: options?.signal });
@@ -1343,7 +1390,7 @@ export function createStreamWrapper(
 
 					const abortController = createLinkedAbortController(options?.signal);
 					const inner = baseStreamSimple(
-						{ ...model, provider: PROVIDER_ID, api: "openai-codex-responses", headers: { ...(model.headers || {}), "X-Multicodex-Account": account.email } },
+						{ ...currentModel, provider: PROVIDER_ID, api: "openai-codex-responses", headers: { ...(currentModel.headers || {}), "X-Multicodex-Account": account.email } },
 						context,
 						{ ...options, apiKey: token, signal: abortController.signal },
 					);
@@ -1370,7 +1417,7 @@ export function createStreamWrapper(
 									retry = true;
 									break;
 								}
-								stream.push(createErrorEvent(model, accountManager.availabilityError()));
+								stream.push(createErrorEvent(currentModel, accountManager.availabilityError()));
 								stream.end();
 								return;
 							}
@@ -1392,26 +1439,13 @@ export function createStreamWrapper(
 					return;
 				}
 			} catch (error) {
-				stream.push(createErrorEvent(model, options?.signal?.aborted ? "Request was aborted" : `MultiCodex failed: ${messageFromUnknown(error)}`, options?.signal?.aborted ? "aborted" : "error"));
+				stream.push(createErrorEvent(currentModel, options?.signal?.aborted ? "Request was aborted" : `MultiCodex failed: ${messageFromUnknown(error)}`, options?.signal?.aborted ? "aborted" : "error"));
 				stream.end();
 			}
 		})();
 
 		return stream;
 	};
-}
-
-function toModelDefinitions(models: readonly Model<Api>[]) {
-	return models.map((model) => ({
-		id: model.id,
-		name: model.name,
-		reasoning: model.reasoning,
-		thinkingLevelMap: model.thinkingLevelMap,
-		input: [...model.input],
-		cost: { ...model.cost },
-		contextWindow: model.contextWindow,
-		maxTokens: model.maxTokens,
-	}));
 }
 
 function activeApiKey(accountManager: AccountManager) {
@@ -1571,8 +1605,12 @@ async function refreshStatus(
 	safelyUpdateStatus(ctx, accountManager, touchGrass);
 	const account = accountManager.getActiveAccount();
 	if (account && ctx.model?.provider === PROVIDER_ID) await accountManager.refreshUsageForAccount(account, { force });
-	if (!accountManager.hasManualAccount() && ctx.model?.provider === PROVIDER_ID) {
-		await accountManager.activateBestAccount({ allowCredits: !(touchGrass?.isEnabled() ?? false) });
+	if (ctx.model?.provider === PROVIDER_ID) {
+		const allowCredits = !(touchGrass?.isEnabled() ?? false);
+		const available = accountManager.hasManualAccount()
+			? accountManager.getAvailableManualAccount(new Set(), allowCredits)
+			: await accountManager.activateBestAccount({ allowCredits });
+		if (available) touchGrass?.clearPause();
 	}
 	safelyUpdateStatus(ctx, accountManager, touchGrass);
 }
@@ -1666,7 +1704,6 @@ function refreshResultMessage(accountManager: AccountManager, accounts: Account[
 
 export default function multicodex(pi: ExtensionAPI) {
 	const accountManager = new AccountManager();
-	const baseModels = getModels(PROVIDER_ID) as readonly Model<Api>[];
 	let lastContext: ExtensionContext | undefined;
 	let refreshTimer: ReturnType<typeof setInterval> | undefined;
 	let touchGrass: TouchGrassController | undefined;
@@ -1702,8 +1739,14 @@ export default function multicodex(pi: ExtensionAPI) {
 		baseUrl: "https://chatgpt.com/backend-api",
 		apiKey: activeApiKey(accountManager),
 		api: "openai-codex-responses",
-		streamSimple: createStreamWrapper(accountManager, openAICodexResponsesApi().streamSimple, () => touchGrass),
-		models: toModelDefinitions(baseModels),
+		streamSimple: createStreamWrapper(accountManager, openAICodexResponsesApi().streamSimple, () => touchGrass, {
+			getSelectedModel: () => lastContext?.model,
+			getThinkingLevel: () => pi.getThinkingLevel(),
+			streamSelectedModel: (selectedModel, context, options) => {
+				if (!lastContext) throw new Error("No active session context for model handoff");
+				return lastContext.modelRegistry.streamSimple(selectedModel, context, options);
+			},
+		}),
 	});
 
 	async function initialize(ctx: ExtensionContext) {
@@ -1732,8 +1775,11 @@ export default function multicodex(pi: ExtensionAPI) {
 		refreshTimer.unref?.();
 	});
 
-	pi.on("model_select", (_event, ctx) => {
+	pi.on("model_select", (event, ctx) => {
 		lastContext = ctx;
+		if (event.model.provider !== PROVIDER_ID) {
+			touchGrass?.clearPause();
+		}
 		void refreshStatus(ctx, accountManager, touchGrass);
 	});
 

@@ -5,7 +5,7 @@ import {
 	type Model,
 } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { phoneAuthConfigured, recoverGoogleStream, repairGoogleAdc } from "../lib/google-auth.ts";
+import { phoneAuthConfigured, recoverGoogleStream, repairGoogleAdc, scopedGoogleEnv } from "../lib/google-auth.ts";
 
 export default function googleTokenExchange(pi: ExtensionAPI): void {
 	if (!phoneAuthConfigured(process.env)) return;
@@ -20,7 +20,7 @@ export default function googleTokenExchange(pi: ExtensionAPI): void {
 						() => streamSimpleGoogleVertex(model as Model<"google-vertex">, context, options),
 						async () => {
 							repairAttempted = true;
-							const env = { ...process.env, ...options?.env };
+							const env = scopedGoogleEnv(process.env, options?.env);
 							await repairGoogleAdc(env, options?.signal);
 						},
 					)) output.push(event);

@@ -578,7 +578,18 @@ pi-settings: pi/settings.json | ~/.pi/agent
 		cp $< $$tmp; \
 	fi; \
 	test ! -L $(HOME)/.pi/agent/settings.json || rm $(HOME)/.pi/agent/settings.json; \
-	mv $$tmp $(HOME)/.pi/agent/settings.json
+	mv $$tmp $(HOME)/.pi/agent/settings.json; \
+	auth_tmp=$$(mktemp); \
+	umask 077; \
+	if [ -f $(HOME)/.pi/agent/auth.json ]; then \
+		cat $(HOME)/.pi/agent/auth.json; \
+	else \
+		printf '{}\n'; \
+	fi | jq --arg adc "$(HOME)/Work/Parlant/.config/gcloud-parlant/application_default_credentials.json" \
+		'.["google-vertex"] = {"type":"api_key","env":{"GOOGLE_CLOUD_PROJECT":"gen-lang-client-0951766844","GOOGLE_CLOUD_LOCATION":"eu","GOOGLE_APPLICATION_CREDENTIALS":$$adc,"TOKEN_EXCHANGE_GOOGLE_ACCOUNT":"lukas@parlant.co"}}' \
+		> $$auth_tmp; \
+	chmod 600 $$auth_tmp; \
+	mv $$auth_tmp $(HOME)/.pi/agent/auth.json
 
 # Build the pi fork that .bin/pi prefers over the Homebrew install.
 # Keep the globally installed fallback on the fork's exact package release, then reuse

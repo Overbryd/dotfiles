@@ -56,7 +56,7 @@ test("settings merge seeds managed defaults when Pi has none", () => {
 	const managed = JSON.parse(readFileSync(new URL("../settings.json", import.meta.url), "utf8"));
 	const result = mergeSettings({ lastChangelogVersion: "0.84.2" }, managed);
 	assert.equal(result.defaultProvider, "openai");
-	assert.equal(result.defaultModel, "gpt-5.6-sol");
+	assert.equal(result.defaultModel, "gpt-6.1-sol");
 	assert.equal(result.defaultThinkingLevel, "medium");
 	assert.deepEqual(result.enabledModels, []);
 });

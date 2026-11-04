@@ -35,7 +35,7 @@
 - `tms` models each work directory as a stable tmux anchor/group and each terminal origin as a grouped view session; views share windows but navigate independently.
 - `wssh` passes `<local-host>-wssh` as its `TMS_VIEW` and must never detach other tmux clients.
 - `tmux-pi` snapshots project anchors, not their grouped `tms` views, because grouped views reference the same panes.
-- `pi/settings.json` excludes video/HyperFrames/transcription skills by default; `.bin/pi` opts them in only under `~/Dropbox/Videos` (override its boundary with `PI_VIDEO_SKILLS_ROOT`). Deploy settings with `make pi-settings`.
+- `pi/settings.json` excludes video/HyperFrames/transcription skills by default; `.bin/pi` opts them in only under `~/Dropbox/Videos` (override its boundary with `PI_VIDEO_SKILLS_ROOT`). Deploy settings with `make pi-settings` (which also pins `google-vertex` in `~/.pi/agent/auth.json` to the Parlant GenAI project/ADC so work-folder `.envrc` Google overrides do not hijack `gemini-4-argon`).
 
 # Language and platform
 

@@ -4,7 +4,7 @@ export const TOUCH_GRASS_AVAILABLE_CHANNEL = "touch-grass:available";
 export const TOUCH_GRASS_REQUEST_CHANNEL = "touch-grass:request";
 const CUSTOM_TYPE = "touch-grass";
 
-export type TouchGrassWaitResult = "elapsed" | "disabled" | "aborted";
+export type TouchGrassWaitResult = "elapsed" | "disabled" | "resumed" | "aborted";
 
 export interface TouchGrassController {
 	isEnabled(): boolean;
@@ -71,8 +71,9 @@ export class TouchGrassGate implements TouchGrassController {
 	}
 
 	clearPause(): void {
-		if (this.pausedUntil === undefined) return;
+		if (this.pausedUntil === undefined && this.waiters.size === 0) return;
 		this.clearPausedState();
+		this.wakeWaiters("resumed");
 		this.notifyChanged();
 	}
 

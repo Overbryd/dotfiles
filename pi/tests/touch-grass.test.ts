@@ -35,6 +35,16 @@ test("disabling touch grass wakes a paused loop for session credit use", async (
 	assert.equal(gate.getPausedStatus(), undefined);
 });
 
+test("clearing pause wakes a paused loop while keeping touch grass enabled", async () => {
+	const gate = new TouchGrassGate();
+	const waiting = gate.waitUntil(Date.now() + 60_000);
+	gate.clearPause();
+
+	assert.equal(await waiting, "resumed");
+	assert.equal(gate.isEnabled(), true);
+	assert.equal(gate.getPausedStatus(), undefined);
+});
+
 test("extension starts enabled and can disable credit protection for the session", async () => {
 	const commands = new Map<string, any>();
 	const handlers = new Map<string, (event: any, ctx: any) => unknown>();

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { needsGoogleReauth, recoverGoogleStream } from "../lib/google-auth.ts";
+import { needsGoogleReauth, recoverGoogleStream, scopedGoogleEnv } from "../lib/google-auth.ts";
 
 const failure = {
 	type: "error",
@@ -48,4 +48,31 @@ test("scope, permission, quota and other-provider failures never request Google 
 	}
 	assert.equal(needsGoogleReauth({ ...failure.error, provider: "openai" }), false);
 	assert.equal(needsGoogleReauth({ ...failure.error, stopReason: "aborted" }), false);
+});
+
+test("provider-scoped Vertex credentials strip ambient work-folder gcloud selectors", () => {
+	const env = scopedGoogleEnv(
+		{
+			HOME: "/Users/partenkirchen",
+			GOOGLE_APPLICATION_CREDENTIALS: "/Users/partenkirchen/Work/hibase/.google_application_credentials.json",
+			GOOGLE_CLOUD_PROJECT: "wrong-project",
+			CLOUDSDK_CONFIG: "/Users/partenkirchen/Work/HelloFresh/.config/gcloud",
+			CLOUDSDK_CORE_ACCOUNT: "lukas.rieder@ext.hellofresh.com",
+			CLOUDSDK_ACTIVE_CONFIG_NAME: "oht",
+		},
+		{
+			GOOGLE_APPLICATION_CREDENTIALS: "/Users/partenkirchen/Work/Parlant/.config/gcloud-parlant/application_default_credentials.json",
+			GOOGLE_CLOUD_PROJECT: "gen-lang-client-0951766844",
+			GOOGLE_CLOUD_LOCATION: "eu",
+		},
+	);
+	assert.equal(
+		env.GOOGLE_APPLICATION_CREDENTIALS,
+		"/Users/partenkirchen/Work/Parlant/.config/gcloud-parlant/application_default_credentials.json",
+	);
+	assert.equal(env.GOOGLE_CLOUD_PROJECT, "gen-lang-client-0951766844");
+	assert.equal(env.GOOGLE_CLOUD_LOCATION, "eu");
+	assert.equal(env.CLOUDSDK_CONFIG, undefined);
+	assert.equal(env.CLOUDSDK_CORE_ACCOUNT, undefined);
+	assert.equal(env.CLOUDSDK_ACTIVE_CONFIG_NAME, undefined);
 });
