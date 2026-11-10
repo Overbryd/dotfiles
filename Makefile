@@ -586,7 +586,7 @@ pi-settings: pi/settings.json | ~/.pi/agent
 	else \
 		printf '{}\n'; \
 	fi | jq --arg adc "$(HOME)/Work/Parlant/.config/gcloud-parlant/application_default_credentials.json" \
-		'.["google-vertex"] = {"type":"api_key","env":{"GOOGLE_CLOUD_PROJECT":"gen-lang-client-0951766844","GOOGLE_CLOUD_LOCATION":"eu","GOOGLE_APPLICATION_CREDENTIALS":$$adc,"TOKEN_EXCHANGE_GOOGLE_ACCOUNT":"lukas@parlant.co"}}' \
+		'.["google-vertex"] = {"type":"api_key","env":{"GOOGLE_CLOUD_PROJECT":"gen-lang-client-0951766844","GOOGLE_CLOUD_LOCATION":"global","GOOGLE_APPLICATION_CREDENTIALS":$$adc,"TOKEN_EXCHANGE_GOOGLE_ACCOUNT":"lukas@parlant.co"}}' \
 		> $$auth_tmp; \
 	chmod 600 $$auth_tmp; \
 	mv $$auth_tmp $(HOME)/.pi/agent/auth.json

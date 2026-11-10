@@ -63,7 +63,7 @@ test("provider-scoped Vertex credentials strip ambient work-folder gcloud select
 		{
 			GOOGLE_APPLICATION_CREDENTIALS: "/Users/partenkirchen/Work/Parlant/.config/gcloud-parlant/application_default_credentials.json",
 			GOOGLE_CLOUD_PROJECT: "gen-lang-client-0951766844",
-			GOOGLE_CLOUD_LOCATION: "eu",
+			GOOGLE_CLOUD_LOCATION: "global",
 		},
 	);
 	assert.equal(
@@ -71,7 +71,7 @@ test("provider-scoped Vertex credentials strip ambient work-folder gcloud select
 		"/Users/partenkirchen/Work/Parlant/.config/gcloud-parlant/application_default_credentials.json",
 	);
 	assert.equal(env.GOOGLE_CLOUD_PROJECT, "gen-lang-client-0951766844");
-	assert.equal(env.GOOGLE_CLOUD_LOCATION, "eu");
+	assert.equal(env.GOOGLE_CLOUD_LOCATION, "global");
 	assert.equal(env.CLOUDSDK_CONFIG, undefined);
 	assert.equal(env.CLOUDSDK_CORE_ACCOUNT, undefined);
 	assert.equal(env.CLOUDSDK_ACTIVE_CONFIG_NAME, undefined);

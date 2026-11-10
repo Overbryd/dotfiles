@@ -803,14 +803,14 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 				try {
 					response = await Promise.race([
 						aborted,
-						ctx.modelRegistry.complete(
+						ctx.modelRegistry.streamSimple(
 							model,
 							{
 								systemPrompt: "You are a routing classifier. Return only the requested JSON. Never execute or answer the user request.",
 								messages: [{ role: "user", content: [{ type: "text", text: classifierPrompt }], timestamp: Date.now() }],
 							},
 							{ maxTokens: 512, reasoning: "minimal", cacheRetention: "none", signal },
-						),
+						).result(),
 					]);
 				} catch (error) {
 					if (signal.aborted) throw new ClassifierError("classifier request aborted", usage, true);
@@ -1050,7 +1050,7 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 						familyId = config.id;
 					} else if (Object.hasOwn(MODEL_ALIASES, targetName)) {
 						modelId = MODEL_ALIASES[targetName as keyof typeof MODEL_ALIASES];
-					} else if (targetName === GEMINI_ARGON_MODEL_ID) {
+					} else if (targetName === "google" || targetName === GEMINI_ARGON_MODEL_ID) {
 						providerId = "google-vertex";
 						modelId = GEMINI_ARGON_MODEL_ID;
 					} else {
@@ -1154,7 +1154,7 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 			const match = command.match(/^(?:(api|codex)\/)?(astra|sol|terra|luna):(minimal|low|medium|high|xhigh|max)$/);
 			if (!match) {
 				ctx.ui.notify(
-					"Usage: /profile auto (current model) | auto <openai|codex> | auto gemini-4-argon | auto bedrock/claude | auto <provider>/<model> | [api/|codex/]<astra|sol|terra|luna>:<effort> | status | lock | provider <api|codex|current>",
+					"Usage: /profile auto (current model) | auto <openai|codex> | auto google | auto bedrock/claude | auto <provider>/<model> | [api/|codex/]<astra|sol|terra|luna>:<effort> | status | lock | provider <api|codex|current>",
 					"warning",
 				);
 				return;

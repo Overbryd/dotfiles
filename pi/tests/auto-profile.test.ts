@@ -213,15 +213,19 @@ function harness(
 			find(provider: string, id: string) {
 				return models.get(`${provider}/${id}`);
 			},
-			async complete(model: any, requestContext: any, options: any) {
-				assert.match(model.id, /(?:^|\.)(?:gpt-5\.6-luna|gemini-4-argon)$/);
-				classifierProviders.push(model.provider);
-				assert.equal(options.reasoning, "minimal");
-				assert.equal(options.maxTokens, 512);
-				assert.equal(options.cacheRetention, "none");
-				assert.match(requestContext.messages[0].content[0].text, /<request>/);
-				classifierCalls++;
-				return classifications[Math.min(responseIndex++, classifications.length - 1)];
+			streamSimple(model: any, requestContext: any, options: any) {
+				return {
+					result: async () => {
+						assert.match(model.id, /(?:^|\.)(?:gpt-5\.6-luna|gemini-4-argon)$/);
+						classifierProviders.push(model.provider);
+						assert.equal(options.reasoning, "minimal");
+						assert.equal(options.maxTokens, 512);
+						assert.equal(options.cacheRetention, "none");
+						assert.match(requestContext.messages[0].content[0].text, /<request>/);
+						classifierCalls++;
+						return classifications[Math.min(responseIndex++, classifications.length - 1)];
+					},
+				};
 			},
 		},
 	};
@@ -374,10 +378,10 @@ test("auto resolves Bedrock models through canonical, API-inferred, and regional
 	}
 });
 
-test("Gemini Argon shorthand uses Vertex and keeps automatic thinking on that model", async () => {
+test("google shorthand uses Vertex Argon and keeps automatic thinking on that model", async () => {
 	const h = harness([assistantClassification("routine"), assistantClassification("complex")]);
 	await h.handlers.get("session_start")?.({}, h.context);
-	await h.commands.get("profile").handler("auto gemini-4-argon", h.context);
+	await h.commands.get("profile").handler("auto google", h.context);
 
 	assert.equal(h.providerId, "google-vertex");
 	assert.equal(h.modelId, "gemini-4-argon");
@@ -390,6 +394,27 @@ test("Gemini Argon shorthand uses Vertex and keeps automatic thinking on that mo
 		assert.equal(h.thinkingLevel, effort);
 	}
 	assert.deepEqual(h.classifierProviders, ["google-vertex", "google-vertex"]);
+});
+
+test("Gemini classification uses provider-neutral streaming rather than raw completion", async () => {
+	const h = harness();
+	const calls: string[] = [];
+	h.context.modelRegistry.complete = () => {
+		throw new Error("raw completion bypasses reasoning translation and stream recovery");
+	};
+	h.context.modelRegistry.streamSimple = (model: any, _context: any, options: any) => {
+		calls.push(model.provider);
+		assert.equal(options.reasoning, "minimal");
+		assert.equal(options.maxTokens, 512);
+		return { result: async () => assistantClassification("routine") };
+	};
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.commands.get("profile").handler("auto gemini-4-argon", h.context);
+	await h.handlers.get("before_agent_start")?.({ prompt: "Next task" }, h.context);
+
+	assert.deepEqual(calls, ["google-vertex"]);
+	assert.equal(h.entries.at(-1).data.source, "classifier");
+	assert.equal(h.thinkingLevel, "medium");
 });
 
 test("qualified auto preserves case-sensitive model IDs", async () => {
@@ -888,12 +913,12 @@ test("classification retries a connected provider when Codex returns an error", 
 
 test("classification retries another provider after an authentication exception", async () => {
 	const h = harness([assistantClassification("routine")], "openai-codex");
-	const complete = h.context.modelRegistry.complete;
+	const streamSimple = h.context.modelRegistry.streamSimple;
 	const calls: string[] = [];
-	h.context.modelRegistry.complete = (model: any, ...args: any[]) => {
+	h.context.modelRegistry.streamSimple = (model: any, ...args: any[]) => {
 		calls.push(model.provider);
 		if (model.provider === "openai-codex") throw new Error("Codex disconnected");
-		return complete(model, ...args);
+		return streamSimple(model, ...args);
 	};
 	await h.handlers.get("session_start")?.({}, h.context);
 	await h.handlers.get("before_agent_start")?.({ prompt: "Small change" }, h.context);
@@ -906,7 +931,7 @@ test("classifier cancellation settles even when the provider ignores its abort s
 	const h = harness();
 	const controller = new AbortController();
 	h.context.signal = controller.signal;
-	h.context.modelRegistry.complete = () => new Promise(() => {});
+	h.context.modelRegistry.streamSimple = () => ({ result: () => new Promise(() => {}) });
 	await h.handlers.get("session_start")?.({}, h.context);
 	const pending = h.handlers.get("before_agent_start")?.({ prompt: "Small change" }, h.context);
 	controller.abort();
@@ -923,7 +948,7 @@ test("classifier deadline settles even when a disconnected provider never return
 	const timeout = AbortSignal.timeout.bind(AbortSignal);
 	t.mock.method(AbortSignal, "timeout", () => timeout(10));
 	const h = harness();
-	h.context.modelRegistry.complete = () => new Promise(() => {});
+	h.context.modelRegistry.streamSimple = () => ({ result: () => new Promise(() => {}) });
 	await h.handlers.get("session_start")?.({}, h.context);
 	await Promise.race([
 		h.handlers.get("before_agent_start")?.({ prompt: "Small change" }, h.context),
