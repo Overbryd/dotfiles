@@ -767,6 +767,10 @@ function isQuotaErrorMessage(message: string): boolean {
 	return /\b429\b|quota|usage limit|rate.?limit|too many requests|limit reached/i.test(message);
 }
 
+function isAuthErrorMessage(message: string): boolean {
+	return /\b401\b|unauthori[sz]ed|invalid[_ -](?:access[_ -])?token|token[_ -]expired|token has expired|session[_ -]expired/i.test(message);
+}
+
 export function isCodexDownError(error: unknown): boolean {
 	return /\bHTTP\s+(?:404|5\d\d)\b|\bnot found\b|service unavailable|bad gateway|gateway timeout/i.test(messageFromUnknown(error));
 }
@@ -1080,7 +1084,16 @@ export class AccountManager {
 	availabilityError() {
 		if (this.brokerError) return "Invalid Codex broker registry; no legacy fallback.";
 		const down = this.downEmails();
-		if (down.size === 0) return "No available MultiCodex accounts. Use /multicodex add <email>.";
+		if (down.size === 0) {
+			const accounts = this.getAccounts();
+			if (!accounts.length) return "No available MultiCodex accounts. Use /multicodex add <email>.";
+			const reauth = accounts.filter((account) => account.needsReauth);
+			if (reauth.length) {
+				const repairs = reauth.map((account) => this.isPiAuthAccount(account) ? "/login openai-codex" : `/multicodex reauth ${account.email}`);
+				return `No available MultiCodex accounts. Repair authentication with ${repairs.join(" or ")}.`;
+			}
+			return "No eligible MultiCodex accounts. Check /multicodex show and /touch-grass status.";
+		}
 		return `OpenAI Codex unavailable for ${down.size} account${down.size === 1 ? "" : "s"}. ${this.lastOpenAIStatusAdvice || `Check ${OPENAI_STATUS_URL}.`}`;
 	}
 
@@ -1300,14 +1313,28 @@ export function createStreamWrapper(
 ) {
 	return (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {
 		const stream = createAssistantMessageEventStream();
+		let currentModel = model;
+		let forwarding = false;
+		const onAbort = () => {
+			// Once streaming, let the provider preserve partial content and usage on abort.
+			if (forwarding) return;
+			stream.push(createErrorEvent(currentModel, "Request was aborted", "aborted"));
+			stream.end();
+		};
+		if (options?.signal?.aborted) {
+			onAbort();
+			return stream;
+		}
+		options?.signal?.addEventListener("abort", onAbort, { once: true });
 
 		void (async () => {
-			let currentModel = model;
 			try {
 				await accountManager.waitUntilReady();
+				options?.signal?.throwIfAborted();
 				const excludedEmails = new Set<string>();
 
 				for (let attempt = 0; attempt <= MAX_ROTATION_RETRIES; attempt++) {
+					options?.signal?.throwIfAborted();
 					const touchGrass = getTouchGrass();
 					const allowCredits = !(touchGrass?.isEnabled() ?? false);
 					let account = accountManager.getAvailableManualAccount(excludedEmails, allowCredits);
@@ -1320,6 +1347,7 @@ export function createStreamWrapper(
 							allowCredits,
 						});
 					}
+					options?.signal?.throwIfAborted();
 					if (!account && touchGrass?.isEnabled()) {
 						const resetAt = accountManager.getNextStandardQuotaResetAt();
 						if (resetAt !== undefined) {
@@ -1352,6 +1380,7 @@ export function createStreamWrapper(
 									maxTokens,
 									reasoning,
 								});
+								forwarding = true;
 								for await (const event of redirected) {
 									stream.push(event);
 									if (event.type === "done" || event.type === "error") {
@@ -1388,6 +1417,7 @@ export function createStreamWrapper(
 						throw error;
 					}
 
+					options?.signal?.throwIfAborted();
 					const abortController = createLinkedAbortController(options?.signal);
 					const inner = baseStreamSimple(
 						{ ...currentModel, provider: PROVIDER_ID, api: "openai-codex-responses", headers: { ...(currentModel.headers || {}), "X-Multicodex-Account": account.email } },
@@ -1397,9 +1427,20 @@ export function createStreamWrapper(
 
 					let forwardedAny = false;
 					let retry = false;
+					forwarding = true;
 					for await (const event of inner) {
 						if (event.type === "error") {
 							const message = event.error.errorMessage || "";
+							if (isAuthErrorMessage(message) && !forwardedAny) {
+								accountManager.notifyAuthFailure(account, new Error(message));
+								if (usingManual) accountManager.clearManualAccount();
+								excludedEmails.add(account.email);
+								abortController.abort();
+								if (attempt < MAX_ROTATION_RETRIES) {
+									retry = true;
+									break;
+								}
+							}
 							if (isQuotaErrorMessage(message) && !forwardedAny && attempt < MAX_ROTATION_RETRIES) {
 								await accountManager.handleQuotaExceeded(account, options?.signal);
 								if (usingManual) accountManager.clearManualAccount();
@@ -1434,6 +1475,7 @@ export function createStreamWrapper(
 						}
 					}
 
+					forwarding = false;
 					if (retry) continue;
 					stream.end();
 					return;
@@ -1441,6 +1483,8 @@ export function createStreamWrapper(
 			} catch (error) {
 				stream.push(createErrorEvent(currentModel, options?.signal?.aborted ? "Request was aborted" : `MultiCodex failed: ${messageFromUnknown(error)}`, options?.signal?.aborted ? "aborted" : "error"));
 				stream.end();
+			} finally {
+				options?.signal?.removeEventListener("abort", onAbort);
 			}
 		})();
 

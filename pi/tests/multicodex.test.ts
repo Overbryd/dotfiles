@@ -3,6 +3,7 @@ import test from "node:test";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { TouchGrassGate } from "../extensions/touch-grass.ts";
 import multicodex, {
+	AccountManager,
 	createStreamWrapper,
 	formatAccountBar,
 	formatOpenAIStatusAdvice,
@@ -145,6 +146,107 @@ test("switching away from openai-codex during a touch-grass pause resumes on the
 	assert.equal(forwardedCalls[0]?.options?.env, undefined);
 	assert.equal(forwardedCalls[0]?.options?.reasoning, "high");
 	assert.equal(gate.getPausedStatus(), undefined);
+});
+
+test("rejected credentials rotate to another account before any output", async () => {
+	const accounts = [account("rejected@example.com"), account("connected@example.com")];
+	const manager = new AccountManager({ data: { version: 1, accounts }, save() {} });
+	manager.refreshStaleUsage = async () => {};
+	manager.setManualAccount(accounts[0].email);
+	const calls: string[] = [];
+	const wrapped = createStreamWrapper(manager, ((model: any) => {
+		const email = model.headers["X-Multicodex-Account"];
+		calls.push(email);
+		const stream = createAssistantMessageEventStream();
+		queueMicrotask(() => {
+			const message = {
+				role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id,
+				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+				timestamp: Date.now(),
+			};
+			if (email === accounts[0].email) {
+				stream.push({ type: "error", reason: "error", error: { ...message,
+					stopReason: "error", errorMessage: "401 Unauthorized: token expired" } } as never);
+			} else {
+				stream.push({ type: "done", reason: "stop", message: { ...message, stopReason: "stop" } } as never);
+			}
+			stream.end();
+		});
+		return stream;
+	}) as never, () => undefined);
+	const result = await wrapped(
+		{ api: "openai-codex-responses", provider: "openai-codex", id: "fixture" } as never,
+		{ messages: [] } as never,
+	).result();
+
+	assert.equal(result.stopReason, "stop");
+	assert.deepEqual(calls, accounts.map((a) => a.email));
+	assert.equal(manager.getAccount(accounts[0].email)?.needsReauth, true);
+	assert.equal(manager.hasManualAccount(), false);
+});
+
+test("cancellation completes a stream still waiting for account initialization", async () => {
+	const manager = new AccountManager({ data: { version: 1, accounts: [] }, save() {} });
+	manager.beginInitialization();
+	const controller = new AbortController();
+	const wrapped = createStreamWrapper(manager, (() => assert.fail("must not start")) as never, () => undefined);
+	const stream = wrapped(
+		{ api: "openai-codex-responses", provider: "openai-codex", id: "fixture" } as never,
+		{ messages: [] } as never,
+		{ signal: controller.signal },
+	);
+	controller.abort();
+	try {
+		const result = await Promise.race([
+			stream.result(),
+			new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 100)),
+		]);
+		assert.notEqual(result, "timeout");
+		assert.equal(typeof result === "object" ? result.stopReason : undefined, "aborted");
+	} finally {
+		manager.markReady();
+	}
+});
+
+test("unavailable accounts report reauthentication rather than asking to add duplicates", () => {
+	const manager = new AccountManager({
+		data: { version: 1, accounts: [{ ...account("rejected@example.com"), needsReauth: true }] },
+		save() {},
+	});
+	assert.match(manager.availabilityError(), /\/multicodex reauth rejected@example\.com/);
+	assert.doesNotMatch(manager.availabilityError(), /\/multicodex add/);
+});
+
+test("cancelling an active provider preserves its partial response and usage", async () => {
+	const controller = new AbortController();
+	const manager = new AccountManager({ data: { version: 1, accounts: [account("connected@example.com")] }, save() {} });
+	manager.refreshStaleUsage = async () => {};
+	const wrapped = createStreamWrapper(manager, ((model: any, _context: any, options: any) => {
+		const stream = createAssistantMessageEventStream();
+		const message = {
+			role: "assistant", api: model.api, provider: model.provider, model: model.id,
+			content: [{ type: "text", text: "Partial response" }],
+			usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+			timestamp: Date.now(),
+		};
+		options.signal.addEventListener("abort", () => {
+			stream.push({ type: "error", reason: "aborted", error: { ...message,
+				stopReason: "aborted", errorMessage: "Request was aborted" } } as never);
+			stream.end();
+		}, { once: true });
+		queueMicrotask(() => controller.abort());
+		return stream;
+	}) as never, () => undefined);
+	const result = await wrapped(
+		{ api: "openai-codex-responses", provider: "openai-codex", id: "fixture" } as never,
+		{ messages: [] } as never,
+		{ signal: controller.signal },
+	).result();
+	assert.equal(result.stopReason, "aborted");
+	assert.equal(result.usage.totalTokens, 12);
+	assert.deepEqual(result.content, [{ type: "text", text: "Partial response" }]);
 });
 
 test("refreshes usage after agent settles rather than after every turn", () => {

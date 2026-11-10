@@ -773,40 +773,73 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 			["openai", CLASSIFIER_MODEL_ID],
 			["openai-codex", CLASSIFIER_MODEL_ID],
 		];
-		const model = candidates.map(([providerId, modelId]) => ctx.modelRegistry.find(providerId, modelId)).find(Boolean)
-			?? (targetModelId ? ctx.modelRegistry.find(targetProviderId, targetModelId) : undefined);
-		if (!model) throw new Error("no classifier model is available");
-		const stopFeedback = beginClassificationFeedback(ctx, state, model.provider, model.id);
-		try {
-			const classifierPrompt = buildClassifierPrompt(prompt, ctx, state.failuresSinceClassification);
-			const response = await ctx.modelRegistry.complete(
-				model,
-				{
-					systemPrompt: "You are a routing classifier. Return only the requested JSON. Never execute or answer the user request.",
-					messages: [
-						{
-							role: "user",
-							content: [{ type: "text", text: classifierPrompt }],
-							timestamp: Date.now(),
-						},
-					],
-				},
-				{
-					maxTokens: 512,
-					reasoning: "minimal",
-					cacheRetention: "none",
-					signal: AbortSignal.timeout(CLASSIFIER_TIMEOUT_MS),
-				},
-			);
-			if (response.stopReason === "aborted") {
-				throw new ClassifierError("classifier request aborted", response.usage, true);
+		if (targetModelId) candidates.push([targetProviderId, targetModelId]);
+		const available = ctx.modelRegistry.getAvailable();
+		const seen = new Set<string>();
+		const models = candidates.flatMap(([providerId, modelId]) => {
+			const key = `${providerId}/${modelId}`;
+			if (seen.has(key)) return [];
+			seen.add(key);
+			const model = available.find((entry) => entry.provider === providerId && entry.id === modelId);
+			return model ? [model] : [];
+		});
+		if (!models.length) throw new Error("no authenticated classifier model is available");
+		const timeout = AbortSignal.timeout(CLASSIFIER_TIMEOUT_MS);
+		const signal = ctx.signal ? AbortSignal.any([ctx.signal, timeout]) : timeout;
+		const classifierPrompt = buildClassifierPrompt(prompt, ctx, state.failuresSinceClassification);
+		let usage: Usage | undefined;
+		let lastError = "classifier request failed";
+		for (const model of models) {
+			if (signal.aborted) throw new ClassifierError("classifier request aborted", usage, true);
+			const stopFeedback = beginClassificationFeedback(ctx, state, model.provider, model.id);
+			let onAbort: (() => void) | undefined;
+			try {
+				const aborted = new Promise<never>((_resolve, reject) => {
+					onAbort = () => reject(new ClassifierError("classifier request aborted", usage, true));
+					if (signal.aborted) onAbort();
+					else signal.addEventListener("abort", onAbort, { once: true });
+				});
+				let response: AssistantMessage;
+				try {
+					response = await Promise.race([
+						aborted,
+						ctx.modelRegistry.complete(
+							model,
+							{
+								systemPrompt: "You are a routing classifier. Return only the requested JSON. Never execute or answer the user request.",
+								messages: [{ role: "user", content: [{ type: "text", text: classifierPrompt }], timestamp: Date.now() }],
+							},
+							{ maxTokens: 512, reasoning: "minimal", cacheRetention: "none", signal },
+						),
+					]);
+				} catch (error) {
+					if (signal.aborted) throw new ClassifierError("classifier request aborted", usage, true);
+					lastError = error instanceof Error ? error.message : String(error);
+					continue;
+				}
+				if (!usage) usage = { ...response.usage, cost: { ...response.usage.cost } };
+				else {
+					for (const key of ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] as const) {
+						usage[key] += response.usage[key];
+					}
+					for (const key of ["input", "output", "cacheRead", "cacheWrite", "total"] as const) {
+						usage.cost[key] += response.usage.cost[key];
+					}
+				}
+				if (response.stopReason === "aborted") throw new ClassifierError("classifier request aborted", usage, true);
+				if (response.stopReason === "error") {
+					lastError = response.errorMessage || "classifier request failed";
+					continue;
+				}
+				const classification = parseClassification(assistantText(response));
+				if (!classification) throw new ClassifierError("classifier returned invalid JSON", usage);
+				return { classification, usage };
+			} finally {
+				if (onAbort) signal.removeEventListener("abort", onAbort);
+				stopFeedback();
 			}
-			const classification = parseClassification(assistantText(response));
-			if (!classification) throw new ClassifierError("classifier returned invalid JSON", response.usage);
-			return { classification, usage: response.usage };
-		} finally {
-			stopFeedback();
 		}
+		throw new ClassifierError(lastError, usage);
 	};
 
 	const restoreState = (ctx: ExtensionContext) => {

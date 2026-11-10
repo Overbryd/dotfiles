@@ -40,9 +40,11 @@ test("separate callers cancel independently; shutdown cancels only owned broker 
 });
 
 test("broker stream never rotates or replays after forwarded output and redacts failures",async()=>{
+ for(const errorMessage of ['quota private-provider-canary','401 Unauthorized private-provider-canary']) {
  let starts=0;const manager={waitUntilReady:async()=>{},getAvailableManualAccount:()=>({email:emails[0]}),hasManualAccount:()=>true,ensureValidToken:async()=>"private-token",isBrokerAccount:()=>true};
- const wrap=createStreamWrapper(manager as never,(()=>{starts++;const stream=createAssistantMessageEventStream();queueMicrotask(()=>{stream.push({type:'start',partial:{}} as never);stream.push({type:'error',reason:'error',error:{errorMessage:'quota private-provider-canary',stopReason:'error',content:[]}} as never);stream.end();});return stream;}) as never,()=>undefined);
+ const wrap=createStreamWrapper(manager as never,(()=>{starts++;const stream=createAssistantMessageEventStream();queueMicrotask(()=>{stream.push({type:'start',partial:{}} as never);stream.push({type:'error',reason:'error',error:{errorMessage,stopReason:'error',content:[]}} as never);stream.end();});return stream;}) as never,()=>undefined);
  const stream=wrap({provider:'openai-codex',api:'openai-codex-responses',id:'fixture'} as never,{messages:[]} as never);const events=[];for await(const e of stream)events.push(e);assert.equal(starts,1);assert.equal(events.length,2);assert.equal((events[1] as any).error.errorMessage,'Codex provider request failed');
+ }
 });
 test("broker-only policy calls do not resurrect legacy reauth state or accept legacy updates",async()=>{
  const initial=data();(initial.accounts[0] as any).needsReauth=true;const manager=new AccountManager({data:initial,broker:{binary:'/synthetic/cli',config:'/synthetic/client.json',accounts:bindings},requestToken:async(options:any)=>token(options.binding)});

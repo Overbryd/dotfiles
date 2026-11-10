@@ -861,6 +861,92 @@ test("session provider preference can explicitly switch locked API back to Codex
 	assert.equal(h.providerId, "openai-codex");
 });
 
+test("classification skips catalog models without configured authentication", async () => {
+	const h = harness([], "amazon-bedrock", "eu.anthropic.claude-sonnet-5");
+	const available = h.context.modelRegistry.getAvailable();
+	h.context.modelRegistry.getAvailable = () => available.filter((model: any) => model.provider === "openai");
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.handlers.get("before_agent_start")?.({ prompt: "Small change" }, h.context);
+
+	assert.deepEqual(h.classifierProviders, ["openai"]);
+});
+
+test("classification retries a connected provider when Codex returns an error", async () => {
+	const h = harness([
+		{ ...assistantClassification("routine"), content: [], stopReason: "error", errorMessage: "MultiCodex unavailable" },
+		assistantClassification("routine"),
+	], "openai-codex");
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.handlers.get("before_agent_start")?.({ prompt: "Small change" }, h.context);
+
+	assert.deepEqual(h.classifierProviders, ["openai-codex", "openai"]);
+	assert.equal(h.entries.at(-1).data.source, "classifier");
+	assert.equal(h.providerId, "openai-codex", "classifier failover must not change the session provider");
+	assert.equal(h.notifications.length, 0);
+	assert.equal(h.entries.at(-1).data.classifierUsage.totalTokens, 240);
+});
+
+test("classification retries another provider after an authentication exception", async () => {
+	const h = harness([assistantClassification("routine")], "openai-codex");
+	const complete = h.context.modelRegistry.complete;
+	const calls: string[] = [];
+	h.context.modelRegistry.complete = (model: any, ...args: any[]) => {
+		calls.push(model.provider);
+		if (model.provider === "openai-codex") throw new Error("Codex disconnected");
+		return complete(model, ...args);
+	};
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.handlers.get("before_agent_start")?.({ prompt: "Small change" }, h.context);
+
+	assert.deepEqual(calls, ["openai-codex", "openai"]);
+	assert.equal(h.entries.at(-1).data.source, "classifier");
+});
+
+test("classifier cancellation settles even when the provider ignores its abort signal", async () => {
+	const h = harness();
+	const controller = new AbortController();
+	h.context.signal = controller.signal;
+	h.context.modelRegistry.complete = () => new Promise(() => {});
+	await h.handlers.get("session_start")?.({}, h.context);
+	const pending = h.handlers.get("before_agent_start")?.({ prompt: "Small change" }, h.context);
+	controller.abort();
+	await Promise.race([
+		pending,
+		new Promise((_, reject) => setTimeout(() => reject(new Error("classifier did not settle")), 100)),
+	]);
+
+	assert.equal(h.entries.at(-1).data.source, "fallback");
+	assert.equal(h.notifications.length, 0);
+});
+
+test("classifier deadline settles even when a disconnected provider never returns", async (t) => {
+	const timeout = AbortSignal.timeout.bind(AbortSignal);
+	t.mock.method(AbortSignal, "timeout", () => timeout(10));
+	const h = harness();
+	h.context.modelRegistry.complete = () => new Promise(() => {});
+	await h.handlers.get("session_start")?.({}, h.context);
+	await Promise.race([
+		h.handlers.get("before_agent_start")?.({ prompt: "Small change" }, h.context),
+		new Promise((_, reject) => setTimeout(() => reject(new Error("classifier deadline was ignored")), 100)),
+	]);
+
+	assert.equal(h.entries.at(-1).data.source, "fallback");
+	assert.equal(h.thinkingLevel, "high");
+	assert.equal(h.notifications.length, 0);
+});
+
+test("classification with no authenticated models keeps the current session usable", async () => {
+	const h = harness();
+	h.context.modelRegistry.getAvailable = () => [];
+	await h.handlers.get("session_start")?.({}, h.context);
+	await h.handlers.get("before_agent_start")?.({ prompt: "Small change" }, h.context);
+
+	assert.equal(h.classifierCalls, 0);
+	assert.equal(h.entries.at(-1).data.source, "fallback");
+	assert.match(h.entries.at(-1).data.rationale, /no authenticated classifier/);
+	assert.equal(h.modelId, "gpt-5.6-sol");
+});
+
 test("silently falls back when the classifier is aborted by touch-grass timeout", async () => {
 	const aborted = {
 		...assistantClassification("routine"),
