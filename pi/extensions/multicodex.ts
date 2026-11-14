@@ -1640,23 +1640,28 @@ function safelyUpdateStatus(ctx: ExtensionContext, accountManager: AccountManage
 	}
 }
 
-async function refreshStatus(
+export async function refreshStatus(
 	ctx: ExtensionContext,
 	accountManager: AccountManager,
 	touchGrass: TouchGrassController | undefined,
 	force = false,
 ) {
-	safelyUpdateStatus(ctx, accountManager, touchGrass);
-	const account = accountManager.getActiveAccount();
-	if (account && ctx.model?.provider === PROVIDER_ID) await accountManager.refreshUsageForAccount(account, { force });
-	if (ctx.model?.provider === PROVIDER_ID) {
-		const allowCredits = !(touchGrass?.isEnabled() ?? false);
-		const available = accountManager.hasManualAccount()
-			? accountManager.getAvailableManualAccount(new Set(), allowCredits)
-			: await accountManager.activateBestAccount({ allowCredits });
-		if (available) touchGrass?.clearPause();
+	try {
+		updateStatus(ctx, accountManager, touchGrass);
+		const account = accountManager.getActiveAccount();
+		if (account && ctx.model?.provider === PROVIDER_ID) await accountManager.refreshUsageForAccount(account, { force });
+		if (ctx.model?.provider === PROVIDER_ID) {
+			const allowCredits = !(touchGrass?.isEnabled() ?? false);
+			const available = accountManager.hasManualAccount()
+				? accountManager.getAvailableManualAccount(new Set(), allowCredits)
+				: await accountManager.activateBestAccount({ allowCredits });
+			if (available) touchGrass?.clearPause();
+		}
+		updateStatus(ctx, accountManager, touchGrass);
+	} catch (error) {
+		// Session replacement can invalidate ctx while a usage request is in flight.
+		if (!isStaleContextError(error)) throw error;
 	}
-	safelyUpdateStatus(ctx, accountManager, touchGrass);
 }
 
 async function loginAndUse(_pi: ExtensionAPI, ctx: ExtensionCommandContext, accountManager: AccountManager, identifier: string) {

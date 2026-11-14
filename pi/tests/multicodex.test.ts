@@ -12,6 +12,7 @@ import multicodex, {
 	isUsageStale,
 	parseUsageResponse,
 	pickBestAccount,
+	refreshStatus,
 } from "../extensions/multicodex.ts";
 
 function account(email: string) {
@@ -247,6 +248,41 @@ test("cancelling an active provider preserves its partial response and usage", a
 	assert.equal(result.stopReason, "aborted");
 	assert.equal(result.usage.totalTokens, 12);
 	assert.deepEqual(result.content, [{ type: "text", text: "Partial response" }]);
+});
+
+test("status refresh stops when its context becomes stale during usage refresh", async () => {
+	let stale = false;
+	let finishUsage!: () => void;
+	const pendingUsage = new Promise<void>((resolve) => { finishUsage = resolve; });
+	const ctx = {
+		hasUI: false,
+		get model() {
+			if (stale) throw new Error("This extension ctx is stale after session replacement or reload.");
+			return { provider: "openai-codex" };
+		},
+	};
+	const manager = {
+		getActiveAccount: () => account("fixture@example.com"),
+		refreshUsageForAccount: () => pendingUsage,
+		hasManualAccount() { assert.fail("stale refresh must not select an account"); },
+	};
+
+	const refreshing = refreshStatus(ctx as never, manager as never, undefined);
+	stale = true;
+	finishUsage();
+	await assert.doesNotReject(refreshing);
+});
+
+test("status refresh preserves unrelated failures", async () => {
+	const failure = new Error("usage refresh failed");
+	const manager = {
+		getActiveAccount: () => account("fixture@example.com"),
+		async refreshUsageForAccount() { throw failure; },
+	};
+	await assert.rejects(
+		refreshStatus({ hasUI: false, model: { provider: "openai-codex" } } as never, manager as never, undefined),
+		(error) => error === failure,
+	);
 });
 
 test("refreshes usage after agent settles rather than after every turn", () => {
