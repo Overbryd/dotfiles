@@ -1,0 +1,53 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+state="${XDG_STATE_HOME:-$HOME/.local/state}/pi-session-backup"
+mkdir -p "$state"
+chmod 700 "$state"
+exec > "$state/last-run.log" 2>&1
+
+stamp=""
+finish() {
+  local result=$?
+  if (( result != 0 )); then
+    printf '%s exit=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$result" > "$state/last-failure"
+  fi
+  [[ -z "$stamp" ]] || rm -f "$stamp"
+}
+trap finish EXIT
+
+mark_success() {
+  stamp=$(mktemp "$state/.$1.XXXXXX")
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$stamp"
+  mv -f "$stamp" "$state/$1"
+  stamp=""
+}
+
+source="$HOME/.pi/agent/sessions"
+destination="$HOME/Dropbox/Backups/pi/agent/sessions"
+printf 'Started %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+if [[ ! -d "$source" ]]; then
+  printf 'Pi session backup source directory missing\n' >&2
+  exit 1
+fi
+# Apple's openrsync cannot write this File Provider destination under launchd.
+rsync="${HOMEBREW_PREFIX:-/opt/homebrew}/bin/rsync"
+if [[ ! -x "$rsync" ]]; then
+  printf 'Homebrew rsync missing: %s\n' "$rsync" >&2
+  exit 1
+fi
+# Keep a local recovery copy even when Dropbox is unavailable. Preserve archived
+# sessions and timestamps, never deletions, source permissions or auth stores.
+mkdir -p "$state/sessions"
+"$rsync" -rlt "$source/" "$state/sessions/"
+mark_success last-local-success
+printf 'Local recovery copy completed\n'
+
+mkdir -p "$destination"
+[[ $(stat -f %Lp "$destination") == 700 ]] || chmod 700 "$destination"
+"$rsync" -rlt "$state/sessions/" "$destination/"
+mark_success last-dropbox-copy-success
+mark_success last-success
+rm -f "$state/last-failure"
+printf 'Completed %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

@@ -4,6 +4,7 @@
 import json
 import os
 from pathlib import Path
+import runpy
 import subprocess
 import tempfile
 import unittest
@@ -38,6 +39,39 @@ class TmuxPiTest(unittest.TestCase):
 
     def script(self, *args):
         return subprocess.run([str(SCRIPT), *args], env=self.env, text=True, capture_output=True)
+
+    def test_remaps_legacy_and_json_layouts_and_rejects_mismatched_panes(self):
+        remap = runpy.run_path(str(SCRIPT))["remap_layout"]
+        legacy = "ffff,80x24,0,0{40x24,0,0,3,39x24,41,0,7}"
+        restored = remap(legacy, ["3", "7"], ["8", "9"])
+        self.assertEqual("80x24,0,0{40x24,0,0,8,39x24,41,0,9}", restored.split(",", 1)[1])
+        layout = {"V": 2, "L": {"t": "h", "w": 80, "h": 24, "c": [
+            {"t": "p", "I": "%3", "i": 0}, {"t": "p", "I": "%7", "i": 1}]}}
+        restored = json.loads(remap(json.dumps(layout), ["3", "7"], ["8", "9"]))
+        self.assertEqual(["%8", "%9"], [pane["I"] for pane in restored["L"]["c"]])
+        for original in (legacy, json.dumps(layout)):
+            with self.assertRaisesRegex(ValueError, "layout pane IDs do not match"):
+                remap(original, ["3", "99"], ["8", "9"])
+
+    def test_restores_a_legacy_layout_snapshot(self):
+        pane = self.tmux("display-message", "-p", "-t", "TestPi:TODAY", "#{pane_id}").stdout.strip()
+        pid = self.tmux("display-message", "-p", "-t", pane, "#{pane_pid}").stdout.strip()
+        self.tmux("set-option", "-p", "-t", pane, "@tmux-pi-shell", pid)
+        self.tmux("split-window", "-h", "-t", "TestPi:TODAY", "-c", str(self.root))
+        saved = self.script("save")
+        self.assertEqual(0, saved.returncode, saved.stderr)
+        state = Path(self.env["TMUX_PI_STATE"])
+        data = json.loads(state.read_text())
+        window = data["sessions"][0]["windows"][0]
+        ids = [pane["id"].removeprefix("%") for pane in window["panes"]]
+        window["layout"] = f"ffff,80x24,0,0{{40x24,0,0,{ids[0]},39x24,41,0,{ids[1]}}}"
+        state.write_text(json.dumps(data))
+        self.tmux("kill-server")
+
+        restored = self.script("restore", "--layout-only")
+
+        self.assertEqual(0, restored.returncode, restored.stderr)
+        self.assertEqual("2", self.tmux("display-message", "-p", "-t", "TestPi:TODAY", "#{window_panes}").stdout.strip())
 
     def test_requires_verified_pi_mapping_and_restores_names_and_split(self):
         session = self.root / "conversation.jsonl"
@@ -100,6 +134,7 @@ class TmuxPiTest(unittest.TestCase):
         self.assertEqual(str(self.root), self.tmux("show-options", "-qv", "-t", "TestPi", "@tms-root").stdout.strip())
 
     def test_layout_only_restore_does_not_launch_pi(self):
+        self.tmux("resize-window", "-t", "TestPi:TODAY", "-x", "160", "-y", "50")
         session = self.root / "conversation.jsonl"
         session.write_text(json.dumps({"type": "session", "version": 3, "cwd": str(self.root),
                                        "id": "test-session", "timestamp": "2026-10-15T00:00:00Z"}) + "\n")
@@ -115,6 +150,7 @@ class TmuxPiTest(unittest.TestCase):
         restored = self.script("restore", "--layout-only")
         self.assertEqual(0, restored.returncode, restored.stderr)
         self.assertFalse((self.root / "pi.args").exists())
+        self.assertEqual("160x50", self.tmux("display-message", "-p", "-t", "TestPi:TODAY", "#{window_width}x#{window_height}").stdout.strip())
         self.assertIn("0|TODAY|2", self.tmux("list-windows", "-t", "TestPi", "-F",
                                                   "#{window_index}|#{window_name}|#{window_panes}").stdout)
 

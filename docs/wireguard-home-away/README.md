@@ -47,7 +47,6 @@ This keeps laptops simple and reliable while roaming.
 
 - `.bin/wg-log`
   - decodes the WireGuard app tunnel log ring buffer (`--errors`, `--collapse`, `--follow`)
-  - see `tunnel-restart-dead-socket.md` for the failure it exposes
 - `.bin/wg-tunnel`
   - compiles and caches `.bin/wg-tunnel.swift`
   - controls app-managed tunnels through `NETunnelProviderManager`
@@ -94,6 +93,13 @@ Default behavior:
 - if HA cannot be queried, leave the tunnel unchanged
 
 Disconnect-on-return is disabled unless explicitly enabled in config.
+
+## Troubleshooting
+
+A tunnel can report connected without passing traffic after a restart. Check
+`wg-log --errors --collapse -n 50`; repeated `broken pipe` handshake failures can
+indicate a dead UDP socket. Toggling Wi-Fi off/on has restored traffic; verify a
+`Received handshake response` with `wg-log --follow` rather than trusting status.
 
 ## Related docs
 

@@ -44,6 +44,8 @@ This writes `~/Work/HelloFresh/.pi/tmux-pi/snapshot.json`; it does **not** overw
 
 When run outside tmux, restore creates the stable saved session and refuses if it already exists. Use `--new-sessions` to force that old behavior from inside tmux. Grouped `tms` view sessions such as `HelloFresh/ms1-local` are not duplicated in snapshots; they are recreated on demand by `tms` or `wssh`. Passing a view to `--session` resolves to its project anchor. To choose another private location, use `--file /absolute/path/snapshot.json` on `save` and `restore` instead of `--work-folder`. A scoped `save --session` always requires one of these destinations. Names match exactly, never by prefix. The snapshot directory must be private (700); an already-accessible directory/file is rejected rather than silently chmodded. Do not put snapshots in Git or a synced folder.
 
+Restore supports tmux 3.8 JSON layouts and older checksummed layouts, remapping pane IDs and restoring saved window dimensions in either format.
+
 The snapshot is `~/.local/state/tmux-pi/snapshot.json` (directory 700, file 600). It records tmux session/window names, indexes, pane layout, pane directories, and **exact** Pi JSONL paths and IDs. It is not an export or backup of the transcripts themselves: keep `~/.pi/agent/sessions/` too. Never commit or share the snapshot; paths and transcripts can be sensitive.
 
 To shut down safely, finish or abort active Pi/tool runs, then save again. Only after `save` reports **zero unresolved** should you stop the tmux server. Stopping the server terminates *all* processes running inside it, not just Pi, and does not preserve editor input, scrollback, background jobs or non-Pi processes. Restart:

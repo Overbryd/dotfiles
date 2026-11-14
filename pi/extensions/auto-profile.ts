@@ -878,7 +878,7 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 	const profileIsLocked = () => state.mode === "locked";
 
 	pi.on("before_agent_start", async (event, ctx) => {
-		if (profileIsLocked()) {
+		if (event.messageType === "custom" || profileIsLocked()) {
 			setStatus(ctx, state);
 			return;
 		}

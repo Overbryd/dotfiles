@@ -12,7 +12,7 @@
 - Make the smallest style-matching change. No unrelated cleanup or reformatting. Every changed line serves the request; mention unrelated dead code, don't delete it.
 - For behavior changes and fixes, default to one focused failing test, make it pass, then run the relevant suite.
 - Before multi-step work, give a short plan with verification. Skip for trivial work.
-- Save rediscovered repository facts in that repository's `AGENTS.md`.
+- Keep `AGENTS.md` limited to durable rules and essential repository facts. No session journals, dated reports, or test-result histories.
 - Edit existing files with `edit`; use `write` only for new files or full rewrites. Do not retry edits through shell commands or scripts.
 - After implementation, remove excess commentary.
 - Background processes: track own PIDs; kill only those. Never `pkill` by pattern; user may run same app.
@@ -26,16 +26,6 @@
 - Use `sayneat` for speech and local transcription; improve it instead of adding ASR wrappers. More tools: `~/.bin`.
 - Single big file to one of my own machines: `wsync send <file> [remote-dir]`, resumable, remote dir defaults to `~/transfer`; then `mv` into place. Never stream into a synced folder like `~/Dropbox`.
 - On explicit request, notify completion with `notify '<title>' '<short message>'`; never include secrets.
-
-# Repository facts
-
-- On `ms1`, Homebrew belongs to `binary` (`_binary`); `.bin/brew` runs it through sudo with `HOME=/opt/homebrew`. Preserve that HOME and run Brew as its owner, never root.
-- On `ms1`, `garmisch` uses a separate dotfiles checkout at `/usr/local/dotfiles`; edits to `partenkirchen`'s `~/Projects/dotfiles` do not update it.
-- `.profile.d/ca-certificates` points pip, Requests, and AWS SDKs at Homebrew's maintained CA bundle while preserving explicit overrides. `.profile.d/google-cloud-sdk` separately pins a supported Python and the SDK's CA-store property.
-- `tms` models each work directory as a stable tmux anchor/group and each terminal origin as a grouped view session; views share windows but navigate independently.
-- `wssh` passes `<local-host>-wssh` as its `TMS_VIEW` and must never detach other tmux clients.
-- `tmux-pi` snapshots project anchors, not their grouped `tms` views, because grouped views reference the same panes.
-- `pi/settings.json` excludes video/HyperFrames/transcription skills by default; `.bin/pi` opts them in only under `~/Dropbox/Videos` (override its boundary with `PI_VIDEO_SKILLS_ROOT`). Deploy settings with `make pi-settings` (which also pins `google-vertex` in `~/.pi/agent/auth.json` to the Parlant GenAI project/ADC so work-folder `.envrc` Google overrides do not hijack `gemini-4-argon`).
 
 # Language and platform
 

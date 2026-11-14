@@ -702,6 +702,21 @@ test("unavailable Codex Astra leaves current selection and auto mode unchanged",
 	assert.equal(h.classifierCalls, 1);
 });
 
+test("custom-message runs keep the current profile without classifying a missing user prompt", async () => {
+	const h = harness();
+	await h.handlers.get("session_start")?.({}, h.context);
+	const entries = [...h.entries];
+	await h.handlers.get("before_agent_start")?.({
+		messageType: "custom",
+		message: { role: "custom", customType: "empty-response-guard", content: "Continue" },
+	}, h.context);
+
+	assert.equal(h.classifierCalls, 0);
+	assert.equal(h.thinkingLevel, "medium");
+	assert.deepEqual(h.entries, entries);
+	assert.deepEqual(h.notifications, []);
+});
+
 test("bare automatic profiles never change the selected model", async () => {
 	for (const task of ["economy", "routine", "complex", "critical"]) {
 		const h = harness([assistantClassification(task)]);

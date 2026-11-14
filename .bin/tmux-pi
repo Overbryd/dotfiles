@@ -231,7 +231,28 @@ def validate(data):
 
 
 def remap_layout(layout, old_ids, new_ids):
-    # tmux window_layout embeds numeric pane IDs. They change across server restarts.
+    # tmux 3.8 uses JSON layouts; older snapshots use the checksummed string format.
+    if layout.lstrip().startswith("{"):
+        data = json.loads(layout)
+        if data.get("V") != 2:
+            raise ValueError("unsupported tmux JSON layout version")
+        mapped = dict(zip(old_ids, new_ids))
+        leaves = []
+
+        def remap(node):
+            if node["t"] == "p":
+                pane_id = node["I"].removeprefix("%")
+                leaves.append(pane_id)
+                node["I"] = "%" + mapped.get(pane_id, pane_id)
+            else:
+                for child in node["c"]:
+                    remap(child)
+
+        remap(data["L"])
+        if len(leaves) != len(old_ids) or set(leaves) != set(old_ids) or len(old_ids) != len(new_ids):
+            raise ValueError("layout pane IDs do not match the saved panes")
+        return json.dumps(data, separators=(",", ":"))
+    # Legacy layouts embed numeric pane IDs. They change across server restarts.
     leaves = re.findall(r"\d+x\d+,\d+,\d+,(\d+)(?=[},\]])", layout)
     if len(leaves) != len(old_ids) or set(leaves) != set(old_ids) or len(old_ids) != len(new_ids):
         raise ValueError("layout pane IDs do not match the saved panes")
@@ -336,9 +357,14 @@ def restore(dry_run=False, layout_only=False, source=STATE, new_sessions=False):
                 current_panes = rows("list-panes", "-t", target,
                                      columns=["#{pane_index}", "#{pane_id}"])
                 new_ids = [p[1].removeprefix("%") for p in current_panes]
-                expected = re.match(r"\w+,([0-9]+)x([0-9]+),", window["layout"])
-                if expected:
-                    tmux("resize-window", "-t", target, "-x", expected[1], "-y", expected[2])
+                if window["layout"].lstrip().startswith("{"):
+                    root = json.loads(window["layout"])["L"]
+                    size = (root["w"], root["h"])
+                else:
+                    expected = re.match(r"\w+,([0-9]+)x([0-9]+),", window["layout"])
+                    size = expected.groups() if expected else None
+                if size:
+                    tmux("resize-window", "-t", target, "-x", size[0], "-y", size[1])
                 tmux("select-layout", "-t", target, remap_layout(window["layout"], old_ids, new_ids))
             for pane in panes:
                 t = f'{target}.{pane["index"]}'

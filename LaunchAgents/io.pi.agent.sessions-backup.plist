@@ -8,7 +8,7 @@
 	<array>
 		<string>/bin/bash</string>
 		<string>-c</string>
-		<string>/bin/mkdir -p "$HOME/Dropbox/Backups/pi/agent/sessions" &amp;&amp; /usr/bin/rsync -a "$HOME/.pi/agent/sessions/" "$HOME/Dropbox/Backups/pi/agent/sessions/"</string>
+		<string>exec "$HOME/.bin/backup-pi-sessions"</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

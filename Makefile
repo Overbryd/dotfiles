@@ -13,8 +13,6 @@ PNPM_CONFIG_FILES := ~/Library/Preferences/pnpm/config.yaml
 DOTFILES_ROOT = $(HOME)/dotfiles
 BREW = $(DOTFILES_ROOT)/.bin/brew
 PI_FORK_ROOT = $(HOME)/Projects/JavaScript/pi
-PI_INSTALLED_PACKAGE = $(HOMEBREW_PREFIX)/lib/node_modules/@earendil-works/pi-coding-agent/package.json
-PI_INSTALLED_AI = $(HOMEBREW_PREFIX)/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai
 NODE_VERSION = 20.12.0
 NPM_VERSION = 11.11.0
 NPM_MIN_RELEASE_AGE = 30
@@ -591,27 +589,24 @@ pi-settings: pi/settings.json | ~/.pi/agent
 	chmod 600 $$auth_tmp; \
 	mv $$auth_tmp $(HOME)/.pi/agent/auth.json
 
-# Build the pi fork that .bin/pi prefers over the Homebrew install.
-# Keep the globally installed fallback on the fork's exact package release, then reuse
-# that release's generated pi-ai model data so the fork build stays offline.
+# Build the main Pi installation without modifying a privileged global fallback.
+# Select an age-vetted release/lock first; reuse its published model data offline.
 pi-fork: $(PI_FORK_ROOT)/.git
-	# Exact fork compatibility is the only exception to the npm release-age policy.
-	fork_version=$$(node -p "require('$(PI_FORK_ROOT)/packages/coding-agent/package.json').version"); \
-	installed_version=$$(node -p "require('$(PI_INSTALLED_PACKAGE)').version" 2>/dev/null || true); \
-	if [ "$$installed_version" != "$$fork_version" ]; then \
-		echo "pi-fork: aligning global pi $$installed_version -> $$fork_version"; \
-		sudo -Eu binary env HOME=$(HOMEBREW_PREFIX) NPM_CONFIG_MIN_RELEASE_AGE=0 npm --prefix $(HOMEBREW_PREFIX) install -g --ignore-scripts @earendil-works/pi-coding-agent@$$fork_version; \
-	fi
-	test "$$(node -p "require('$(PI_INSTALLED_PACKAGE)').version")" = "$$(node -p "require('$(PI_FORK_ROOT)/packages/coding-agent/package.json').version")"
-	test "$$(node -p "require('$(PI_INSTALLED_AI)/package.json').version")" = "$$(node -p "require('$(PI_FORK_ROOT)/packages/ai/package.json').version")"
-	# The Pi repository sets min-release-age=2; command-line config keeps our 30-day dependency gate authoritative.
-	test "$$(npm --prefix $(PI_FORK_ROOT) --min-release-age=$(NPM_MIN_RELEASE_AGE) config get min-release-age)" = "$(NPM_MIN_RELEASE_AGE)"
-	npm --prefix $(PI_FORK_ROOT) ci --ignore-scripts --min-release-age=$(NPM_MIN_RELEASE_AGE)
-	rm -rf $(PI_FORK_ROOT)/packages/ai/src/providers/data
-	cp -R $(PI_INSTALLED_AI)/dist/providers/data $(PI_FORK_ROOT)/packages/ai/src/providers/data
-	npm --prefix $(PI_FORK_ROOT) run build:offline
-	# Stable offline provider test present in both older and current fork bases.
-	npm --prefix $(PI_FORK_ROOT)/packages/ai test -- test/openai-responses-compat.test.ts
+	set -eu; \
+	cd "$(PI_FORK_ROOT)"; \
+	fork_version=$$(node -p "require('./packages/coding-agent/package.json').version"); \
+	test "$$(npm --min-release-age=$(NPM_MIN_RELEASE_AGE) config get min-release-age)" = "$(NPM_MIN_RELEASE_AGE)"; \
+	npm ci --ignore-scripts --min-release-age=$(NPM_MIN_RELEASE_AGE); \
+	model_data=$$(mktemp -d); \
+	trap 'rm -rf "$$model_data"' EXIT; \
+	(cd "$$model_data" && npm pack --ignore-scripts --json "@earendil-works/pi-ai@$$fork_version" > pack.json && \
+		tar -xzf "$$(node -p "require('./pack.json')[0].filename")" package/dist/providers/data); \
+	rm -rf packages/ai/src/providers/data; \
+	mkdir -p packages/ai/src/providers/data; \
+	cp -R "$$model_data/package/dist/providers/data/." packages/ai/src/providers/data/; \
+	npm run build:offline; \
+	cd packages/ai; \
+	node ../../node_modules/vitest/dist/cli.js --run test/openai-responses-compat.test.ts
 
 $(PI_FORK_ROOT)/.git:
 	git clone git@github.com:Overbryd/pi.git $(PI_FORK_ROOT)
