@@ -132,12 +132,14 @@ function harness(
 		api: "anthropic-messages",
 		reasoning: true,
 	});
-	models.set("google-vertex/gemini-4-argon", {
-		id: "gemini-4-argon",
-		provider: "google-vertex",
-		api: "google-vertex",
-		reasoning: true,
-	});
+	for (const id of ["gemini-4-hydrogen", "gemini-4-argon", "gemini-4-carbon"]) {
+		models.set(`google-vertex/${id}`, {
+			id,
+			provider: "google-vertex",
+			api: "google-vertex",
+			reasoning: true,
+		});
+	}
 	let currentModel = models.get(`${initialProvider}/${initialModelId}`)!;
 	let thinkingLevel = "medium";
 	let responseIndex = 0;
@@ -216,7 +218,7 @@ function harness(
 			streamSimple(model: any, requestContext: any, options: any) {
 				return {
 					result: async () => {
-						assert.match(model.id, /(?:^|\.)(?:gpt-5\.6-luna|gemini-4-argon)$/);
+						assert.match(model.id, /(?:^|\.)(?:gpt-5\.6-luna|gemini-4-(?:hydrogen|argon|carbon))$/);
 						classifierProviders.push(model.provider);
 						assert.equal(options.reasoning, "minimal");
 						assert.equal(options.maxTokens, 512);
@@ -378,22 +380,91 @@ test("auto resolves Bedrock models through canonical, API-inferred, and regional
 	}
 });
 
-test("google shorthand uses Vertex Argon and keeps automatic thinking on that model", async () => {
-	const h = harness([assistantClassification("routine"), assistantClassification("complex")]);
+test("auto google routes Gemini 4 family across Hydrogen, Argon, and Carbon", async () => {
+	const invalid = assistantClassification("routine");
+	invalid.content[0].text = "not json";
+	const h = harness([
+		assistantClassification("economy"),
+		assistantClassification("routine"),
+		assistantClassification("complex"),
+		assistantClassification("critical"),
+		invalid,
+		assistantClassification("routine"),
+	]);
 	await h.handlers.get("session_start")?.({}, h.context);
 	await h.commands.get("profile").handler("auto google", h.context);
 
 	assert.equal(h.providerId, "google-vertex");
 	assert.equal(h.modelId, "gemini-4-argon");
-	assert.equal(h.entries.at(-1).data.autoScope, "thinking");
+	assert.equal(h.entries.at(-1).data.autoScope, "family");
+	assert.equal(h.entries.at(-1).data.familyId, "gemini-4");
 
-	for (const effort of ["medium", "high"]) {
+	for (const [model, alias, effort] of [
+		["gemini-4-hydrogen", "hydrogen", "medium"],
+		["gemini-4-hydrogen", "hydrogen", "medium"],
+		["gemini-4-argon", "argon", "high"],
+		["gemini-4-carbon", "carbon", "xhigh"],
+		["gemini-4-argon", "argon", "high"],
+		["gemini-4-hydrogen", "hydrogen", "medium"],
+	]) {
 		await h.handlers.get("before_agent_start")?.({ prompt: "Next task" }, h.context);
 		assert.equal(h.providerId, "google-vertex");
-		assert.equal(h.modelId, "gemini-4-argon");
+		assert.equal(h.modelId, model);
 		assert.equal(h.thinkingLevel, effort);
+		assert.match(h.statuses.at(-1)?.[1] ?? "", new RegExp(`auto-family google/${alias}:${effort}`));
 	}
-	assert.deepEqual(h.classifierProviders, ["google-vertex", "google-vertex"]);
+
+	for (let i = 0; i < 3; i++) {
+		await h.handlers.get("tool_result")?.({ toolName: "edit", isError: false }, h.context);
+		await h.handlers.get("tool_result")?.({ toolName: "bash", input: { command: "npm test" }, isError: true }, h.context);
+	}
+	assert.equal(h.providerId, "google-vertex");
+	assert.equal(h.modelId, "gemini-4-argon");
+	assert.equal(h.thinkingLevel, "high");
+	assert.deepEqual(h.classifierProviders, Array(6).fill("google-vertex"));
+});
+
+test("supports specific Google profiles for Hydrogen, Argon, and Carbon in auto and locked modes", async () => {
+	for (const [alias, modelId] of [
+		["hydrogen", "gemini-4-hydrogen"],
+		["argon", "gemini-4-argon"],
+		["carbon", "gemini-4-carbon"],
+	] as const) {
+		for (const command of [`auto google/${alias}`, `auto ${modelId}`, `auto ${alias}`]) {
+			const h = harness([assistantClassification("routine"), assistantClassification("complex")]);
+			await h.handlers.get("session_start")?.({}, h.context);
+			await h.commands.get("profile").handler(command, h.context);
+
+			assert.equal(h.providerId, "google-vertex", command);
+			assert.equal(h.modelId, modelId, command);
+			assert.equal(h.entries.at(-1).data.autoScope, "thinking", command);
+
+			for (const effort of ["medium", "high"]) {
+				await h.handlers.get("before_agent_start")?.({ prompt: "Next task" }, h.context);
+				assert.equal(h.providerId, "google-vertex", command);
+				assert.equal(h.modelId, modelId, command);
+				assert.equal(h.thinkingLevel, effort, command);
+				assert.match(h.statuses.at(-1)?.[1] ?? "", new RegExp(`auto-thinking google/${alias}:${effort}`));
+			}
+		}
+
+		for (const [profile, expectedEffort] of [
+			[`google/${alias}:high`, "high"],
+			[`google/${alias}`, "medium"],
+			[`${alias}:low`, "low"],
+		] as const) {
+			const h = harness([assistantClassification("critical")]);
+			await h.handlers.get("session_start")?.({}, h.context);
+			await h.commands.get("profile").handler(profile, h.context);
+			await h.handlers.get("before_agent_start")?.({ prompt: "Small change" }, h.context);
+
+			assert.equal(h.providerId, "google-vertex", profile);
+			assert.equal(h.modelId, modelId, profile);
+			assert.equal(h.thinkingLevel, expectedEffort, profile);
+			assert.equal(h.classifierCalls, 0, profile);
+			assert.match(h.statuses.at(-1)?.[1] ?? "", new RegExp(`locked google/${alias}:${expectedEffort}`));
+		}
+	}
 });
 
 test("Gemini classification uses provider-neutral streaming rather than raw completion", async () => {

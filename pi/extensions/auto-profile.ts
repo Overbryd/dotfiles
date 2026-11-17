@@ -18,7 +18,10 @@ const LEGACY_SOL_MODEL_ID = "gpt-5.6-sol";
 const TERRA_MODEL_ID = "gpt-5.6-terra";
 const GPT_FAMILY_ID = "gpt-5.6-6";
 const CLAUDE_FAMILY_ID = "claude-5";
+const GEMINI_FAMILY_ID = "gemini-4";
+const GEMINI_HYDROGEN_MODEL_ID = "gemini-4-hydrogen";
 const GEMINI_ARGON_MODEL_ID = "gemini-4-argon";
+const GEMINI_CARBON_MODEL_ID = "gemini-4-carbon";
 const GPT_FAMILY_MODEL_IDS = [CLASSIFIER_MODEL_ID, TERRA_MODEL_ID, SOL_MODEL_ID, ASTRA_MODEL_ID] as const;
 const GPT_FAMILY_MODEL_CANDIDATES = [
 	[CLASSIFIER_MODEL_ID],
@@ -26,15 +29,32 @@ const GPT_FAMILY_MODEL_CANDIDATES = [
 	[SOL_MODEL_ID, LEGACY_SOL_MODEL_ID],
 	[ASTRA_MODEL_ID],
 ] as const;
+const GEMINI_FAMILY_MODEL_IDS = [
+	GEMINI_HYDROGEN_MODEL_ID,
+	GEMINI_HYDROGEN_MODEL_ID,
+	GEMINI_ARGON_MODEL_ID,
+	GEMINI_CARBON_MODEL_ID,
+] as const;
 const CLASSIFIER_TIMEOUT_MS = 10_000;
 const MAX_REQUEST_CHARS = 12_000;
 const MAX_CONTEXT_CHARS = 4_000;
 
-const MODEL_ALIASES = {
+const OPENAI_MODEL_ALIASES = {
 	astra: ASTRA_MODEL_ID,
 	sol: SOL_MODEL_ID,
 	terra: TERRA_MODEL_ID,
 	luna: CLASSIFIER_MODEL_ID,
+} as const;
+
+const GEMINI_MODEL_ALIASES = {
+	hydrogen: GEMINI_HYDROGEN_MODEL_ID,
+	argon: GEMINI_ARGON_MODEL_ID,
+	carbon: GEMINI_CARBON_MODEL_ID,
+} as const;
+
+const MODEL_ALIASES = {
+	...OPENAI_MODEL_ALIASES,
+	...GEMINI_MODEL_ALIASES,
 } as const;
 
 const MODEL_NAMES: Record<string, string> = {
@@ -43,6 +63,9 @@ const MODEL_NAMES: Record<string, string> = {
 	[LEGACY_SOL_MODEL_ID]: "sol",
 	[TERRA_MODEL_ID]: "terra",
 	[CLASSIFIER_MODEL_ID]: "luna",
+	[GEMINI_HYDROGEN_MODEL_ID]: "hydrogen",
+	[GEMINI_ARGON_MODEL_ID]: "argon",
+	[GEMINI_CARBON_MODEL_ID]: "carbon",
 };
 
 const EXPLICIT_EFFORTS = new Set<ModelThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
@@ -130,7 +153,7 @@ function getFamilyConfigs(ctx: ProfileContext): Record<string, FamilyConfig> {
 export type AutoProfileTask = "economy" | "routine" | "complex" | "critical";
 export type AutoProfileMode = "auto" | "locked";
 export type AutoProfileScope = "thinking" | "family";
-export type AutoProfileFamily = typeof GPT_FAMILY_ID | typeof CLAUDE_FAMILY_ID | string;
+export type AutoProfileFamily = typeof GPT_FAMILY_ID | typeof CLAUDE_FAMILY_ID | typeof GEMINI_FAMILY_ID | string;
 export type AutoProfileProvider = string;
 export type AutoProfileSource = "classifier" | "fallback" | "manual" | "escalation";
 
@@ -198,6 +221,7 @@ function parseProvider(value: string): AutoProfileProvider | undefined {
 	if (value === "api" || value === "openai") return "openai";
 	if (value === "codex" || value === "openai-codex") return "openai-codex";
 	if (value === "bedrock" || value === "amazon-bedrock") return "amazon-bedrock";
+	if (value === "google" || value === "google-vertex") return "google-vertex";
 	return undefined;
 }
 
@@ -205,7 +229,23 @@ function providerName(providerId: AutoProfileProvider | undefined): string {
 	if (providerId === "openai-codex") return "codex";
 	if (providerId === "openai") return "api";
 	if (providerId === "amazon-bedrock") return "bedrock";
+	if (providerId === "google-vertex") return "google";
 	return providerId ?? "unset";
+}
+
+function resolveGeminiModelAlias(value: string): string | undefined {
+	const lower = value.toLowerCase();
+	if (Object.hasOwn(GEMINI_MODEL_ALIASES, lower)) {
+		return GEMINI_MODEL_ALIASES[lower as keyof typeof GEMINI_MODEL_ALIASES];
+	}
+	if (
+		lower === GEMINI_HYDROGEN_MODEL_ID ||
+		lower === GEMINI_ARGON_MODEL_ID ||
+		lower === GEMINI_CARBON_MODEL_ID
+	) {
+		return lower;
+	}
+	return undefined;
 }
 
 function legacyAutoScope(providerId: string | undefined, modelId: string | undefined): AutoProfileScope {
@@ -215,7 +255,12 @@ function legacyAutoScope(providerId: string | undefined, modelId: string | undef
 }
 
 function isAutoProfileFamily(value: unknown, ctx: ProfileContext): value is AutoProfileFamily {
-	return value === GPT_FAMILY_ID || value === CLAUDE_FAMILY_ID || (typeof value === "string" && Object.hasOwn(getFamilyConfigs(ctx), value));
+	return (
+		value === GPT_FAMILY_ID ||
+		value === CLAUDE_FAMILY_ID ||
+		value === GEMINI_FAMILY_ID ||
+		(typeof value === "string" && Object.hasOwn(getFamilyConfigs(ctx), value))
+	);
 }
 
 function modelName(modelId: string | undefined): string {
@@ -285,7 +330,8 @@ export function resolveAutoDecision(
 	autoScope: AutoProfileScope = "family",
 ): AutoProfileDecision {
 	const { tier, effort } = classificationProfile(classification, highRisk);
-	const modelId = autoScope === "thinking" && sessionModelId ? sessionModelId : GPT_FAMILY_MODEL_IDS[tier];
+	const familyModels = providerId === "google-vertex" ? GEMINI_FAMILY_MODEL_IDS : GPT_FAMILY_MODEL_IDS;
+	const modelId = autoScope === "thinking" && sessionModelId ? sessionModelId : familyModels[tier];
 
 	return {
 		providerId,
@@ -326,7 +372,9 @@ function normalizePersisted(value: unknown, ctx: ProfileContext): PersistedProfi
 			: (value.autoScope === "family" || value.autoScope === undefined) &&
 					(value.providerId === "openai" || value.providerId === "openai-codex")
 				? GPT_FAMILY_ID
-				: undefined,
+				: value.autoScope === "family" && value.providerId === "google-vertex"
+					? GEMINI_FAMILY_ID
+					: undefined,
 		familyVariant: typeof value.familyVariant === "string" ? value.familyVariant : undefined,
 		providerId: isProfileProvider(value.providerId) ? value.providerId : undefined,
 		sessionModelId: typeof value.sessionModelId === "string" ? value.sessionModelId : undefined,
@@ -522,6 +570,13 @@ function familyModelId(
 		}
 		return undefined;
 	}
+	if (familyId === GEMINI_FAMILY_ID) {
+		for (const candidateTier of fallbackTierOrder(tier)) {
+			const modelId = GEMINI_FAMILY_MODEL_IDS[candidateTier];
+			if (available.some((model) => model.id === modelId)) return modelId;
+		}
+		return undefined;
+	}
 
 	const selectedVariant = variant ?? resolveClaudeVariant(ctx);
 	for (const candidateTier of fallbackTierOrder(tier)) {
@@ -649,17 +704,21 @@ function resolveAutoTarget(value: string, ctx: ExtensionCommandContext): TargetR
 	const selector = value.slice(slash + 1);
 
 	if (qualifier === "bedrock" || qualifier === "amazon-bedrock") return resolveBedrockTarget(selector, ctx);
+	if (qualifier === "google" || qualifier === "google-vertex") {
+		const modelId = resolveGeminiModelAlias(selector) ?? selector;
+		return { target: { providerId: "google-vertex", modelId } };
+	}
 	if (qualifier === "codex" || qualifier === "openai-codex") {
 		const alias = selector.toLowerCase();
-		const modelId = Object.hasOwn(MODEL_ALIASES, alias)
-			? MODEL_ALIASES[alias as keyof typeof MODEL_ALIASES]
+		const modelId = Object.hasOwn(OPENAI_MODEL_ALIASES, alias)
+			? OPENAI_MODEL_ALIASES[alias as keyof typeof OPENAI_MODEL_ALIASES]
 			: selector;
 		return { target: { providerId: "openai-codex", modelId } };
 	}
 	if (qualifier === "api") {
 		const alias = selector.toLowerCase();
-		const modelId = Object.hasOwn(MODEL_ALIASES, alias)
-			? MODEL_ALIASES[alias as keyof typeof MODEL_ALIASES]
+		const modelId = Object.hasOwn(OPENAI_MODEL_ALIASES, alias)
+			? OPENAI_MODEL_ALIASES[alias as keyof typeof OPENAI_MODEL_ALIASES]
 			: selector;
 		if (ctx.modelRegistry.find("openai", modelId)) return { target: { providerId: "openai", modelId } };
 		const matches = ctx.modelRegistry.getAll().filter((model) => model.provider !== "openai-codex" && model.id === modelId);
@@ -672,8 +731,8 @@ function resolveAutoTarget(value: string, ctx: ExtensionCommandContext): TargetR
 
 	const providerId = qualifier === "openai" ? "openai" : rawQualifier;
 	const alias = selector.toLowerCase();
-	const modelId = (providerId === "openai" && Object.hasOwn(MODEL_ALIASES, alias))
-		? MODEL_ALIASES[alias as keyof typeof MODEL_ALIASES]
+	const modelId = (providerId === "openai" && Object.hasOwn(OPENAI_MODEL_ALIASES, alias))
+		? OPENAI_MODEL_ALIASES[alias as keyof typeof OPENAI_MODEL_ALIASES]
 		: selector;
 	return { target: { providerId, modelId } };
 }
@@ -767,8 +826,13 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 			...(region ? [[targetProviderId, `${region}.openai.${CLASSIFIER_MODEL_ID}`] as [string, string]] : []),
 			[targetProviderId, `global.openai.${CLASSIFIER_MODEL_ID}`],
 			[targetProviderId, `openai.${CLASSIFIER_MODEL_ID}`],
-			...(targetProviderId === "google-vertex" && targetModelId
-				? [[targetProviderId, targetModelId] as [string, string]]
+			...(targetProviderId === "google-vertex"
+				? [
+					[targetProviderId, GEMINI_HYDROGEN_MODEL_ID] as [string, string],
+					...(targetModelId ? [[targetProviderId, targetModelId] as [string, string]] : []),
+					[targetProviderId, GEMINI_ARGON_MODEL_ID] as [string, string],
+					[targetProviderId, GEMINI_CARBON_MODEL_ID] as [string, string],
+				]
 				: []),
 			["openai", CLASSIFIER_MODEL_ID],
 			["openai-codex", CLASSIFIER_MODEL_ID],
@@ -1038,6 +1102,10 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 						providerId = familyProvider;
 						autoScope = "family";
 						familyId = GPT_FAMILY_ID;
+					} else if (familyProvider === "google-vertex") {
+						providerId = "google-vertex";
+						autoScope = "family";
+						familyId = GEMINI_FAMILY_ID;
 					} else if (targetName === "bedrock/claude" || targetName === "amazon-bedrock/claude") {
 						providerId = "amazon-bedrock";
 						autoScope = "family";
@@ -1048,11 +1116,11 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 						providerId = config.providerId ?? providerId;
 						autoScope = "family";
 						familyId = config.id;
-					} else if (Object.hasOwn(MODEL_ALIASES, targetName)) {
-						modelId = MODEL_ALIASES[targetName as keyof typeof MODEL_ALIASES];
-					} else if (targetName === "google" || targetName === GEMINI_ARGON_MODEL_ID) {
+					} else if (Object.hasOwn(OPENAI_MODEL_ALIASES, targetName)) {
+						modelId = OPENAI_MODEL_ALIASES[targetName as keyof typeof OPENAI_MODEL_ALIASES];
+					} else if (resolveGeminiModelAlias(targetName)) {
 						providerId = "google-vertex";
-						modelId = GEMINI_ARGON_MODEL_ID;
+						modelId = resolveGeminiModelAlias(targetName);
 					} else {
 						const resolution = resolveAutoTarget(target, ctx);
 						if ("error" in resolution) {
@@ -1151,19 +1219,31 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			const match = command.match(/^(?:(api|codex)\/)?(astra|sol|terra|luna):(minimal|low|medium|high|xhigh|max)$/);
-			if (!match) {
+			const openaiMatch = command.match(/^(?:(api|openai|codex|openai-codex)\/)?(astra|sol|terra|luna):(minimal|low|medium|high|xhigh|max)$/);
+			const googleMatch = command.match(/^(?:(google|google-vertex)\/)?(hydrogen|argon|carbon|gemini-4-hydrogen|gemini-4-argon|gemini-4-carbon)(?::(minimal|low|medium|high|xhigh|max))?$/);
+			if (!openaiMatch && (!googleMatch || (!googleMatch[1] && !googleMatch[3]))) {
 				ctx.ui.notify(
-					"Usage: /profile auto (current model) | auto <openai|codex> | auto google | auto bedrock/claude | auto <provider>/<model> | [api/|codex/]<astra|sol|terra|luna>:<effort> | status | lock | provider <api|codex|current>",
+					"Usage: /profile auto (current model) | auto <openai|codex> | auto google | auto bedrock/claude | auto <provider>/<model> | [api/|codex/]<astra|sol|terra|luna>:<effort> | [google/]<hydrogen|argon|carbon>[:<effort>] | status | lock | provider <api|codex|current>",
 					"warning",
 				);
 				return;
 			}
-			const providerId = match[1] === "api" ? "openai" : match[1] === "codex" ? "openai-codex" : (state.providerId ?? "openai");
+			const level = pi.getThinkingLevel();
+			const providerId = openaiMatch
+				? (openaiMatch[1] === "api" || openaiMatch[1] === "openai"
+					? "openai"
+					: openaiMatch[1] === "codex" || openaiMatch[1] === "openai-codex"
+						? "openai-codex"
+						: (state.providerId === "openai-codex" ? "openai-codex" : "openai"))
+				: "google-vertex";
+			const selectedModelId = openaiMatch
+				? OPENAI_MODEL_ALIASES[openaiMatch[2] as keyof typeof OPENAI_MODEL_ALIASES]
+				: resolveGeminiModelAlias(googleMatch![2])!;
+			const effort = (openaiMatch?.[3] ?? googleMatch?.[3] ?? state.effort ?? (isThinkingLevel(level) ? level : "medium")) as ModelThinkingLevel;
 			const decision: AutoProfileDecision = {
 				providerId,
-				modelId: MODEL_ALIASES[match[2] as keyof typeof MODEL_ALIASES],
-				effort: match[3] as ModelThinkingLevel,
+				modelId: selectedModelId,
+				effort,
 				source: "manual",
 				rationale: "explicit profile selection",
 			};
@@ -1174,7 +1254,7 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 				state.familyVariant = undefined;
 				setStatus(ctx, state);
 				persist();
-				if (ctx.hasUI) ctx.ui.notify(`Profile locked: ${providerName(providerId)}/${match[2]}:${state.effort ?? "off"}`, "info");
+				if (ctx.hasUI) ctx.ui.notify(`Profile locked: ${providerName(providerId)}/${modelName(selectedModelId)}:${state.effort ?? "off"}`, "info");
 			} catch (error) {
 				if (ctx.hasUI) ctx.ui.notify(`Profile selection failed: ${error instanceof Error ? error.message : String(error)}`, "error");
 			}
