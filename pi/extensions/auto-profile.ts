@@ -14,6 +14,7 @@ const STATUS_KEY = "auto-profile";
 const CLASSIFIER_MODEL_ID = "gpt-5.6-luna";
 const ASTRA_MODEL_ID = "gpt-6-astra";
 const SOL_MODEL_ID = "gpt-6.1-sol";
+const CODEX_SOL_MODEL_ID = "gpt-6.2-sol";
 const LEGACY_SOL_MODEL_ID = "gpt-5.6-sol";
 const TERRA_MODEL_ID = "gpt-5.6-terra";
 const GPT_FAMILY_ID = "gpt-5.6-6";
@@ -61,6 +62,7 @@ const MODEL_ALIASES = {
 const MODEL_NAMES: Record<string, string> = {
 	[ASTRA_MODEL_ID]: "astra",
 	[SOL_MODEL_ID]: "sol",
+	[CODEX_SOL_MODEL_ID]: "sol",
 	[LEGACY_SOL_MODEL_ID]: "sol",
 	[TERRA_MODEL_ID]: "terra",
 	[CLASSIFIER_MODEL_ID]: "luna",
@@ -334,7 +336,8 @@ export function resolveAutoDecision(
 ): AutoProfileDecision {
 	const { tier, effort } = classificationProfile(classification, highRisk);
 	const familyModels = providerId === "google-vertex" ? GEMINI_FAMILY_MODEL_IDS : GPT_FAMILY_MODEL_IDS;
-	const modelId = autoScope === "thinking" && sessionModelId ? sessionModelId : familyModels[tier];
+	const familyModelId = providerId === "openai-codex" && tier === 2 ? CODEX_SOL_MODEL_ID : familyModels[tier];
+	const modelId = autoScope === "thinking" && sessionModelId ? sessionModelId : familyModelId;
 
 	return {
 		providerId,
@@ -567,7 +570,10 @@ function familyModelId(
 	const available = availableFamilyModels(ctx, providerId);
 	if (familyId === GPT_FAMILY_ID) {
 		for (const candidateTier of fallbackTierOrder(tier)) {
-			for (const modelId of GPT_FAMILY_MODEL_CANDIDATES[candidateTier]) {
+			const candidates = providerId === "openai-codex" && candidateTier === 2
+				? [CODEX_SOL_MODEL_ID, ...GPT_FAMILY_MODEL_CANDIDATES[candidateTier]]
+				: GPT_FAMILY_MODEL_CANDIDATES[candidateTier];
+			for (const modelId of candidates) {
 				if (available.some((model) => model.id === modelId)) return modelId;
 			}
 		}

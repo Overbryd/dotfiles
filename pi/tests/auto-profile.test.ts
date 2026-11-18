@@ -580,6 +580,34 @@ test("provider-only auto routes each provider through the newest available GPT f
 	}
 });
 
+test("Codex auto prefers 6.2 Sol when available and preserves older model pins", async () => {
+	const h = harness([assistantClassification("complex")]);
+	h.models.set("openai-codex/gpt-6.2-sol", {
+		...h.models.get("openai-codex/gpt-6.1-sol")!,
+		id: "gpt-6.2-sol",
+	});
+	await h.handlers.get("session_start")?.({}, h.context);
+	for (const provider of ["codex", "openai-codex"]) {
+		await h.commands.get("profile").handler(`auto ${provider}`, h.context);
+		assert.equal(h.providerId, "openai-codex");
+		assert.equal(h.modelId, "gpt-6.2-sol");
+		await h.handlers.get("session_start")?.({ reason: "reload" }, h.context);
+		await h.handlers.get("before_agent_start")?.({ prompt: "Debug this race" }, h.context);
+		assert.equal(h.modelId, "gpt-6.2-sol");
+	}
+	assert.equal(resolveAutoDecision({ task: "complex", confidence: 0.95, rationale: "test" }, undefined, false, "openai-codex").modelId, "gpt-6.2-sol");
+	for (const model of ["gpt-6.2-sol", "gpt-6.1-sol"]) {
+		await h.commands.get("profile").handler(`auto codex/${model}`, h.context);
+		await h.handlers.get("before_agent_start")?.({ prompt: "Debug this race" }, h.context);
+		assert.equal(h.modelId, model);
+	}
+	h.models.delete("openai-codex/gpt-6.2-sol");
+	await h.commands.get("profile").handler("auto codex", h.context);
+	assert.equal(h.modelId, "gpt-6.1-sol");
+	await h.commands.get("profile").handler("auto api", h.context);
+	assert.equal(h.modelId, "gpt-6.1-sol");
+});
+
 test("provider-only auto keeps the previous Sol on providers without 6.1", async () => {
 	const h = harness([assistantClassification("complex")]);
 	h.models.delete("openai-codex/gpt-6.1-sol");
