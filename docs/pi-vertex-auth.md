@@ -32,6 +32,22 @@ Hydrogen's global standard prices are $1.50/M input, $7.50/M output, and $0.075/
 
 All three expose low/medium/high thinking. Hydrogen also supports `XHIGH` upstream, but Pi 1.3's Google adapter and pinned Google SDK enum do not; do not advertise that level until the adapter supports it. `off`/`minimal` are disabled because these models reject them. Output stays capped at 65,536 tokens: their 1M-token output requires a separate long-decode continuation mechanism. Hydrogen's 1M-token window includes both input and output. See [Hydrogen's Vertex model documentation](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/4-hydrogen).
 
+## Priority PayGo (opt-in)
+
+Run `/priority-paygo on` to request Priority PayGo for global Vertex Gemini 4 Hydrogen, Argon, and Carbon, including `/profile auto google`. Use `/priority-paygo status` to check or `/priority-paygo off` to return to normal routing. The switch follows the Pi session branch across reloads and resumes. New sessions start with it off. No model default or credentials change. Claude Fable and other models are unaffected.
+
+Pi sends `X-Vertex-AI-LLM-Request-Type: shared` and `X-Vertex-AI-LLM-Shared-Request-Type: priority` to request Priority PayGo without using Provisioned Throughput. The footer shows the preference, not the tier actually served. Pi uses priority prices in its cost estimate only when the response reports `usageMetadata.trafficType: ON_DEMAND_PRIORITY`; a downgrade (`ON_DEMAND`) or missing tier metadata uses the standard estimate.
+
+Published global Priority PayGo rates (USD per million tokens):
+
+| Model | Input | Output (including thinking) | Cache read |
+| --- | ---: | ---: | ---: |
+| Hydrogen | $2.70 | $13.50 | $0.135 |
+| Argon / Carbon through Nov 30, 2026 | $3.60 | $18.00 | $0.18 |
+| Argon / Carbon starting Dec 1, 2026 | $7.20 | $36.00 | $0.36 |
+
+Argon/Carbon promotional estimates include Google's billing credit; Pi switches estimates at midnight UTC on December 1. Hydrogen's published priority cache-write rate is $3.375/M; this adapter does not create explicit caches. See [Priority PayGo documentation](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/priority-paygo) and [Model Garden pricing](https://cloud.google.com/model-garden/pricing?hl=en).
+
 ## Claude Fable 5.2 on Vertex
 
 After `make pi-settings`, run `/reload` and select `/profile google/fable-5.2:high`. `/profile auto google/fable-5.2` pins Fable while classifying thinking effort; `/profile auto google` remains Gemini-only. Aliases `fable-5-2` and `claude-fable-5-2` are also accepted. No global default is changed.

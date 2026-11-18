@@ -571,7 +571,7 @@ dotfiles: \
 pi/node_modules/.package-lock.json: pi/package.json pi/package-lock.json
 	npm ci --prefix pi --ignore-scripts --min-release-age=$(NPM_MIN_RELEASE_AGE)
 
-pi-settings: pi/settings.json pi/node_modules/.package-lock.json ~/.pi/agent/lib/anthropic-vertex.ts ~/.pi/agent/lib/google-stream.ts | ~/.pi/agent
+pi-settings: pi/settings.json pi/node_modules/.package-lock.json ~/.pi/agent/lib/anthropic-vertex.ts ~/.pi/agent/lib/google-stream.ts ~/.pi/agent/lib/vertex-priority-paygo.ts | ~/.pi/agent
 	tmp=$$(mktemp); \
 	if [ -f $(HOME)/.pi/agent/settings.json ]; then \
 		jq -s -f pi/settings-merge.jq $(HOME)/.pi/agent/settings.json $< > $$tmp; \

@@ -575,7 +575,7 @@ def ssh_command(host: str, script: str, timeout: int = 8) -> subprocess.Complete
             host,
             "sh",
             "-lc",
-            script,
+            shlex.quote(script),
         ],
         timeout=timeout,
     )
@@ -946,7 +946,10 @@ def overlay_paths_local(repo_root: Path, include_patterns: Sequence[str]) -> Tup
 def overlay_paths_remote(ssh_host: str, repo_root: Path, include_patterns: Sequence[str]) -> Tuple[List[str], Optional[str]]:
     args = ["/usr/bin/python3", "-c", REMOTE_OVERLAY_LIST_SCRIPT, str(repo_root), json.dumps(list(include_patterns))]
     remote_command = " ".join(shlex.quote(arg) for arg in args)
-    result = ssh_command(ssh_host, remote_command, timeout=20)
+    try:
+        result = ssh_command(ssh_host, remote_command, timeout=20)
+    except subprocess.TimeoutExpired as error:
+        return [], "remote overlay collection on {} timed out after {} seconds".format(ssh_host, error.timeout)
     if result.returncode != 0:
         detail = first_line(result.stderr) or first_line(result.stdout) or "remote overlay collection failed"
         return [], detail

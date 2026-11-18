@@ -1,5 +1,7 @@
 import importlib.machinery
 import io
+import shlex
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -8,6 +10,44 @@ from unittest import mock
 
 
 wsync = importlib.machinery.SourceFileLoader("wsync", str(Path(__file__).parents[1] / "wsync")).load_module()
+
+
+class SshCommandTest(unittest.TestCase):
+    def test_preserves_remote_python_command_and_arguments(self):
+        value = "path with spaces and 'quotes'; $HOME"
+        script = "{} -c {} {}".format(
+            shlex.quote(sys.executable),
+            shlex.quote("import sys; print(sys.argv[1])"),
+            shlex.quote(value),
+        )
+
+        def emulate_ssh(args, timeout):
+            # SSH joins command arguments; the remote shell parses them again.
+            return subprocess.run(
+                ["/bin/sh", "-c", " ".join(args[6:])],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout,
+            )
+
+        with mock.patch.object(wsync, "run_command", side_effect=emulate_ssh):
+            result = wsync.ssh_command("peer", script)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(value + "\n", result.stdout)
+
+
+class OverlayPathsRemoteTest(unittest.TestCase):
+    def test_timeout_returns_an_overlay_error(self):
+        with mock.patch.object(
+            wsync, "ssh_command", side_effect=subprocess.TimeoutExpired("ssh", 20)
+        ):
+            paths, error = wsync.overlay_paths_remote("peer", Path("/repo"), [".peek/***"])
+
+        self.assertEqual([], paths)
+        self.assertEqual("remote overlay collection on peer timed out after 20 seconds", error)
 
 
 class RunRsyncPreviewTest(unittest.TestCase):
