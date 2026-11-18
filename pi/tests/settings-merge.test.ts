@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -73,6 +73,8 @@ test("pi-settings deploys global Vertex routing without replacing other credenti
 			encoding: "utf8",
 		});
 		assert.equal(result.status, 0, result.stderr);
+		assert.equal(readlinkSync(join(agentDir, "lib/vertex-priority-paygo.ts")),
+			join(home, "dotfiles/pi/lib/vertex-priority-paygo.ts"));
 		const auth = JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf8"));
 		assert.equal(auth["google-vertex"].key, "configured-vertex-key");
 		assert.equal(auth["google-vertex"].env.GOOGLE_CLOUD_LOCATION, "global");

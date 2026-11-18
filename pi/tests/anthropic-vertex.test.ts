@@ -60,7 +60,7 @@ test("Pi exposes Fable as available and passes scoped ADC through its real model
 		const runtime = await ModelRuntime.create({
 			modelsPath: join(dir, "models.json"), authPath: join(dir, "auth.json"), allowModelNetwork: false,
 		});
-		googleTokenExchange({ on() {}, registerProvider: runtime.registerProvider.bind(runtime) } as never);
+		googleTokenExchange({ on() {}, registerCommand() {}, registerProvider: runtime.registerProvider.bind(runtime) } as never);
 		await runtime.refresh({ allowNetwork: false });
 		assert.equal(runtime.getError(), undefined);
 		assert.equal(runtime.hasConfiguredAuth(model.provider), true);
@@ -189,13 +189,14 @@ for (const hasUI of [true, false]) {
 		const providers = new Map<string, { streamSimple: typeof streamAnthropicVertex }>();
 		const working: Array<string | undefined> = [];
 		const statuses: Array<string | undefined> = [];
-		const ctx = { hasUI, ui: {
+		const ctx = { hasUI, sessionManager: { getBranch: () => [] }, ui: {
 			setWorkingMessage: (text?: string) => { working.push(text); },
 			setStatus: (_key: string, text?: string) => { statuses.push(text); },
 			notify() {},
 		} };
 		googleTokenExchange({
 			on: (name: string, handler: (event: never, ctx: never) => void) => handlers.set(name, handler),
+			registerCommand() {},
 			registerProvider: (name: string, provider: { streamSimple: typeof streamAnthropicVertex }) => providers.set(name, provider),
 		} as never);
 		handlers.get("session_start")!({} as never, ctx as never);
@@ -221,7 +222,7 @@ for (const hasUI of [true, false]) {
 
 test("Google recovery registers both Vertex APIs without replacing their model catalogs", () => {
 	const providers = new Map<string, any>();
-	googleTokenExchange({ on() {}, registerProvider(id: string, provider: unknown) { providers.set(id, provider); } } as never);
+	googleTokenExchange({ on() {}, registerCommand() {}, registerProvider(id: string, provider: unknown) { providers.set(id, provider); } } as never);
 	assert.equal(providers.get("google-vertex").api, "google-vertex");
 	assert.equal(providers.get("google-vertex-anthropic").api, "anthropic-messages");
 	assert.equal(providers.get("google-vertex-anthropic").models, undefined);
