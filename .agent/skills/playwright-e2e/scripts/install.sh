@@ -10,7 +10,8 @@ if [ "${#browsers[@]}" -eq 0 ]; then
 fi
 
 mkdir -p "$PI_PLAYWRIGHT_HOME"
-"$PYTHON_BIN" -m venv "$PI_PLAYWRIGHT_HOME/venv"
+# This dedicated environment is disposable; in-place upgrades keep stale Python symlinks.
+"$PYTHON_BIN" -m venv --clear "$PI_PLAYWRIGHT_HOME/venv"
 "$PI_PLAYWRIGHT_HOME/venv/bin/python" -m pip install --upgrade pip
 "$PI_PLAYWRIGHT_HOME/venv/bin/python" -m pip install --upgrade playwright
 "$PI_PLAYWRIGHT_HOME/venv/bin/python" -m playwright install "${browsers[@]}"

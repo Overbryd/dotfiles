@@ -118,6 +118,40 @@
         }
       ]
     },
+    "google-vertex-anthropic": {
+      "api": "anthropic-messages",
+      "apiKey": "vertex-adc",
+      "models": [
+        {
+          "id": "claude-fable-5-2",
+          "name": "Claude Fable 5.2 (Vertex)",
+          "baseUrl": "https://aiplatform.googleapis.com/v1",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "off",
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "forceAdaptiveThinking": true,
+            "supportsTemperature": false
+          },
+          "input": ["text", "image"],
+          "cost": {
+            "input": 8,
+            "output": 40,
+            "cacheRead": 0.2,
+            "cacheWrite": 10
+          },
+          "contextWindow": 1000000,
+          "maxTokens": 128000
+        }
+      ]
+    },
     "inceptionlabs": {
       "baseUrl": "https://api.inceptionlabs.ai/v1",
       "api": "openai-completions",

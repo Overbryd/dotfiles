@@ -22,6 +22,7 @@ const GEMINI_FAMILY_ID = "gemini-4";
 const GEMINI_HYDROGEN_MODEL_ID = "gemini-4-hydrogen";
 const GEMINI_ARGON_MODEL_ID = "gemini-4-argon";
 const GEMINI_CARBON_MODEL_ID = "gemini-4-carbon";
+const VERTEX_FABLE_MODEL_ID = "claude-fable-5-2";
 const GPT_FAMILY_MODEL_IDS = [CLASSIFIER_MODEL_ID, TERRA_MODEL_ID, SOL_MODEL_ID, ASTRA_MODEL_ID] as const;
 const GPT_FAMILY_MODEL_CANDIDATES = [
 	[CLASSIFIER_MODEL_ID],
@@ -66,6 +67,7 @@ const MODEL_NAMES: Record<string, string> = {
 	[GEMINI_HYDROGEN_MODEL_ID]: "hydrogen",
 	[GEMINI_ARGON_MODEL_ID]: "argon",
 	[GEMINI_CARBON_MODEL_ID]: "carbon",
+	[VERTEX_FABLE_MODEL_ID]: "fable-5.2",
 };
 
 const EXPLICIT_EFFORTS = new Set<ModelThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
@@ -229,12 +231,13 @@ function providerName(providerId: AutoProfileProvider | undefined): string {
 	if (providerId === "openai-codex") return "codex";
 	if (providerId === "openai") return "api";
 	if (providerId === "amazon-bedrock") return "bedrock";
-	if (providerId === "google-vertex") return "google";
+	if (providerId === "google-vertex" || providerId === "google-vertex-anthropic") return "google";
 	return providerId ?? "unset";
 }
 
-function resolveGeminiModelAlias(value: string): string | undefined {
+function resolveGoogleModelAlias(value: string): string | undefined {
 	const lower = value.toLowerCase();
+	if (["fable-5.2", "fable-5-2", VERTEX_FABLE_MODEL_ID].includes(lower)) return VERTEX_FABLE_MODEL_ID;
 	if (Object.hasOwn(GEMINI_MODEL_ALIASES, lower)) {
 		return GEMINI_MODEL_ALIASES[lower as keyof typeof GEMINI_MODEL_ALIASES];
 	}
@@ -705,8 +708,9 @@ function resolveAutoTarget(value: string, ctx: ExtensionCommandContext): TargetR
 
 	if (qualifier === "bedrock" || qualifier === "amazon-bedrock") return resolveBedrockTarget(selector, ctx);
 	if (qualifier === "google" || qualifier === "google-vertex") {
-		const modelId = resolveGeminiModelAlias(selector) ?? selector;
-		return { target: { providerId: "google-vertex", modelId } };
+		const modelId = resolveGoogleModelAlias(selector) ?? selector;
+		const providerId = modelId === VERTEX_FABLE_MODEL_ID ? "google-vertex-anthropic" : "google-vertex";
+		return { target: { providerId, modelId } };
 	}
 	if (qualifier === "codex" || qualifier === "openai-codex") {
 		const alias = selector.toLowerCase();
@@ -1118,9 +1122,9 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 						familyId = config.id;
 					} else if (Object.hasOwn(OPENAI_MODEL_ALIASES, targetName)) {
 						modelId = OPENAI_MODEL_ALIASES[targetName as keyof typeof OPENAI_MODEL_ALIASES];
-					} else if (resolveGeminiModelAlias(targetName)) {
-						providerId = "google-vertex";
-						modelId = resolveGeminiModelAlias(targetName);
+					} else if (resolveGoogleModelAlias(targetName)) {
+						modelId = resolveGoogleModelAlias(targetName);
+						providerId = modelId === VERTEX_FABLE_MODEL_ID ? "google-vertex-anthropic" : "google-vertex";
 					} else {
 						const resolution = resolveAutoTarget(target, ctx);
 						if ("error" in resolution) {
@@ -1220,25 +1224,25 @@ export default function autoProfileExtension(pi: ExtensionAPI) {
 			}
 
 			const openaiMatch = command.match(/^(?:(api|openai|codex|openai-codex)\/)?(astra|sol|terra|luna):(minimal|low|medium|high|xhigh|max)$/);
-			const googleMatch = command.match(/^(?:(google|google-vertex)\/)?(hydrogen|argon|carbon|gemini-4-hydrogen|gemini-4-argon|gemini-4-carbon)(?::(minimal|low|medium|high|xhigh|max))?$/);
+			const googleMatch = command.match(/^(?:(google|google-vertex)\/)?(hydrogen|argon|carbon|gemini-4-hydrogen|gemini-4-argon|gemini-4-carbon|fable-5\.2|fable-5-2|claude-fable-5-2)(?::(minimal|low|medium|high|xhigh|max))?$/);
 			if (!openaiMatch && (!googleMatch || (!googleMatch[1] && !googleMatch[3]))) {
 				ctx.ui.notify(
-					"Usage: /profile auto (current model) | auto <openai|codex> | auto google | auto bedrock/claude | auto <provider>/<model> | [api/|codex/]<astra|sol|terra|luna>:<effort> | [google/]<hydrogen|argon|carbon>[:<effort>] | status | lock | provider <api|codex|current>",
+					"Usage: /profile auto (current model) | auto <openai|codex> | auto google | auto bedrock/claude | auto <provider>/<model> | [api/|codex/]<astra|sol|terra|luna>:<effort> | [google/]<hydrogen|argon|carbon|fable-5.2>[:<effort>] | status | lock | provider <api|codex|current>",
 					"warning",
 				);
 				return;
 			}
 			const level = pi.getThinkingLevel();
+			const selectedModelId = openaiMatch
+				? OPENAI_MODEL_ALIASES[openaiMatch[2] as keyof typeof OPENAI_MODEL_ALIASES]
+				: resolveGoogleModelAlias(googleMatch![2])!;
 			const providerId = openaiMatch
 				? (openaiMatch[1] === "api" || openaiMatch[1] === "openai"
 					? "openai"
 					: openaiMatch[1] === "codex" || openaiMatch[1] === "openai-codex"
 						? "openai-codex"
 						: (state.providerId === "openai-codex" ? "openai-codex" : "openai"))
-				: "google-vertex";
-			const selectedModelId = openaiMatch
-				? OPENAI_MODEL_ALIASES[openaiMatch[2] as keyof typeof OPENAI_MODEL_ALIASES]
-				: resolveGeminiModelAlias(googleMatch![2])!;
+				: selectedModelId === VERTEX_FABLE_MODEL_ID ? "google-vertex-anthropic" : "google-vertex";
 			const effort = (openaiMatch?.[3] ?? googleMatch?.[3] ?? state.effort ?? (isThinkingLevel(level) ? level : "medium")) as ModelThinkingLevel;
 			const decision: AutoProfileDecision = {
 				providerId,

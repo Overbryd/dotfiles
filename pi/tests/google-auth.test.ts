@@ -42,6 +42,10 @@ test("cancelled phone repair does not reissue the model request", async () => {
 	assert.equal(attempts, 1);
 });
 
+test("Anthropic on Vertex shares the same bounded Google reauthentication path", () => {
+	assert.equal(needsGoogleReauth({ ...failure.error, provider: "google-vertex-anthropic" }), true);
+});
+
 test("scope, permission, quota and other-provider failures never request Google sign-in", () => {
 	for (const errorMessage of ["403 insufficientPermissions", "429 quota exceeded", "invalid_scope", "invalid_grant: configuration problem"]) {
 		assert.equal(needsGoogleReauth({ ...failure.error, errorMessage }), false);

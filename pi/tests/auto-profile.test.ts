@@ -140,6 +140,12 @@ function harness(
 			reasoning: true,
 		});
 	}
+	models.set("google-vertex-anthropic/claude-fable-5-2", {
+		id: "claude-fable-5-2",
+		provider: "google-vertex-anthropic",
+		api: "anthropic-messages",
+		reasoning: true,
+	});
 	let currentModel = models.get(`${initialProvider}/${initialModelId}`)!;
 	let thinkingLevel = "medium";
 	let responseIndex = 0;
@@ -422,6 +428,24 @@ test("auto google routes Gemini 4 family across Hydrogen, Argon, and Carbon", as
 	assert.equal(h.modelId, "gemini-4-argon");
 	assert.equal(h.thinkingLevel, "high");
 	assert.deepEqual(h.classifierProviders, Array(6).fill("google-vertex"));
+});
+
+test("Google Fable 5.2 profiles use Anthropic on Vertex in locked and auto modes", async () => {
+	for (const selector of ["fable-5.2", "fable-5-2", "claude-fable-5-2"]) {
+		const h = harness();
+		await h.handlers.get("session_start")?.({}, h.context);
+		await h.commands.get("profile").handler(`google/${selector}:high`, h.context);
+		assert.equal(h.providerId, "google-vertex-anthropic", selector);
+		assert.equal(h.modelId, "claude-fable-5-2", selector);
+		assert.equal(h.thinkingLevel, "high");
+		assert.equal(h.entries.at(-1).data.mode, "locked");
+
+		await h.commands.get("profile").handler(`auto google/${selector}`, h.context);
+		assert.equal(h.entries.at(-1).data.mode, "auto");
+		await h.handlers.get("before_agent_start")?.({ prompt: "Fix the test" }, h.context);
+		assert.equal(h.providerId, "google-vertex-anthropic");
+		assert.equal(h.modelId, "claude-fable-5-2");
+	}
 });
 
 test("supports specific Google profiles for Hydrogen, Argon, and Carbon in auto and locked modes", async () => {

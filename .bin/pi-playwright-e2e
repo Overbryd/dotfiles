@@ -4,8 +4,12 @@ set -euo pipefail
 PI_PLAYWRIGHT_HOME="${PI_PLAYWRIGHT_HOME:-$HOME/.local/share/pi-playwright}"
 RUNNER="$HOME/dotfiles/.agent/skills/playwright-e2e/scripts/pi_playwright_e2e.py"
 
-if [ -x "$PI_PLAYWRIGHT_HOME/venv/bin/python" ]; then
-  exec "$PI_PLAYWRIGHT_HOME/venv/bin/python" "$RUNNER" "$@"
+VENV_PYTHON="$PI_PLAYWRIGHT_HOME/venv/bin/python"
+if [ ! -x "$VENV_PYTHON" ] || ! "$VENV_PYTHON" -c 'import sys' >/dev/null 2>&1; then
+  printf 'Shared Playwright virtualenv Python is missing or broken: %s\n' "$VENV_PYTHON" >&2
+  printf 'Reinstall: PI_PLAYWRIGHT_HOME=%q %q chromium\n' \
+    "$PI_PLAYWRIGHT_HOME" "$HOME/dotfiles/.agent/skills/playwright-e2e/scripts/install.sh" >&2
+  exit 1
 fi
 
-exec python3 "$RUNNER" "$@"
+exec "$VENV_PYTHON" "$RUNNER" "$@"

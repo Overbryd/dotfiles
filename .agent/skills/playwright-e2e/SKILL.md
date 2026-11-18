@@ -20,7 +20,7 @@ Use this skill to run real browser checks from any project with the shared Pytho
 
 ## One-time setup
 
-If `pi-playwright-e2e` says Playwright is missing, run:
+If `pi-playwright-e2e` reports a missing or broken virtualenv (including after a Homebrew Python upgrade), or says Playwright is missing, run:
 
 ```bash
 ~/dotfiles/.agent/skills/playwright-e2e/scripts/install.sh chromium
@@ -32,7 +32,7 @@ Install more browsers only when needed:
 ~/dotfiles/.agent/skills/playwright-e2e/scripts/install.sh chromium firefox webkit
 ```
 
-This creates a dedicated Python virtualenv in `~/.local/share/pi-playwright/venv`, installs the `playwright` Python package there, and installs browsers into Playwright's shared browser cache. It does not install anything into the current project.
+This recreates the dedicated Python virtualenv in `~/.local/share/pi-playwright/venv`, clearing old packages and stale interpreter symlinks, installs the `playwright` Python package there, and installs browsers into Playwright's shared browser cache. It does not alter global Python links or install anything into the current project. Use `PYTHON_BIN=/path/to/python3` to choose the interpreter and `PI_PLAYWRIGHT_HOME=/path/to/home` to select a different shared environment.
 
 ## Workflow
 

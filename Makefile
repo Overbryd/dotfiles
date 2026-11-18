@@ -1,7 +1,7 @@
 EXCLUDED_DOTFILES := .git .git-crypt .gitattributes .gitignore .gitmodules .ssh
 DOTFILES := $(addprefix ~/, $(filter-out $(EXCLUDED_DOTFILES), $(wildcard .*)))
 DOT_CONFIG_FILES := $(addprefix ~/, $(wildcard .config/*))
-PI_CONFIG_SOURCES := $(filter-out pi/settings.json,$(wildcard pi/*.json))
+PI_CONFIG_SOURCES := $(filter-out pi/settings.json pi/package.json pi/package-lock.json,$(wildcard pi/*.json))
 PI_CONFIG_FILES := $(addprefix ~/.pi/agent/, $(notdir $(PI_CONFIG_SOURCES)))
 PI_EXTENSIONS := $(addprefix ~/.pi/agent/extensions/, $(notdir $(wildcard pi/extensions/*.ts)))
 PI_LIB_FILES := $(addprefix ~/.pi/agent/lib/, $(notdir $(wildcard pi/lib/*.ts pi/lib/*.mjs pi/lib/*.mts)))
@@ -568,7 +568,10 @@ dotfiles: \
 	test "$(notdir $@)" != settings.json
 	ln -svf $(DOTFILES_ROOT)/$< $@
 
-pi-settings: pi/settings.json | ~/.pi/agent
+pi/node_modules/.package-lock.json: pi/package.json pi/package-lock.json
+	npm ci --prefix pi --ignore-scripts --min-release-age=$(NPM_MIN_RELEASE_AGE)
+
+pi-settings: pi/settings.json pi/node_modules/.package-lock.json ~/.pi/agent/lib/anthropic-vertex.ts ~/.pi/agent/lib/google-stream.ts | ~/.pi/agent
 	tmp=$$(mktemp); \
 	if [ -f $(HOME)/.pi/agent/settings.json ]; then \
 		jq -s -f pi/settings-merge.jq $(HOME)/.pi/agent/settings.json $< > $$tmp; \
@@ -584,7 +587,7 @@ pi-settings: pi/settings.json | ~/.pi/agent
 	else \
 		printf '{}\n'; \
 	fi | jq --arg adc "$(HOME)/Work/Parlant/.config/gcloud-parlant/application_default_credentials.json" \
-		'.["google-vertex"] = {"type":"api_key","env":{"GOOGLE_CLOUD_PROJECT":"gen-lang-client-0951766844","GOOGLE_CLOUD_LOCATION":"global","GOOGLE_APPLICATION_CREDENTIALS":$$adc,"TOKEN_EXCHANGE_GOOGLE_ACCOUNT":"lukas@parlant.co"}}' \
+		'.["google-vertex"] = ((.["google-vertex"] // {}) + {"type":"api_key","env":((.["google-vertex"].env // {}) + {"GOOGLE_CLOUD_PROJECT":"gen-lang-client-0951766844","GOOGLE_CLOUD_LOCATION":"global","GOOGLE_APPLICATION_CREDENTIALS":$$adc,"TOKEN_EXCHANGE_GOOGLE_ACCOUNT":"lukas@parlant.co"})}) | .["google-vertex-anthropic"] = {"type":"api_key","key":"vertex-adc","env":.["google-vertex"].env}' \
 		> $$auth_tmp; \
 	chmod 600 $$auth_tmp; \
 	mv $$auth_tmp $(HOME)/.pi/agent/auth.json

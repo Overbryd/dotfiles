@@ -61,7 +61,7 @@ test("pi-settings deploys global Vertex routing without replacing other credenti
 	const otherCredential = { type: "api_key", key: "test-only" };
 	writeFileSync(join(agentDir, "auth.json"), JSON.stringify({
 		"openai": otherCredential,
-		"google-vertex": { type: "api_key", env: { GOOGLE_CLOUD_LOCATION: "eu" } },
+		"google-vertex": { type: "api_key", key: "configured-vertex-key", env: { GOOGLE_CLOUD_LOCATION: "eu" } },
 	}));
 	writeFileSync(join(agentDir, "settings.json"), JSON.stringify({
 		defaultProvider: "openai-codex", defaultModel: "gpt-6.1-sol",
@@ -74,10 +74,13 @@ test("pi-settings deploys global Vertex routing without replacing other credenti
 		});
 		assert.equal(result.status, 0, result.stderr);
 		const auth = JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf8"));
+		assert.equal(auth["google-vertex"].key, "configured-vertex-key");
 		assert.equal(auth["google-vertex"].env.GOOGLE_CLOUD_LOCATION, "global");
 		assert.equal(auth["google-vertex"].env.GOOGLE_CLOUD_PROJECT, "gen-lang-client-0951766844");
 		assert.equal(auth["google-vertex"].env.GOOGLE_APPLICATION_CREDENTIALS,
 			join(home, "Work/Parlant/.config/gcloud-parlant/application_default_credentials.json"));
+		assert.deepEqual(auth["google-vertex-anthropic"].env, auth["google-vertex"].env);
+		assert.equal(auth["google-vertex-anthropic"].key, "vertex-adc");
 		assert.deepEqual(auth.openai, otherCredential);
 		assert.equal(statSync(join(agentDir, "auth.json")).mode & 0o777, 0o600);
 		assert.equal(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")).defaultProvider, "openai-codex");

@@ -31,6 +31,33 @@ test("RPC retry delegates discovery to cooperative ensure without a terminal pro
 	await h.retry();assert.deepEqual(h.calls,["idle","retry"]);
 });
 
+test("RPC retry repairs Anthropic-on-Vertex credentials too", async (t) => {
+	const h = harness({ ...reauthFailure, provider: "google-vertex-anthropic" });
+	h.context.model.provider = "google-vertex-anthropic";
+	let repairs = 0;
+	t.mock.method(childProcess, "spawn", () => {
+		repairs++;
+		const child = { once(event: string, callback: (code: number) => void) {
+			if (event === "exit") queueMicrotask(() => callback(0));
+			return child;
+		} };
+		return child;
+	});
+	await h.retry();
+	assert.equal(repairs, 1);
+	assert.deepEqual(h.calls, ["idle", "retry"]);
+});
+
+test("a newly configured Vertex API key bypasses repair of an older ADC error", async (t) => {
+	const h = harness();
+	h.context.modelRegistry.getApiKeyAndHeaders = async () => ({
+		ok: true, apiKey: "new-vertex-key", env: { GOOGLE_APPLICATION_CREDENTIALS: "/scoped/adc.json" },
+	});
+	t.mock.method(childProcess, "spawn", () => { throw new Error("API-key requests must not repair ADC"); });
+	await h.retry();
+	assert.deepEqual(h.calls, ["idle", "retry"]);
+});
+
 test("ensure failure never retries the failed model",async(t)=>{
 	const h=harness();
 	t.mock.method(childProcess,"spawn",()=>{

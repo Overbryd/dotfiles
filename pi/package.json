@@ -1,0 +1,10 @@
+{
+  "name": "dotfiles-pi-extensions",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.129.0",
+    "@anthropic-ai/vertex-sdk": "0.21.0",
+    "google-auth-library": "10.9.1"
+  }
+}
