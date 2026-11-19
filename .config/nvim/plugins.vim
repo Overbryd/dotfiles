@@ -5,7 +5,7 @@ Plug 'KabbAmine/yowish.vim'
 Plug 'owickstrom/vim-colors-paramount'
 
 " treesitter
-Plug 'nvim-treesitter/nvim-treesitter', {'do': ':TSUpdate'}
+Plug 'nvim-treesitter/nvim-treesitter', {'branch': 'master', 'do': ':TSUpdate'}
 
 " nvim-ts-autotag automatically closes html tags
 Plug 'windwp/nvim-ts-autotag'
